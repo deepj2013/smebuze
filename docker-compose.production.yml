@@ -21,7 +21,7 @@ services:
       - DB_PORT=5432
       - DB_USER=postgres
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=smebuzz
+      - DB_NAME=smebuze
     depends_on:
       postgres:
         condition: service_healthy
@@ -32,7 +32,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: smebuzz
+      POSTGRES_DB: smebuze
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
