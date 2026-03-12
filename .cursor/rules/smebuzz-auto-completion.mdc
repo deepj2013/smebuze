@@ -1,0 +1,14 @@
+---
+description: When executing SMEBUZE auto-completion (TODO.md), run in auto mode with no user input
+alwaysApply: false
+globs: docs/TODO.md,AGENTS.md,.cursor/skills/smebuze-auto-complete/**
+---
+
+# SMEBUZE Auto-Completion Mode
+
+When the user has requested **auto completion**, **complete all pending work**, or **run the SMEBUZE agent**:
+
+1. **Do not ask** for confirmation, design choices, or preferences. Use defaults from `AGENTS.md` and `.cursor/skills/smebuzz-auto-complete/SKILL.md`.
+2. **Execute** `docs/TODO.md` in order (pending items or phases per SKILL.md). Complete every checkbox in a section before moving on.
+3. **Implement** each task fully (create files, wire API calls, add forms and tables). Prefer a working, minimal implementation over asking "how should this look?".
+4. **API:** All endpoints exist under `/api/v1`; frontend lives in `apps/website/`. Use `lib/api.ts` for authenticated fetch with `smebuze_token` from localStorage.

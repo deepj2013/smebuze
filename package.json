@@ -1,0 +1,27 @@
+{
+  "name": "smebuzz",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Modular AI-Driven ERP for SME/MSME",
+  "scripts": {
+    "api:dev": "npm run dev --workspace=apps/api",
+    "api:build": "npm run build --workspace=apps/api",
+    "admin:dev": "npm run dev --workspace=apps/admin",
+    "admin:build": "npm run build --workspace=apps/admin",
+    "website:dev": "npm run dev --workspace=apps/website",
+    "website:build": "npm run build --workspace=apps/website",
+    "website:start": "npm run start --workspace=apps/website",
+    "db:migrate": "node packages/db-migrations/run.js",
+    "seed:demo": "cd apps/api && node ../../scripts/seed-demo-users.js",
+    "seed:ameera": "cd apps/api && node ../../scripts/seed-ameera-data.js",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
