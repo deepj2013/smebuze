@@ -1,52 +1,100 @@
-# SMEBUZZ Deployment on Hostinger VPS
+# SMEBUZE Deployment on Hostinger VPS (Server With Existing Apps)
 
-Step-by-step guide to deploy SMEBUZZ on a Hostinger VPS with:
-- **PostgreSQL** in Docker
-- **Node API** in Docker
-- **Next.js frontend** (PM2 or optional Docker)
-- **Subdomain**: `smebuzz.ameerait.com` with SSL (Certbot)
-- **First-time seed**: Star ICE demo tenant only
+Step‑by‑step guide to deploy **SMEBUZE** on a Hostinger VPS that **already has Docker and other apps running** (e.g. a MERN stack with MongoDB).
 
-Your VPS may already host another project (e.g. MERN). We use a separate directory and ports so both can run.
+Goals:
+- **Do not break existing apps** (reuse Docker, avoid port clashes, don’t re‑install things blindly).
+- Run:
+  - **PostgreSQL** in Docker
+  - **Node API** (NestJS) in Docker
+  - **Next.js frontend** on host via PM2 (or optional Docker)
+  - **Subdomain**: `smebuzz.ameerait.com` with SSL (Certbot)
+  - **First-time seed**: Star ICE demo tenant only
 
 ---
 
-## 1. Prerequisites on VPS
+## 1. Prerequisites (safe checks – do not break existing apps)
 
 - Ubuntu 22.04 (or similar). SSH access.
-- Domain `ameerait.com` with DNS: add an **A record** for `smebuzz.ameerait.com` pointing to your VPS public IP.
-- Docker and Docker Compose installed.
-- Node.js 18+ and npm (for migrations, seed, and optionally frontend/PM2).
-- Nginx and Certbot.
+- You already have **Docker** and maybe other containers (MongoDB, etc.).
+- Domain `ameerait.com` (or similar) for `smebuzz.ameerait.com`.
+
+### 1.1 DNS
+
+- Add an **A record**: `smebuzz.ameerait.com` → your VPS public IP.
+
+### 1.2 Check/install tools (only if missing)
+
+Each block **checks first**, then installs only if needed:
 
 ```bash
-# Install Docker (if not already)
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-# Log out and back in for group to apply
+# Docker (skip install if already present)
+if ! command -v docker >/dev/null 2>&1; then
+  curl -fsSL https://get.docker.com | sh
+  sudo usermod -aG docker $USER
+  echo "Docker installed. Log out and back in for docker group to apply."
+else
+  echo "Docker already installed – skipping."
+fi
 
-# Install Docker Compose v2 (plugin)
-sudo apt-get update && sudo apt-get install -y docker-compose-plugin
+# Docker Compose v2 (plugin)
+if ! docker compose version >/dev/null 2>&1; then
+  sudo apt-get update
+  sudo apt-get install -y docker-compose-plugin
+else
+  echo "Docker Compose v2 already installed – skipping."
+fi
 
-# Node 20 (for migrations/seed and PM2)
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs
+# Node 20+ (for migrations/seed and PM2)
+if ! command -v node >/dev/null 2>&1; then
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+else
+  echo "Node is already installed – skipping."
+fi
 
-# Nginx and Certbot
-sudo apt-get install -y nginx certbot python3-certbot-nginx
+# Nginx
+if ! dpkg -s nginx >/dev/null 2>&1; then
+  sudo apt-get install -y nginx
+else
+  echo "Nginx already installed – skipping."
+fi
+
+# Certbot (for SSL)
+if ! command -v certbot >/dev/null 2>&1; then
+  sudo apt-get install -y certbot python3-certbot-nginx
+else
+  echo "Certbot already installed – skipping."
+fi
 ```
+
+### 1.3 Verify ports are free for SMEBUZE
+
+SMEBUZE uses:
+- **PostgreSQL**: `127.0.0.1:5432` (local only)
+- **API**: `3000`
+- **Frontend**: `3001`
+
+Check if any existing process is using these ports:
+
+```bash
+sudo lsof -i:3000 -i:3001 -i:5432 || echo "No process on 3000/3001/5432"
+```
+
+- If your existing app uses 3000 or 3001, we’ll adjust SMEBUZE ports in `docker-compose.production.yml` / PM2 and Nginx.
+- If you already run Postgres on 5432, either keep it (and point SMEBUZE to it) or change SMEBUZE Postgres port in `docker-compose.production.yml` and DB env.
 
 ---
 
 ## 2. Directory and Repo on VPS
 
-Use a dedicated directory so it doesn’t conflict with your existing MERN app.
+Use a dedicated directory so it doesn’t conflict with your existing app.
 
 ```bash
-# Example: deploy in /var/www/smebuzz (or /home/youruser/smebuzz)
-sudo mkdir -p /var/www/smebuzz
-sudo chown $USER:$USER /var/www/smebuzz
-cd /var/www/smebuzz
+# Example: deploy in /var/www/smebuze (or /home/youruser/smebuze)
+sudo mkdir -p /var/www/smebuze
+sudo chown $USER:$USER /var/www/smebuze
+cd /var/www/smebuze
 ```
 
 Clone the repo (or upload files):
@@ -62,7 +110,7 @@ git clone <your-smebuzz-repo-url> .
 
 ### 3.1 API (Docker)
 
-Create `/var/www/smebuzz/.env` in the **project root** (used by Docker Compose). You can copy from the example:
+Create `/var/www/smebuze/.env` in the **project root** (used by Docker Compose). You can copy from the example:
 
 ```bash
 cp .env.example .env
@@ -99,7 +147,7 @@ We run only **PostgreSQL** and **API** in Docker. Postgres is bound to `127.0.0.
 From project root:
 
 ```bash
-cd /var/www/smebuzz
+cd /var/www/smebuze
 docker compose -f docker-compose.production.yml up -d
 ```
 
@@ -117,13 +165,13 @@ docker compose -f docker-compose.production.yml logs api
 Migrations run on the **host** using the same DB credentials as Docker. Install deps and run:
 
 ```bash
-cd /var/www/smebuzz
+cd /var/www/smebuze
 npm install
 export DB_HOST=127.0.0.1
 export DB_PORT=5432
 export DB_USER=postgres
 export DB_PASSWORD=your-secure-postgres-password
-export DB_NAME=smebuzz
+export DB_NAME=smebuze
 npm run db:migrate
 ```
 
@@ -140,12 +188,12 @@ sudo apt-get install -y postgresql-client
 Run the Star ICE tenant seed once, with the same env as above:
 
 ```bash
-cd /var/www/smebuzz
+cd /var/www/smebuze
 export DB_HOST=127.0.0.1
 export DB_PORT=5432
 export DB_USER=postgres
 export DB_PASSWORD=your-secure-postgres-password
-export DB_NAME=smebuzz
+export DB_NAME=smebuze
 node scripts/seed-tenant-star-ice.js
 ```
 
@@ -162,7 +210,7 @@ You should see success and login instructions:
 Build and run the Next.js app on the host (so it can share the server with your other project). Use PM2 so it restarts on reboot.
 
 ```bash
-cd /var/www/smebuzz
+cd /var/www/smebuze
 npm install
 cd apps/website
 npm run build
@@ -181,7 +229,7 @@ The site will listen on port **3001** by default (`next start -p 3001`). We’ll
 Create a server block for `smebuzz.ameerait.com`. You can copy the reference config from the repo:
 
 ```bash
-sudo cp /var/www/smebuzz/docs/nginx-smebuzz.ameerait.com.conf /etc/nginx/sites-available/smebuzz.ameerait.com
+sudo cp /var/www/smebuze/docs/nginx-smebuzz.ameerait.com.conf /etc/nginx/sites-available/smebuzz.ameerait.com
 ```
 
 Or create it manually:
@@ -254,7 +302,7 @@ sudo certbot renew --dry-run
 Your frontend is built with `NEXT_PUBLIC_API_URL=https://smebuzz.ameerait.com`. All API calls go to the same origin, so no mixed content. If you had built with `http://` before, rebuild and restart:
 
 ```bash
-cd /var/www/smebuzz/apps/website
+cd /var/www/smebuze/apps/website
 # Ensure .env.local has NEXT_PUBLIC_API_URL=https://smebuzz.ameerait.com
 npm run build
 pm2 restart smebuzz-web
@@ -268,7 +316,7 @@ pm2 restart smebuzz-web
 |------|------|
 | 1 | DNS A record: `smebuzz.ameerait.com` → VPS IP |
 | 2 | Install Docker, Node, Nginx, Certbot on VPS |
-| 3 | Clone repo to e.g. `/var/www/smebuzz` |
+| 3 | Clone repo to e.g. `/var/www/smebuze` |
 | 4 | Create `.env` (JWT_SECRET, DB_PASSWORD) and `apps/website/.env.local` (NEXT_PUBLIC_API_URL) |
 | 5 | `docker compose -f docker-compose.production.yml up -d` |
 | 6 | Run migrations: `npm run db:migrate` with DB_* env |
@@ -286,7 +334,7 @@ pm2 restart smebuzz-web
 If you prefer the frontend in Docker instead of PM2:
 
 ```bash
-cd /var/www/smebuzz
+cd /var/www/smebuze
 docker build --build-arg NEXT_PUBLIC_API_URL=https://smebuzz.ameerait.com -t smebuzz-web -f apps/website/Dockerfile apps/website
 docker run -d --name smebuzz-web -p 3001:3001 --restart unless-stopped smebuzz-web
 ```
