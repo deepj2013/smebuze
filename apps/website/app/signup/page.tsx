@@ -126,16 +126,16 @@ function SignupForm() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-slate-50 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <header className="border-b border-slate-200 bg-white">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="text-xl font-bold text-brand-700">SMEBUZZ</Link>
-          <Link href="/login" className="text-sm text-slate-600 hover:text-brand-600">Already have an account? Log in</Link>
+        <div className="max-w-6xl mx-auto px-4 py-3 sm:py-4 flex items-center justify-between min-h-[44px]">
+          <Link href="/" className="text-lg sm:text-xl font-bold text-brand-700 min-h-[44px] flex items-center">SMEBUZZ</Link>
+          <Link href="/login" className="text-sm text-slate-600 hover:text-brand-600 py-2 px-1 min-h-[44px] inline-flex items-center">Already have an account? Log in</Link>
         </div>
       </header>
-      <main className="flex-1 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-slate-200 p-8">
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">Create your workspace</h1>
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-slate-200 p-5 sm:p-8">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Create your workspace</h1>
           <p className="text-slate-600 text-sm mb-6">
             {step === 1 && 'Set up your organisation and workspace URL.'}
             {step === 2 && 'Create your account.'}
@@ -160,7 +160,7 @@ function SignupForm() {
                   value={orgName}
                   onChange={(e) => handleOrgNameChange(e.target.value)}
                   placeholder="e.g. Acme Pvt Ltd"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
                   required
                 />
               </div>
@@ -171,11 +171,11 @@ function SignupForm() {
                   value={slug}
                   onChange={(e) => setSlug(e.target.value)}
                   placeholder="e.g. acme"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
                 />
                 <p className="mt-1 text-xs text-slate-500">Your workspace URL: app.smebuzz.com/{slug || deriveSlug(orgName) || '...'}</p>
               </div>
-              <button type="submit" className="w-full rounded-lg bg-brand-600 text-white py-2.5 font-semibold hover:bg-brand-700">
+              <button type="submit" className="w-full rounded-lg bg-brand-600 text-white py-3 sm:py-2.5 font-semibold hover:bg-brand-700 min-h-[48px] text-base">
                 Continue
               </button>
             </form>
@@ -190,7 +190,7 @@ function SignupForm() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@company.com"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
                   required
                 />
               </div>
@@ -201,7 +201,7 @@ function SignupForm() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="At least 8 characters"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
                   required
                   minLength={8}
                 />
@@ -213,7 +213,7 @@ function SignupForm() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Repeat password"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
                   required
                 />
               </div>
@@ -224,7 +224,7 @@ function SignupForm() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Full name"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
                 />
               </div>
               <div>
@@ -234,14 +234,14 @@ function SignupForm() {
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="+91..."
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
                 />
               </div>
               <div className="flex gap-2">
-                <button type="button" onClick={() => setStep(1)} className="flex-1 rounded-lg border border-slate-300 py-2.5 text-slate-700 hover:bg-slate-50">
+                <button type="button" onClick={() => setStep(1)} className="flex-1 rounded-lg border border-slate-300 py-3 sm:py-2.5 text-slate-700 hover:bg-slate-50 min-h-[48px]">
                   Back
                 </button>
-                <button type="submit" className="flex-1 rounded-lg bg-brand-600 text-white py-2.5 font-semibold hover:bg-brand-700">
+                <button type="submit" className="flex-1 rounded-lg bg-brand-600 text-white py-3 sm:py-2.5 font-semibold hover:bg-brand-700 min-h-[48px]">
                   Continue
                 </button>
               </div>
@@ -291,10 +291,10 @@ function SignupForm() {
                 <div className="p-3 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>
               )}
               <div className="flex gap-2">
-                <button type="button" onClick={() => setStep(2)} className="flex-1 rounded-lg border border-slate-300 py-2.5 text-slate-700 hover:bg-slate-50">
+                <button type="button" onClick={() => setStep(2)} className="flex-1 rounded-lg border border-slate-300 py-3 sm:py-2.5 text-slate-700 hover:bg-slate-50 min-h-[48px]">
                   Back
                 </button>
-                <button type="submit" disabled={loading} className="flex-1 rounded-lg bg-brand-600 text-white py-2.5 font-semibold hover:bg-brand-700 disabled:opacity-50">
+                <button type="submit" disabled={loading} className="flex-1 rounded-lg bg-brand-600 text-white py-3 sm:py-2.5 font-semibold hover:bg-brand-700 disabled:opacity-50 min-h-[48px]">
                   {loading ? 'Creating…' : 'Create workspace'}
                 </button>
               </div>

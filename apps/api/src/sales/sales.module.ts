@@ -17,6 +17,7 @@ import { Lead } from '../crm/entities/lead.entity';
 import { Vendor } from '../purchase/entities/vendor.entity';
 import { Company } from '../tenant/entities/company.entity';
 import { Branch } from '../tenant/entities/branch.entity';
+import { Tenant } from '../tenant/entities/tenant.entity';
 import { InventoryModule } from '../inventory/inventory.module';
 import { SalesService } from './sales.service';
 import { SalesController } from './sales.controller';
@@ -42,6 +43,7 @@ import { SalesController } from './sales.controller';
       Vendor,
       Company,
       Branch,
+      Tenant,
     ]),
   ],
   controllers: [SalesController],

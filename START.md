@@ -48,6 +48,18 @@ npm run seed:demo
 
 ## 2. Start the app (every time)
 
+**Option A – Use remote backend (https://smebuze.ameerait.com)**  
+Create `apps/website/.env.local` with:
+```
+NEXT_PUBLIC_API_URL=https://smebuze.ameerait.com
+```
+Then run only the website:
+```bash
+npm run website:dev
+```
+→ Website: **http://localhost:3001** — all API calls go to **https://smebuze.ameerait.com/api/v1**
+
+**Option B – Run API locally**
 **Terminal 1 – API:**
 ```bash
 npm run api:dev
@@ -59,7 +71,8 @@ npm run api:dev
 npm run website:dev
 ```
 → Website: **http://localhost:3001**  
-→ Login: **http://localhost:3001/login**
+→ Login: **http://localhost:3001/login**  
+(Without `.env.local`, the website uses `http://localhost:3000` as API.)
 
 ---
 

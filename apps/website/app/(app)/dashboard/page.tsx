@@ -69,7 +69,7 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900 mb-4">Business overview</h1>
+      <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-4 sm:mb-6">Business overview</h1>
 
       {showOnboardingCard && (
         <div className="mb-6 rounded-xl border border-brand-200 bg-brand-50/50 p-4">
@@ -124,8 +124,8 @@ export default function DashboardPage() {
       )}
       {!loading && data && (
         <>
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-8">
-            <div className="rounded-xl bg-white border border-slate-200 p-4">
+          <section className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6 sm:mb-8">
+            <div className="rounded-xl bg-white border border-slate-200 p-4 min-h-[88px]">
               <p className="text-xs font-medium text-slate-500 uppercase">Total invoiced</p>
               <p className="mt-2 text-2xl font-semibold text-slate-900">₹{data.summary.receivables.totalInvoiced.toFixed(2)}</p>
             </div>
@@ -163,8 +163,8 @@ export default function DashboardPage() {
               {data.pendingReceivables.length === 0 ? (
                 <p className="text-sm text-slate-500">No pending receivables.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
+                <div className="responsive-table-wrap overflow-x-auto">
+                  <table className="w-full text-xs table-min-width">
                     <thead>
                       <tr className="border-b border-slate-200 text-slate-500">
                         <th className="py-1 pr-2 text-left">Invoice</th>
@@ -192,8 +192,8 @@ export default function DashboardPage() {
               {data.pendingPayables.length === 0 ? (
                 <p className="text-sm text-slate-500">No pending payables.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
+                <div className="responsive-table-wrap overflow-x-auto">
+                  <table className="w-full text-xs table-min-width">
                     <thead>
                       <tr className="border-b border-slate-200 text-slate-500">
                         <th className="py-1 pr-2 text-left">PO</th>

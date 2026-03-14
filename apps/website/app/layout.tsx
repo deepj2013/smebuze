@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter, Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 
@@ -12,6 +12,14 @@ const plusJakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: 'SMEBUZZ — Modular AI-Powered ERP for MSME',
   description: 'Configure only what you need. WhatsApp-first, multi-tenant ERP for manufacturing, trading, and services. India & Global Bharat.',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+  viewportFit: 'cover', /* safe-area insets for notched devices */
 };
 
 export default function RootLayout({

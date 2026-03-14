@@ -69,24 +69,28 @@ export default function GlobalSearch() {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-black/40" onClick={() => setOpen(false)}>
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-0 sm:pt-[15vh] p-4 sm:p-0"
+      style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
+      onClick={() => setOpen(false)}
+    >
       <div
-        className="w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-xl"
+        className="w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-xl max-h-[85vh] sm:max-h-[70vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
-          <Search className="h-5 w-5 text-slate-400" />
+        <div className="flex items-center gap-2 border-b border-slate-200 px-3 sm:px-4 py-3 min-h-[52px]">
+          <Search className="h-5 w-5 text-slate-400 shrink-0" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search customers, vendors, invoices, items…"
-            className="flex-1 border-0 bg-transparent py-2 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-0"
+            placeholder="Search customers, vendors, invoices…"
+            className="flex-1 min-w-0 border-0 bg-transparent py-2 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-0 text-base"
             autoFocus
           />
-          <kbd className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">Esc</kbd>
+          <kbd className="hidden sm:inline rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">Esc</kbd>
         </div>
-        <div className="max-h-[60vh] overflow-y-auto p-2">
+        <div className="flex-1 overflow-y-auto p-2 min-h-0">
           {loading && <p className="p-4 text-sm text-slate-500">Searching…</p>}
           {!loading && query.trim() && results && (
             <>
@@ -101,7 +105,7 @@ export default function GlobalSearch() {
                       key={c.id}
                       type="button"
                       onClick={() => go(`/crm/customers/${c.id}`)}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-100"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-3 text-left text-sm hover:bg-slate-100 min-h-[44px]"
                     >
                       <Users className="h-4 w-4 text-slate-400" />
                       <span className="font-medium text-slate-900">{c.name}</span>
@@ -118,7 +122,7 @@ export default function GlobalSearch() {
                       key={v.id}
                       type="button"
                       onClick={() => go(`/purchase/vendors`)}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-100"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-3 text-left text-sm hover:bg-slate-100 min-h-[44px]"
                     >
                       <Truck className="h-4 w-4 text-slate-400" />
                       <span className="font-medium text-slate-900">{v.name}</span>
@@ -135,7 +139,7 @@ export default function GlobalSearch() {
                       key={inv.id}
                       type="button"
                       onClick={() => go(`/sales/invoices/${inv.id}/edit`)}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-100"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-3 text-left text-sm hover:bg-slate-100 min-h-[44px]"
                     >
                       <FileText className="h-4 w-4 text-slate-400" />
                       <span className="font-medium text-slate-900">{inv.number}</span>
@@ -152,7 +156,7 @@ export default function GlobalSearch() {
                       key={i.id}
                       type="button"
                       onClick={() => go(`/inventory/items`)}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-100"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-3 text-left text-sm hover:bg-slate-100 min-h-[44px]"
                     >
                       <Package className="h-4 w-4 text-slate-400" />
                       <span className="font-medium text-slate-900">{i.name}</span>

@@ -16,6 +16,7 @@ import { RecurringInvoice } from './entities/recurring-invoice.entity';
 import { Customer } from '../crm/entities/customer.entity';
 import { Vendor } from '../purchase/entities/vendor.entity';
 import { Company } from '../tenant/entities/company.entity';
+import { Tenant } from '../tenant/entities/tenant.entity';
 import { InventoryService } from '../inventory/inventory.service';
 import { TenantContext } from '../common/tenant-context';
 import { CreateInvoiceDto, CreateInvoiceLineDto } from './dto/create-invoice.dto';
@@ -55,6 +56,8 @@ export class SalesService {
     private readonly vendorRepo: Repository<Vendor>,
     @InjectRepository(Company)
     private readonly companyRepo: Repository<Company>,
+    @InjectRepository(Tenant)
+    private readonly tenantRepo: Repository<Tenant>,
     private readonly inventoryService: InventoryService,
   ) {}
 
@@ -896,6 +899,11 @@ export class SalesService {
 
   async getInvoicePrintHtml(id: string, ctx: TenantContext): Promise<string> {
     const inv = await this.findOneInvoice(id, ctx);
+    const tenant = ctx.tenantId ? await this.tenantRepo.findOne({ where: { id: ctx.tenantId } }) : null;
+    if (tenant?.slug === 'star-ice') {
+      return this.buildStarIceInvoiceHtml(inv);
+    }
+
     const company = inv.company as { name: string; legal_name?: string; gstin?: string; address?: Record<string, unknown> };
     const billTo = (inv.vendor as { name: string; gstin?: string; address?: Record<string, unknown> } | null)
       ?? (inv.customer as { name: string; gstin?: string; address?: Record<string, unknown> } | null)
@@ -944,6 +952,137 @@ th{background:#eee;font-weight:bold}
 <tr><td>Amount Due</td><td class="right">₹${due.toFixed(2)}</td></tr></table>
 </div>
 <p class="footer">Thank you | SMEBUZE</p>
+</body></html>`;
+  }
+
+  /** STAR ICE tenant: invoice layout matching their printed format (header, Bill To, goods table, itemized rows, tax, bank, certification). */
+  private buildStarIceInvoiceHtml(inv: SalesInvoice): string {
+    const company = inv.company as {
+      name: string;
+      legal_name?: string;
+      gstin?: string;
+      address?: Record<string, unknown> & { email?: string; phone?: string };
+      bank_details?: Record<string, unknown> & { bank_name?: string; branch?: string; account_no?: string; ifsc?: string };
+    };
+    const billTo = (inv.vendor as { name: string; gstin?: string; address?: Record<string, unknown> } | null)
+      ?? (inv.customer as { name: string; gstin?: string; address?: Record<string, unknown> } | null)
+      ?? { name: 'N/A', gstin: '', address: undefined };
+    const addr = (v: Record<string, unknown> | undefined) =>
+      (v && typeof v === 'object' && v.line1)
+        ? [v.line1, v.line2, v.city, v.state, v.pincode].filter(Boolean).join(', ')
+        : (v && typeof v === 'object' ? Object.values(v).filter(Boolean).join(', ') : '');
+    const getState = (v: Record<string, unknown> | undefined) => (v && typeof v === 'object' && v.state) ? String(v.state) : '';
+    const getStateCode = (v: Record<string, unknown> | undefined) => (v && typeof v === 'object' && v.state_code) ? String(v.state_code) : '';
+    const lines = inv.lines ?? [];
+    const invDate = new Date(inv.invoice_date as Date | string).toISOString().slice(0, 10);
+    const subtotal = parseFloat(inv.subtotal ?? '0');
+    const taxAmount = parseFloat(inv.tax_amount ?? '0');
+    const total = parseFloat(inv.total ?? '0');
+    const companyAddr = addr(company.address);
+    const companyEmail = (company.address && typeof company.address === 'object' && (company.address as Record<string, unknown>).email) ? String((company.address as Record<string, unknown>).email) : '';
+    const companyPhone = (company.address && typeof company.address === 'object' && (company.address as Record<string, unknown>).phone) ? String((company.address as Record<string, unknown>).phone) : '';
+    const bank = company.bank_details && typeof company.bank_details === 'object' ? company.bank_details as Record<string, unknown> : null;
+    const bankName = bank?.bank_name ? String(bank.bank_name) : '';
+    const bankBranch = bank?.branch ? String(bank.branch) : '';
+    const bankAccount = bank?.account_no ? String(bank.account_no) : '';
+    const bankIfsc = bank?.ifsc ? String(bank.ifsc) : '';
+
+    const goodsRows = lines
+      .map(
+        (l: SalesInvoiceLine) =>
+          `<tr><td>${escapeHtml(String(l.description))}</td><td>${l.rate}</td><td>${escapeHtml(l.hsn_sac)}</td></tr>`,
+      )
+      .join('');
+
+    let sr = 0;
+    const itemRows = lines
+      .map(
+        (l: SalesInvoiceLine) => {
+          sr++;
+          const qty = parseFloat(l.qty ?? '0');
+          const amt = parseFloat(l.taxable_value ?? '0');
+          return `<tr><td>${sr}</td><td>${invDate}</td><td></td><td>${escapeHtml(String(l.description))}</td><td>${qty}</td><td>${amt.toFixed(2)}</td></tr>`;
+        },
+      )
+      .join('');
+
+    const totalQty = lines.reduce((sum, l) => sum + parseFloat(l.qty ?? '0'), 0);
+    const lines2_5 = lines.filter((l) => parseFloat(l.cgst_rate ?? '0') === 2.5);
+    const lines9 = lines.filter((l) => parseFloat(l.cgst_rate ?? '0') === 9);
+    const sgst2_5 = lines2_5.reduce((s, l) => s + parseFloat(l.sgst_amount ?? '0'), 0);
+    const cgst2_5 = lines2_5.reduce((s, l) => s + parseFloat(l.cgst_amount ?? '0'), 0);
+    const sgst9 = lines9.reduce((s, l) => s + parseFloat(l.sgst_amount ?? '0'), 0);
+    const cgst9 = lines9.reduce((s, l) => s + parseFloat(l.cgst_amount ?? '0'), 0);
+
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${escapeHtml(inv.number)}</title><style>
+*{box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:11px;line-height:1.35;max-width:210mm;margin:0 auto;padding:12px;background:#fff;color:#000}
+.star-ice-header{margin-bottom:12px;border-bottom:1px solid #000;padding-bottom:8px}
+.star-ice-header h2{margin:0 0 4px 0;font-size:14px;text-transform:uppercase;font-weight:bold}
+.star-ice-header p{margin:2px 0;font-size:11px}
+.star-ice-section{margin:10px 0}
+.star-ice-section h3{margin:0 0 4px 0;font-size:11px;font-weight:bold}
+table{border-collapse:collapse;width:100%;font-size:10px;margin:6px 0}
+th,td{border:1px solid #000;padding:4px 6px;text-align:left}
+th{background:#f0f0f0;font-weight:bold}
+.right{text-align:right}
+.star-ice-tax-table{margin-top:8px}
+.star-ice-tax-table td{border:none;padding:2px 8px}
+.star-ice-bank{margin-top:12px;font-size:11px}
+.star-ice-cert{margin-top:16px;font-size:10px;font-style:italic}
+.star-ice-cert p{margin:4px 0}
+</style></head><body>
+<div class="star-ice-header">
+  <h2>${escapeHtml(company.name)}</h2>
+  <p>${escapeHtml(companyAddr)}</p>
+  ${companyEmail ? `<p><strong>Email ID:</strong> ${escapeHtml(companyEmail)}</p>` : ''}
+  ${companyPhone ? `<p><strong>Mobile Numbers:</strong> ${escapeHtml(companyPhone)}</p>` : ''}
+  <p><strong>GSTIN:</strong> ${escapeHtml(company.gstin ?? 'N/A')}</p>
+</div>
+
+<p><strong>Invoice No.:</strong> ${escapeHtml(inv.number)} &nbsp; <strong>Invoice Date:</strong> ${invDate}</p>
+
+<div class="star-ice-section">
+  <h3>Bill To:</h3>
+  <p><strong>${escapeHtml(billTo.name)}</strong></p>
+  <p>${escapeHtml(addr(billTo.address))}</p>
+  <p><strong>GSTIN:</strong> ${escapeHtml(billTo.gstin ?? '')}</p>
+  <p><strong>State:</strong> ${escapeHtml(getState(billTo.address))} &nbsp; <strong>State Code:</strong> ${escapeHtml(getStateCode(billTo.address))}</p>
+  <p><strong>Vehicle No.:</strong> </p>
+</div>
+
+<table>
+  <thead><tr><th>Goods Details</th><th>Rate</th><th>HSN Code</th></tr></thead>
+  <tbody>${goodsRows}</tbody>
+</table>
+
+<table>
+  <thead><tr><th>Sr. No</th><th>Date</th><th>Challan no</th><th>Goods Details</th><th>Total Kg</th><th>Amount</th></tr></thead>
+  <tbody>${itemRows}</tbody>
+  <tfoot><tr><td colspan="4" class="right"><strong>Total</strong></td><td>${totalQty}</td><td>${subtotal.toFixed(2)}</td></tr></tfoot>
+</table>
+
+<div class="star-ice-tax-table">
+  <table style="width:auto;border:none">
+    <tr><td>SGST @ 2.5%</td><td class="right">${sgst2_5.toFixed(2)}</td></tr>
+    <tr><td>CGST @ 2.5%</td><td class="right">${cgst2_5.toFixed(2)}</td></tr>
+    <tr><td>SGST @ 9%</td><td class="right">${sgst9.toFixed(2)}</td></tr>
+    <tr><td>CGST @ 9%</td><td class="right">${cgst9.toFixed(2)}</td></tr>
+    <tr><td><strong>Grand Total</strong></td><td class="right"><strong>₹${total.toFixed(2)}</strong></td></tr>
+  </table>
+</div>
+
+${bankName || bankAccount ? `<div class="star-ice-bank">
+  <p><strong>Bank Details:</strong> ${escapeHtml(bankName)}${bankBranch ? ', ' + escapeHtml(bankBranch) : ''}</p>
+  ${bankAccount ? `<p><strong>Bank Account No.:</strong> ${escapeHtml(bankAccount)}</p>` : ''}
+  ${bankIfsc ? `<p><strong>Bank Branch IFSC:</strong> ${escapeHtml(bankIfsc)}</p>` : ''}
+</div>` : ''}
+
+<div class="star-ice-cert">
+  <p>Certified that the particulars given above are true and correct</p>
+  <p>For ${escapeHtml(company.name)}</p>
+  <p>Authorised Signatory</p>
+</div>
 </body></html>`;
   }
 

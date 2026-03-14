@@ -30,6 +30,9 @@ import {
   ListOrdered,
   Wallet,
   FileCheck,
+  Menu,
+  X,
+  MoreHorizontal,
 } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -262,6 +265,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [tenant, setTenant] = useState<{ slug?: string; settings?: Record<string, unknown> } | null>(null);
   const [ready, setReady] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isDemoUser = typeof user?.email === 'string' && user.email.toLowerCase().endsWith(DEMO_EMAIL_SUFFIX);
   const isStarIce = tenant?.slug === 'star-ice';
   const baseNav = isStarIce ? starIceNav : nav;
@@ -328,102 +332,198 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const closeDrawer = () => setMobileMenuOpen(false);
+
+  const renderNavContent = (isMobile = false) => (
+    <>
+      {visibleNav.map((item) => (
+        <div key={item.label} className="mb-0.5">
+          {item.children ? (
+            <>
+              <button
+                type="button"
+                onClick={() => toggleCategory(item.label)}
+                className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-left font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200/80 ${isMobile ? 'text-base min-touch' : 'text-sm'}`}
+                aria-expanded={expanded.has(item.label)}
+              >
+                {item.icon && <item.icon className="h-4 w-4 shrink-0 text-slate-600" />}
+                <span className="flex-1">{item.label}</span>
+                {expanded.has(item.label) ? (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
+                )}
+              </button>
+              {expanded.has(item.label) && (
+                <div className="ml-2 mt-0.5 pl-2 border-l-2 border-slate-200 space-y-0.5">
+                  {item.children.map((c) => {
+                    const Icon = c.icon;
+                    const isActive = pathname === c.href;
+                    return (
+                      <Link
+                        key={c.href}
+                        href={c.href}
+                        onClick={isMobile ? closeDrawer : undefined}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-md ${isMobile ? 'text-base min-touch' : 'text-sm'} ${
+                          isActive
+                            ? 'bg-brand-100 text-brand-800 font-medium'
+                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                        }`}
+                      >
+                        {Icon && <Icon className="h-4 w-4 shrink-0 opacity-80" />}
+                        {c.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          ) : (
+            <Link
+              href={item.href!}
+              onClick={isMobile ? closeDrawer : undefined}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg ${isMobile ? 'text-base min-touch' : 'text-sm'} ${
+                pathname === item.href
+                  ? 'bg-brand-100 text-brand-800 font-medium'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              {item.icon && <item.icon className="h-4 w-4 shrink-0 opacity-70" />}
+              {item.label}
+            </Link>
+          )}
+        </div>
+      ))}
+    </>
+  );
+
+  const isSalesActive = pathname.startsWith('/sales');
+  const isCrmActive = pathname.startsWith('/crm');
+
   return (
     <ToastProvider>
-    <div className="min-h-screen flex bg-slate-50">
-      <aside className="w-56 border-r border-slate-200 bg-white flex flex-col shrink-0">
+    <div className="min-h-screen flex bg-slate-50 safe-top">
+      {/* Desktop sidebar */}
+      <aside className="hidden lg:flex w-56 border-r border-slate-200 bg-white flex-col shrink-0">
         <div className="p-4 border-b border-slate-200">
           <Link href="/dashboard" className="text-lg font-bold text-brand-700">SMEBUZZ</Link>
         </div>
-        <nav className="p-2 flex-1 overflow-y-auto">
-          {visibleNav.map((item) => (
-            <div key={item.label} className="mb-0.5">
-              {item.children ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => toggleCategory(item.label)}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-left text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200/80"
-                    aria-expanded={expanded.has(item.label)}
-                  >
-                    {item.icon && <item.icon className="h-4 w-4 shrink-0 text-slate-600" />}
-                    <span className="flex-1">{item.label}</span>
-                    {expanded.has(item.label) ? (
-                      <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
-                    )}
-                  </button>
-                  {expanded.has(item.label) && (
-                    <div className="ml-2 mt-0.5 pl-2 border-l-2 border-slate-200 space-y-0.5">
-                      {item.children.map((c) => {
-                        const Icon = c.icon;
-                        const isActive = pathname === c.href;
-                        return (
-                          <Link
-                            key={c.href}
-                            href={c.href}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm ${
-                              isActive
-                                ? 'bg-brand-100 text-brand-800 font-medium'
-                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                            }`}
-                          >
-                            {Icon && <Icon className="h-4 w-4 shrink-0 opacity-80" />}
-                            {c.label}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <Link
-                  href={item.href!}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
-                    pathname === item.href
-                      ? 'bg-brand-100 text-brand-800 font-medium'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  {item.icon && <item.icon className="h-4 w-4 shrink-0 opacity-70" />}
-                  {item.label}
-                </Link>
-              )}
-            </div>
-          ))}
-        </nav>
+        <nav className="p-2 flex-1 overflow-y-auto">{renderNavContent(false)}</nav>
       </aside>
-      <div className="flex-1 flex flex-col min-w-0">
+
+      {/* Mobile drawer overlay */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-40 lg:hidden bg-black/40"
+          onClick={closeDrawer}
+          aria-hidden
+        />
+      )}
+      {/* Mobile drawer panel */}
+      <aside
+        className={`fixed top-0 left-0 z-50 h-full w-[min(320px,85vw)] max-w-full bg-white border-r border-slate-200 shadow-xl transform transition-transform duration-200 ease-out lg:hidden ${
+          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+        style={{ paddingTop: 'var(--safe-area-top)' }}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-slate-200">
+          <Link href="/dashboard" onClick={closeDrawer} className="text-lg font-bold text-brand-700">SMEBUZZ</Link>
+          <button type="button" onClick={closeDrawer} className="p-2 -m-2 rounded-lg text-slate-600 hover:bg-slate-100 min-touch" aria-label="Close menu">
+            <X className="h-6 w-6" />
+          </button>
+        </div>
+        <nav className="p-3 flex-1 overflow-y-auto">{renderNavContent(true)}</nav>
+        <div className="p-3 border-t border-slate-200">
+          <p className="text-xs text-slate-500 truncate px-2">{user?.name || user?.email || 'User'}</p>
+          <button type="button" onClick={() => { closeDrawer(); logout(); }} className="w-full mt-2 text-sm text-slate-600 hover:text-brand-600 py-2 min-touch">Logout</button>
+        </div>
+      </aside>
+
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
         <GlobalSearch />
-        <header className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-4 shrink-0">
-          <div className="flex items-center gap-3">
+        <header className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-3 sm:px-4 shrink-0 safe-top">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="lg:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100 min-touch shrink-0"
+              aria-label="Open menu"
+            >
+              <Menu className="h-6 w-6" />
+            </button>
+            <Link href="/dashboard" className="lg:hidden text-base font-bold text-brand-700 truncate">SMEBUZZ</Link>
             <button
               type="button"
               onClick={() => typeof window !== 'undefined' && window.dispatchEvent(new CustomEvent('smebuzz-open-search'))}
-              className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100"
+              className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 sm:px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 min-h-[44px] min-touch"
               title="Search (⌘K)"
             >
-              <Search className="h-4 w-4" />
-              <span>Search…</span>
-              <kbd className="rounded bg-white px-1.5 py-0.5 text-xs border border-slate-200">⌘K</kbd>
+              <Search className="h-5 w-5 shrink-0" />
+              <span className="hidden sm:inline">Search…</span>
+              <kbd className="hidden sm:inline rounded bg-white px-1.5 py-0.5 text-xs border border-slate-200">⌘K</kbd>
             </button>
-            <span className="text-sm text-slate-600 truncate">
+            <span className="hidden md:inline text-sm text-slate-600 truncate ml-2">
               {user?.name || user?.email || 'User'}
             </span>
           </div>
           <button
             type="button"
             onClick={logout}
-            className="text-sm text-slate-600 hover:text-brand-600"
+            className="hidden lg:block text-sm text-slate-600 hover:text-brand-600 shrink-0"
           >
             Logout
           </button>
         </header>
-        <main className="flex-1 overflow-auto p-6">
+        <main className="flex-1 overflow-auto p-4 sm:p-6 pb-24 lg:pb-6">
           {children}
         </main>
       </div>
+
+      {/* Mobile bottom navigation — app-like */}
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-30 lg:hidden bg-white border-t border-slate-200 safe-bottom"
+        style={{ paddingBottom: 'var(--safe-area-bottom)' }}
+      >
+        <div className="grid grid-cols-4 gap-1 px-2 py-2">
+          <Link
+            href="/dashboard"
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
+              pathname === '/dashboard' ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+            }`}
+          >
+            <LayoutDashboard className="h-6 w-6 shrink-0" />
+            <span className="text-xs mt-0.5 font-medium">Home</span>
+          </Link>
+          <Link
+            href="/sales/invoices"
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
+              isSalesActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+            }`}
+          >
+            <Receipt className="h-6 w-6 shrink-0" />
+            <span className="text-xs mt-0.5 font-medium">Sales</span>
+          </Link>
+          <Link
+            href="/crm/customers"
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
+              isCrmActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+            }`}
+          >
+            <Users className="h-6 w-6 shrink-0" />
+            <span className="text-xs mt-0.5 font-medium">CRM</span>
+          </Link>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
+              !isSalesActive && !isCrmActive && pathname !== '/dashboard' ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+            }`}
+          >
+            <MoreHorizontal className="h-6 w-6 shrink-0" />
+            <span className="text-xs mt-0.5 font-medium">More</span>
+          </button>
+        </div>
+      </nav>
     </div>
     </ToastProvider>
   );
