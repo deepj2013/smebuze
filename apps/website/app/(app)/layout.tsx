@@ -288,8 +288,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       return;
     }
     fetch(`${API_URL}/api/v1/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.json())
+      .then((r) => {
+        if (r.status === 401) {
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem('smebuzz_token');
+            window.localStorage.removeItem('smebuzz_user');
+            window.location.replace('/login');
+          }
+          return null;
+        }
+        return r.json();
+      })
       .then((d) => {
+        if (!d) {
+          setReady(true);
+          return;
+        }
         const u = d?.user ?? d;
         setUser(u ? { ...u, permissions: u.permissions ?? [], allowed_modules: u.allowed_modules } : null);
         setTenant(d?.tenant ?? null);

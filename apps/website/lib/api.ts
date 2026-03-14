@@ -3,7 +3,7 @@ const API_PREFIX = '/api/v1';
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem('smebuze_token');
+  return window.localStorage.getItem('smebuzz_token');
 }
 
 export function getApiUrl(path: string): string {
@@ -26,6 +26,14 @@ export async function api<T = unknown>(
 
   const res = await fetch(url, { ...options, headers });
   const json = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('smebuzz_token');
+      window.localStorage.removeItem('smebuzz_user');
+      window.location.replace('/login');
+    }
+    return { error: 'Invalid or expired token', status: 401 };
+  }
   if (!res.ok) {
     return { error: (json as { message?: string }).message || json?.error || `HTTP ${res.status}`, status: res.status };
   }
