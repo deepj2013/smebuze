@@ -6,6 +6,13 @@ import Link from 'next/link';
 import { apiGet, apiPatch } from '@/lib/api';
 import { Barcode, ImagePlus, X } from 'lucide-react';
 
+function validateHsnSac(v: string): string | null {
+  if (!v.trim()) return null;
+  if (!/^[0-9A-Za-z]+$/.test(v.trim())) return 'HSN/SAC must be alphanumeric';
+  if (v.trim().length < 4 || v.trim().length > 15) return 'HSN/SAC should be 4–15 characters';
+  return null;
+}
+
 export default function EditItemPage() {
   const params = useParams();
   const router = useRouter();
@@ -25,6 +32,7 @@ export default function EditItemPage() {
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     apiGet<Record<string, unknown>>(`inventory/items/${id}`).then((res) => {
@@ -66,24 +74,48 @@ export default function EditItemPage() {
     setImageUrls((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const runValidation = (): boolean => {
+    const errs: Record<string, string> = {};
+    if (!name.trim()) errs.name = 'Name is required';
+    if (mrp.trim()) {
+      const n = parseFloat(mrp);
+      if (Number.isNaN(n) || n < 0) errs.mrp = 'MRP must be 0 or greater';
+    }
+    if (taxRate.trim()) {
+      const n = parseFloat(taxRate);
+      if (Number.isNaN(n) || n < 0 || n > 100) errs.taxRate = 'Tax rate must be between 0 and 100';
+    }
+    if (reorderLevel.trim()) {
+      const n = parseFloat(reorderLevel);
+      if (Number.isNaN(n) || n < 0) errs.reorderLevel = 'Reorder level must be 0 or greater';
+    }
+    const hsnErr = validateHsnSac(hsnSac);
+    if (hsnErr) errs.hsnSac = hsnErr;
+    if (imageUrls.length > 10) errs.pictures = 'Maximum 10 images allowed';
+    setFieldErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setFieldErrors({});
+    if (!runValidation()) return;
     setLoading(true);
     const body: Record<string, unknown> = {
-      name,
+      name: name.trim(),
       sku: sku || undefined,
       barcode: barcode || undefined,
       image_urls: imageUrls,
       description: description || undefined,
       unit: unit || undefined,
       category: category || undefined,
-      hsn_sac: hsnSac || undefined,
+      hsn_sac: hsnSac.trim() || undefined,
     };
-    if (reorderLevel !== '') body.reorder_level = parseFloat(reorderLevel) || 0;
-    if (mrp !== '') body.mrp = parseFloat(mrp);
+    if (reorderLevel.trim() !== '') body.reorder_level = parseFloat(reorderLevel) || 0;
+    if (mrp.trim() !== '') body.mrp = parseFloat(mrp);
     else body.mrp = null;
-    if (taxRate !== '') body.tax_rate = parseFloat(taxRate) || 0;
+    if (taxRate.trim() !== '') body.tax_rate = parseFloat(taxRate) || 0;
     const { error: err } = await apiPatch(`inventory/items/${id}`, body);
     setLoading(false);
     if (err) setError(err);
@@ -101,7 +133,13 @@ export default function EditItemPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
-              <input type="text" value={name} onChange={(e) => setName(e.target.value)} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => { setName(e.target.value); setFieldErrors((p) => ({ ...p, name: '' })); }}
+                className={`w-full rounded border px-3 py-2 text-sm ${fieldErrors.name ? 'border-red-500' : 'border-slate-300'}`}
+              />
+              {fieldErrors.name && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.name}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">SKU</label>
@@ -155,22 +193,55 @@ export default function EditItemPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">HSN/SAC</label>
-              <input type="text" value={hsnSac} onChange={(e) => setHsnSac(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+              <input
+                type="text"
+                value={hsnSac}
+                onChange={(e) => { setHsnSac(e.target.value); setFieldErrors((p) => ({ ...p, hsnSac: '' })); }}
+                className={`w-full rounded border px-3 py-2 text-sm ${fieldErrors.hsnSac ? 'border-red-500' : 'border-slate-300'}`}
+              />
+              {fieldErrors.hsnSac && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.hsnSac}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Reorder level</label>
-              <input type="number" step="0.01" value={reorderLevel} onChange={(e) => setReorderLevel(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+              <input
+                type="number"
+                step="0.01"
+                min={0}
+                value={reorderLevel}
+                onChange={(e) => { setReorderLevel(e.target.value); setFieldErrors((p) => ({ ...p, reorderLevel: '' })); }}
+                className={`w-full rounded border px-3 py-2 text-sm ${fieldErrors.reorderLevel ? 'border-red-500' : 'border-slate-300'}`}
+              />
+              {fieldErrors.reorderLevel && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.reorderLevel}</p>}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">MRP</label>
-              <input type="number" step="0.01" min="0" value={mrp} onChange={(e) => setMrp(e.target.value)} placeholder="Default price when no client-specific rate" className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+              <input
+                type="number"
+                step="0.01"
+                min={0}
+                value={mrp}
+                onChange={(e) => { setMrp(e.target.value); setFieldErrors((p) => ({ ...p, mrp: '' })); }}
+                placeholder="Default price when no client-specific rate"
+                className={`w-full rounded border px-3 py-2 text-sm ${fieldErrors.mrp ? 'border-red-500' : 'border-slate-300'}`}
+              />
+              {fieldErrors.mrp && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.mrp}</p>}
               <p className="text-xs text-slate-500 mt-0.5">Default selling price if no price is set for a particular client.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Tax rate (%)</label>
-              <input type="number" step="0.01" min="0" max="100" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} placeholder="e.g. 0, 5, 12, 18, 28" className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+              <input
+                type="number"
+                step="0.01"
+                min={0}
+                max={100}
+                value={taxRate}
+                onChange={(e) => { setTaxRate(e.target.value); setFieldErrors((p) => ({ ...p, taxRate: '' })); }}
+                placeholder="e.g. 0, 5, 12, 18, 28"
+                className={`w-full rounded border px-3 py-2 text-sm ${fieldErrors.taxRate ? 'border-red-500' : 'border-slate-300'}`}
+              />
+              {fieldErrors.taxRate && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.taxRate}</p>}
               <p className="text-xs text-slate-500 mt-0.5">GST/tax % applied on this item for tax calculation.</p>
             </div>
           </div>

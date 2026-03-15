@@ -25,7 +25,7 @@ export class CrmService {
   }
 
   async createLead(
-    dto: Partial<{ name: string; email: string; phone: string; stage: string; source: string; company_id: string; category_id: string; tags: string[] }>,
+    dto: Partial<{ name: string; email: string; phone: string; stage: string; source: string; company_id: string; category_id: string; tags: string[]; deal_value: number | null; metadata: Record<string, unknown> }>,
     ctx: TenantContext,
   ): Promise<Lead> {
     const tenantId = this.assertTenantId(ctx);
@@ -38,6 +38,8 @@ export class CrmService {
       phone: dto.phone ?? null,
       stage: dto.stage ?? 'new',
       source: dto.source ?? null,
+      deal_value: dto.deal_value != null ? String(dto.deal_value) : null,
+      metadata: dto.metadata && typeof dto.metadata === 'object' ? dto.metadata : {},
       tags: Array.isArray(dto.tags) ? dto.tags : [],
     });
     return this.leadRepo.save(lead);
@@ -61,7 +63,20 @@ export class CrmService {
   }
 
   async createCustomer(
-    dto: Partial<{ name: string; email: string; phone: string; gstin: string; address: Record<string, unknown>; company_id: string; category_id: string; credit_limit: number; tags: string[] }>,
+    dto: Partial<{
+      name: string;
+      email: string;
+      phone: string;
+      gstin: string;
+      address: Record<string, unknown>;
+      company_id: string;
+      category_id: string;
+      credit_limit: number;
+      tags: string[];
+      segment: string;
+      entity_type: string;
+      contacts: Record<string, unknown>[];
+    }>,
     ctx: TenantContext,
   ): Promise<Customer> {
     const tenantId = this.assertTenantId(ctx);
@@ -70,12 +85,15 @@ export class CrmService {
       company_id: dto.company_id ?? null,
       category_id: dto.category_id ?? null,
       name: dto.name ?? '',
+      entity_type: dto.entity_type ?? 'company',
       email: dto.email ?? null,
       phone: dto.phone ?? null,
       gstin: dto.gstin ?? null,
       address: dto.address ?? {},
       credit_limit: dto.credit_limit != null ? String(dto.credit_limit) : '0',
       tags: Array.isArray(dto.tags) ? dto.tags : [],
+      contacts: Array.isArray(dto.contacts) ? dto.contacts : [],
+      segment: dto.segment ?? null,
     });
     return this.customerRepo.save(customer);
   }
@@ -110,6 +128,7 @@ export class CrmService {
       source: string;
       category_id: string | null;
       tags: string[];
+      metadata: Record<string, unknown>;
     }>,
     ctx: TenantContext,
   ): Promise<Lead> {
@@ -124,16 +143,30 @@ export class CrmService {
     if (dto.source != null) lead.source = dto.source;
     if (dto.category_id !== undefined) lead.category_id = dto.category_id;
     if (Array.isArray(dto.tags)) lead.tags = dto.tags;
+    if (dto.metadata != null && typeof dto.metadata === 'object') lead.metadata = { ...lead.metadata, ...dto.metadata };
     return this.leadRepo.save(lead);
   }
 
   async updateCustomer(
     id: string,
-    dto: Partial<{ name: string; email: string; phone: string; gstin: string; address: Record<string, unknown>; credit_limit: number; segment: string; category_id: string | null; tags: string[] }>,
+    dto: Partial<{
+      name: string;
+      email: string;
+      phone: string;
+      gstin: string;
+      address: Record<string, unknown>;
+      credit_limit: number;
+      segment: string;
+      category_id: string | null;
+      tags: string[];
+      entity_type: string;
+      contacts: Record<string, unknown>[];
+    }>,
     ctx: TenantContext,
   ): Promise<Customer> {
     const customer = await this.findOneCustomer(id, ctx);
     if (dto.name != null) customer.name = dto.name;
+    if (dto.entity_type !== undefined) customer.entity_type = dto.entity_type;
     if (dto.email != null) customer.email = dto.email;
     if (dto.phone != null) customer.phone = dto.phone;
     if (dto.gstin != null) customer.gstin = dto.gstin;
@@ -142,6 +175,7 @@ export class CrmService {
     if (dto.segment != null) customer.segment = dto.segment;
     if (dto.category_id !== undefined) customer.category_id = dto.category_id;
     if (Array.isArray(dto.tags)) customer.tags = dto.tags;
+    if (Array.isArray(dto.contacts)) customer.contacts = dto.contacts;
     return this.customerRepo.save(customer);
   }
 
@@ -234,12 +268,14 @@ export class CrmService {
       customer: {
         id: customer.id,
         name: customer.name,
+        entity_type: customer.entity_type ?? 'company',
         email: customer.email,
         phone: customer.phone,
         gstin: customer.gstin,
         address: customer.address,
         credit_limit: customer.credit_limit,
         segment: customer.segment,
+        contacts: customer.contacts ?? [],
       },
       last_invoices: lastInvoices,
       follow_ups: followUps.slice(0, 20).map((f) => ({

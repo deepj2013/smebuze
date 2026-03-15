@@ -130,6 +130,18 @@ export class InventoryService {
     return this.itemRepo.find({ where: { tenant_id: tenantId }, order: { created_at: 'DESC' } });
   }
 
+  /** Items with current stock (sum of quantity across warehouses) for list/table. */
+  async findItemsWithStock(ctx: TenantContext): Promise<(Item & { current_stock: number })[]> {
+    const tenantId = this.assertTenantId(ctx);
+    const items = await this.itemRepo.find({ where: { tenant_id: tenantId }, order: { created_at: 'DESC' } });
+    const stockList = await this.stockRepo.find({ where: { tenant_id: tenantId }, select: ['item_id', 'quantity'] });
+    const byItem: Record<string, number> = {};
+    for (const s of stockList) {
+      byItem[s.item_id] = (byItem[s.item_id] ?? 0) + parseFloat(s.quantity);
+    }
+    return items.map((item) => ({ ...item, current_stock: byItem[item.id] ?? 0 }));
+  }
+
   async findOneItem(id: string, ctx: TenantContext) {
     const tenantId = this.assertTenantId(ctx);
     const item = await this.itemRepo.findOne({ where: { id, tenant_id: tenantId } });

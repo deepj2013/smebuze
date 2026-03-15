@@ -451,7 +451,10 @@ export class SalesService {
       quotation_id?: string;
       number?: string;
       order_date: string;
-      lines?: { item_id?: string; description?: string; qty: number; unit?: string; rate: number }[];
+      lines?: { item_id?: string; description?: string; qty: number; unit?: string; rate: number; mrp?: number | null; discount_percent?: number | null; gst_treatment?: string }[];
+      requirement_given_by?: string;
+      requirement_channel?: string;
+      requirement_proof_ref?: string;
     },
     ctx: TenantContext,
   ): Promise<SalesOrder> {
@@ -475,6 +478,9 @@ export class SalesService {
       total: String(total.toFixed(2)),
       tax_amount: '0',
       created_by: ctx.userId,
+      requirement_given_by: dto.requirement_given_by ?? null,
+      requirement_channel: dto.requirement_channel ?? null,
+      requirement_proof_ref: dto.requirement_proof_ref ?? null,
     });
     const saved = await this.salesOrderRepo.save(order);
     if (dto.lines?.length) {
@@ -487,6 +493,9 @@ export class SalesService {
           quantity: String(row.qty ?? 0),
           unit: row.unit ?? 'pcs',
           rate: String(row.rate ?? 0),
+          mrp: row.mrp != null ? String(row.mrp) : null,
+          discount_percent: row.discount_percent != null ? String(row.discount_percent) : null,
+          gst_treatment: row.gst_treatment === 'inclusive' ? 'inclusive' : 'extra',
           sort_order: i,
         });
         await this.salesOrderLineRepo.save(line);
@@ -499,7 +508,7 @@ export class SalesService {
     id: string,
     dto: {
       status?: string;
-      lines?: Array<{ item_id?: string | null; description?: string; qty: number; unit?: string; rate: number; sort_order?: number }>;
+      lines?: Array<{ item_id?: string | null; description?: string; qty: number; unit?: string; rate: number; sort_order?: number; mrp?: number | null; discount_percent?: number | null; gst_treatment?: string }>;
     },
     ctx: TenantContext,
   ): Promise<SalesOrder> {
@@ -519,6 +528,9 @@ export class SalesService {
           quantity: String(row.qty ?? 0),
           unit: row.unit ?? 'pcs',
           rate: String(row.rate ?? 0),
+          mrp: row.mrp != null ? String(row.mrp) : null,
+          discount_percent: row.discount_percent != null ? String(row.discount_percent) : null,
+          gst_treatment: row.gst_treatment === 'inclusive' ? 'inclusive' : 'extra',
           sort_order: row.sort_order ?? i,
         });
         await this.salesOrderLineRepo.save(line);
@@ -557,7 +569,7 @@ export class SalesService {
     if (customer_id) where.customer_id = customer_id;
     const orders = await this.salesOrderRepo.find({
       where,
-      relations: ['customer', 'company', 'lines', 'lines.item'],
+      relations: ['customer', 'company', 'lines', 'lines.item', 'createdBy'],
       order: { order_date: 'DESC', created_at: 'DESC' },
     });
     const result: Array<{ order: SalesOrder; lines: Array<{ line: SalesOrderLine; delivered_qty: number; pending_qty: number }> }> = [];

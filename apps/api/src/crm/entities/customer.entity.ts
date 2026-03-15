@@ -32,6 +32,10 @@ export class Customer {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
+  /** individual | company | other */
+  @Column({ type: 'varchar', length: 20, nullable: true, default: 'company' })
+  entity_type: string | null;
+
   @Column({ type: 'varchar', length: 255, nullable: true })
   email: string | null;
 
@@ -52,6 +56,10 @@ export class Customer {
 
   @Column({ type: 'jsonb', default: [] })
   tags: string[];
+
+  /** Contact persons: [{ name, email?, phone?, department? }] — e.g. Account, Purchase, Sales */
+  @Column({ type: 'jsonb', default: [] })
+  contacts: Record<string, unknown>[];
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   segment: string | null;

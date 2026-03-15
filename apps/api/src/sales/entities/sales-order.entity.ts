@@ -73,6 +73,18 @@ export class SalesOrder {
   @JoinColumn({ name: 'created_by' })
   createdBy: User | null;
 
+  /** Who gave the requirement (e.g. contact person name at customer). */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  requirement_given_by: string | null;
+
+  /** How the requirement was communicated: phone, whatsapp, email, in_person, other. */
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  requirement_channel: string | null;
+
+  /** Proof or reference (e.g. "WhatsApp screenshot", "Call ref #123"). */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  requirement_proof_ref: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 

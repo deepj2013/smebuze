@@ -49,7 +49,13 @@ export class InventoryController {
 
   @Get('items')
   @RequirePermissions('inventory.item.view')
-  async getItems(@CurrentTenant() ctx: TenantContext) {
+  async getItems(
+    @Query('with_stock') withStock: string | undefined,
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    if (withStock === '1' || withStock === 'true') {
+      return this.inventoryService.findItemsWithStock(ctx);
+    }
     return this.inventoryService.findItems(ctx);
   }
 

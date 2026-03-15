@@ -5,8 +5,26 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 
+interface ContactPerson {
+  name?: string;
+  email?: string;
+  phone?: string;
+  department?: string;
+}
+
 interface Customer360 {
-  customer: { id: string; name: string; email?: string; phone?: string; gstin?: string; address?: Record<string, unknown>; credit_limit?: string; segment?: string };
+  customer: {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    gstin?: string;
+    address?: Record<string, unknown>;
+    credit_limit?: string;
+    segment?: string;
+    entity_type?: string;
+    contacts?: ContactPerson[];
+  };
   last_invoices: { id: string; number: string; date: string; total: number; paid: number; status: string }[];
   follow_ups: { id: string; due_at: string; note: string | null; status: string }[];
 }
@@ -31,6 +49,9 @@ export default function Customer360Page() {
 
   const { customer, last_invoices, follow_ups } = data;
   const addr = customer.address && typeof customer.address === 'object' ? Object.entries(customer.address).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join(', ') : '';
+  const creditLimitFormatted = customer.credit_limit != null && customer.credit_limit !== ''
+    ? `₹${Number(customer.credit_limit).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '—';
 
   return (
     <div className="space-y-6">
@@ -43,14 +64,29 @@ export default function Customer360Page() {
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <h2 className="font-semibold text-slate-800 mb-3">Details</h2>
           <dl className="text-sm space-y-1">
+            <dt className="text-slate-500">Entity type</dt><dd className="capitalize">{customer.entity_type ?? 'Company'}</dd>
             <dt className="text-slate-500">Email</dt><dd>{customer.email ?? '—'}</dd>
             <dt className="text-slate-500">Phone</dt><dd>{customer.phone ?? '—'}</dd>
             <dt className="text-slate-500">GSTIN</dt><dd>{customer.gstin ?? '—'}</dd>
             <dt className="text-slate-500">Segment</dt><dd>{customer.segment ?? '—'}</dd>
-            <dt className="text-slate-500">Credit limit</dt><dd>{customer.credit_limit ?? '—'}</dd>
+            <dt className="text-slate-500">Credit limit</dt><dd>{creditLimitFormatted}</dd>
             {addr && (<><dt className="text-slate-500">Address</dt><dd>{addr}</dd></>)}
           </dl>
         </div>
+        {Array.isArray(customer.contacts) && customer.contacts.length > 0 && (
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <h2 className="font-semibold text-slate-800 mb-3">Contact persons</h2>
+            <ul className="text-sm space-y-2">
+              {customer.contacts.map((c, i) => (
+                <li key={i} className="border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                  <span className="font-medium text-slate-800">{c.name ?? '—'}</span>
+                  {c.department && <span className="ml-2 text-slate-500 capitalize">({c.department})</span>}
+                  {(c.email || c.phone) && <p className="text-slate-600 text-xs mt-0.5">{[c.email, c.phone].filter(Boolean).join(' · ')}</p>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">

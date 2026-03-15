@@ -13,6 +13,7 @@ interface Item {
   category?: string | null;
   hsn_sac?: string | null;
   image_urls?: string[];
+  current_stock?: number;
 }
 
 export default function ItemsPage() {
@@ -22,7 +23,7 @@ export default function ItemsPage() {
 
   useEffect(() => {
     (async () => {
-      const { data, error: err } = await apiGet<Item[] | { data: Item[] }>('inventory/items');
+      const { data, error: err } = await apiGet<Item[] | { data: Item[] }>('inventory/items?with_stock=1');
       if (err) setError(err);
       else if (Array.isArray(data)) setList(data);
       else if (data && typeof data === 'object' && Array.isArray((data as { data?: Item[] }).data)) setList((data as { data: Item[] }).data);
@@ -49,13 +50,14 @@ export default function ItemsPage() {
                 <th className="text-left p-3 font-medium text-slate-700">Barcode</th>
                 <th className="text-left p-3 font-medium text-slate-700">Unit</th>
                 <th className="text-left p-3 font-medium text-slate-700">Category</th>
+                <th className="text-right p-3 font-medium text-slate-700">Stock</th>
                 <th className="text-left p-3 font-medium text-slate-700">HSN/SAC</th>
                 <th className="text-left p-3 font-medium text-slate-700">Actions</th>
               </tr>
             </thead>
             <tbody>
               {list.length === 0 ? (
-                <tr><td colSpan={8} className="p-4 text-slate-500">No items yet.</td></tr>
+                <tr><td colSpan={9} className="p-4 text-slate-500">No items yet.</td></tr>
               ) : (
                 list.map((item) => (
                   <tr key={item.id} className="border-b border-slate-100 last:border-0">
@@ -71,6 +73,9 @@ export default function ItemsPage() {
                     <td className="p-3 font-mono text-xs">{item.barcode ?? '—'}</td>
                     <td className="p-3">{item.unit ?? '—'}</td>
                     <td className="p-3">{item.category ?? '—'}</td>
+                    <td className="p-3 text-right font-medium tabular-nums">
+                      {item.current_stock != null ? Number(item.current_stock).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : '0'}
+                    </td>
                     <td className="p-3">{item.hsn_sac ?? '—'}</td>
                     <td className="p-3"><Link href={`/inventory/items/${item.id}/edit`} className="text-brand-600 hover:underline text-sm">Edit</Link></td>
                   </tr>

@@ -12,8 +12,11 @@ interface Lead {
   email?: string | null;
   phone?: string | null;
   stage?: string | null;
+  source?: string | null;
+  deal_value?: string | number | null;
   score?: number | null;
   tags?: string[];
+  metadata?: { product_interest?: string };
 }
 
 export default function LeadsPage() {
@@ -33,11 +36,20 @@ export default function LeadsPage() {
     })();
   }, [tagFilter]);
 
+  const formatCurrency = (v: string | number | null | undefined) => {
+    if (v == null || v === '') return '—';
+    const n = Number(v);
+    return Number.isNaN(n) ? '—' : `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  };
+
   const columns: Column<Lead>[] = [
     { key: 'name', label: 'Name', cardLabel: 'Name' },
     { key: 'email', label: 'Email', cardLabel: 'Email', render: (r) => r.email ?? '—' },
     { key: 'phone', label: 'Phone', cardLabel: 'Phone', render: (r) => r.phone ?? '—' },
     { key: 'stage', label: 'Stage', cardLabel: 'Stage', render: (r) => r.stage ?? '—' },
+    { key: 'source', label: 'Source', cardLabel: 'Source', render: (r) => r.source ?? '—' },
+    { key: 'deal_value', label: 'Est. value', cardLabel: 'Est. value', render: (r) => formatCurrency(r.deal_value) },
+    { key: 'product_interest', label: 'Product', cardLabel: 'Product', render: (r) => r.metadata?.product_interest ?? '—' },
     { key: 'score', label: 'Score', cardLabel: 'Score', render: (r) => r.score ?? '—' },
     { key: 'tags', label: 'Tags', render: (r) => (Array.isArray(r.tags) && r.tags.length ? r.tags.join(', ') : '—') },
     { key: 'actions', label: 'Actions', render: (l) => <Link href={`/crm/leads/${l.id}/edit`} className="text-brand-600 hover:underline text-sm">Edit</Link> },
@@ -71,7 +83,10 @@ export default function LeadsPage() {
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm active:bg-slate-50">
                 <div className="font-semibold text-slate-900">{l.name}</div>
                 {(l.email || l.phone) && <p className="text-sm text-slate-600 mt-1">{l.email ?? l.phone ?? ''}</p>}
-                {(l.stage || l.tags?.length) && <p className="text-xs text-slate-500 mt-1">{l.stage ?? ''} {Array.isArray(l.tags) && l.tags.length ? `· ${l.tags.join(', ')}` : ''}</p>}
+                <p className="text-xs text-slate-500 mt-1">
+                  {[l.stage, l.source, l.deal_value != null ? formatCurrency(l.deal_value) : null, l.metadata?.product_interest].filter(Boolean).join(' · ')}
+                </p>
+                {Array.isArray(l.tags) && l.tags.length ? <p className="text-xs text-slate-400 mt-0.5">{l.tags.join(', ')}</p> : null}
                 <span className="text-brand-600 text-sm font-medium mt-2 inline-block">Edit →</span>
               </div>
             </Link>
