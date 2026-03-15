@@ -371,20 +371,42 @@ export class ReportsService {
   }
 
   async getDashboard(ctx: TenantContext) {
-    const [receivables, payables, allInvoices, lowStock] = await Promise.all([
-      this.salesService.getPendingInvoices(ctx),
-      this.purchaseService.getPayables(ctx),
-      this.salesService.findInvoices(ctx),
-      this.inventoryService.findLowStock(ctx).catch(() => []),
-    ]);
-    const { invoices: pendingInvoices, totalPending } = receivables;
-    const totalInvoiced = allInvoices.reduce((sum, inv) => sum + parseFloat(inv.total), 0);
-    const totalReceived = allInvoices.reduce((sum, inv) => sum + parseFloat(inv.paid_amount), 0);
+    let receivables: { invoices: SalesInvoice[]; totalPending: number };
+    let payables: { orders: { id: string; number: string; vendor: string; total: number; paid: number; due: number; due_date?: string | null }[]; totalPayable: number };
+    let allInvoices: SalesInvoice[];
+    let lowStock: unknown[];
+
+    try {
+      const [rec, pay, invs, low] = await Promise.all([
+        this.salesService.getPendingInvoices(ctx).catch(() => ({ invoices: [] as SalesInvoice[], totalPending: 0 })),
+        this.purchaseService.getPayables(ctx).catch(() => ({ orders: [], totalPayable: 0 })),
+        this.salesService.findInvoices(ctx).catch(() => [] as SalesInvoice[]),
+        this.inventoryService.findLowStock(ctx).catch(() => []),
+      ]);
+      receivables = rec;
+      payables = pay;
+      allInvoices = Array.isArray(invs) ? invs : [];
+      lowStock = Array.isArray(low) ? low : [];
+    } catch (e) {
+      // Ensure we have safe defaults if any call fails
+      receivables = { invoices: [], totalPending: 0 };
+      payables = { orders: [], totalPayable: 0 };
+      allInvoices = [];
+      lowStock = [];
+    }
+
+    const pendingInvoices = receivables?.invoices ?? [];
+    const totalPending = Number(receivables?.totalPending) || 0;
+    const orders = payables?.orders ?? [];
+    const totalPayable = Number(payables?.totalPayable) || 0;
+
+    const totalInvoiced = (allInvoices ?? []).reduce((sum, inv) => sum + (parseFloat(inv?.total) || 0), 0);
+    const totalReceived = (allInvoices ?? []).reduce((sum, inv) => sum + (parseFloat(inv?.paid_amount) || 0), 0);
 
     const today = new Date().toISOString().slice(0, 10);
-    const dueTodayReceivables = pendingInvoices.filter((inv) => inv.due_date && new Date(inv.due_date).toISOString().slice(0, 10) === today);
-    const dueTodayPayables = (payables.orders as { due_date?: string | Date | null }[]).filter(
-      (o) => o.due_date && new Date(o.due_date).toISOString().slice(0, 10) === today,
+    const dueTodayReceivables = pendingInvoices.filter((inv) => inv?.due_date && new Date(inv.due_date).toISOString().slice(0, 10) === today);
+    const dueTodayPayables = orders.filter(
+      (o) => o?.due_date != null && new Date(o.due_date).toISOString().slice(0, 10) === today,
     );
 
     return {
@@ -395,35 +417,35 @@ export class ReportsService {
           totalReceived: Math.round(totalReceived * 100) / 100,
           totalPending: Math.round(totalPending * 100) / 100,
           pendingCount: pendingInvoices.length,
-          invoiceCount: allInvoices.length,
+          invoiceCount: (allInvoices ?? []).length,
         },
         payables: {
-          totalPayable: Math.round(payables.totalPayable * 100) / 100,
-          payableCount: payables.orders.length,
+          totalPayable: Math.round(totalPayable * 100) / 100,
+          payableCount: orders.length,
         },
-        lowStockCount: Array.isArray(lowStock) ? lowStock.length : 0,
+        lowStockCount: lowStock.length,
         dueTodayReceivables: dueTodayReceivables.length,
-        dueTodayReceivablesAmount: dueTodayReceivables.reduce((s, inv) => s + parseFloat(inv.total) - parseFloat(inv.paid_amount), 0),
+        dueTodayReceivablesAmount: dueTodayReceivables.reduce((s, inv) => s + (parseFloat(inv?.total) || 0) - (parseFloat(inv?.paid_amount) || 0), 0),
         dueTodayPayables: dueTodayPayables.length,
-        dueTodayPayablesAmount: dueTodayPayables.reduce((s, o) => s + ((o as { due?: number }).due ?? 0), 0),
+        dueTodayPayablesAmount: dueTodayPayables.reduce((s, o) => s + (Number((o as { due?: number }).due) || 0), 0),
       },
       pendingReceivables: pendingInvoices.slice(0, 10).map((inv) => ({
         id: inv.id,
         number: inv.number,
         buyer: (inv.customer as { name?: string } | null)?.name ?? (inv.vendor as { name?: string } | null)?.name ?? 'N/A',
-        total: parseFloat(inv.total),
-        paid: parseFloat(inv.paid_amount),
-        due: parseFloat(inv.total) - parseFloat(inv.paid_amount),
+        total: parseFloat(inv.total) || 0,
+        paid: parseFloat(inv.paid_amount) || 0,
+        due: (parseFloat(inv.total) || 0) - (parseFloat(inv.paid_amount) || 0),
         due_date: inv.due_date,
       })),
-      pendingPayables: payables.orders.slice(0, 10).map((o) => ({
+      pendingPayables: orders.slice(0, 10).map((o) => ({
         id: o.id,
         number: o.number,
         vendor: o.vendor,
         total: o.total,
         paid: o.paid,
         due: o.due,
-        due_date: (o as { due_date?: string }).due_date,
+        due_date: o.due_date ?? null,
       })),
     };
   }
