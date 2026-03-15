@@ -297,7 +297,55 @@ sudo certbot renew --dry-run
 
 ---
 
-## 10. After SSL: Fix API URL (no mixed content)
+## 10. Redeploy / Update (backend or frontend)
+
+After you push new code, redeploy on the server as follows.
+
+### Backend only (API in Docker)
+
+```bash
+cd /var/www/smebuze
+git pull
+docker compose -f docker-compose.production.yml up -d --build api
+```
+
+This pulls the latest code, rebuilds the API image from `apps/api`, and restarts the API container. Postgres is left as-is. Check logs:
+
+```bash
+docker compose -f docker-compose.production.yml logs -f api
+```
+
+### Frontend only (PM2)
+
+```bash
+cd /var/www/smebuze
+git pull
+cd apps/website
+npm run build
+pm2 restart smebuzz-web
+```
+
+### Backend + frontend
+
+Run both: pull once, then rebuild/restart API (Docker) and rebuild/restart frontend (PM2) as above.
+
+### If you added DB migrations
+
+After backend redeploy, run migrations from the host (same DB_* env as first deploy):
+
+```bash
+cd /var/www/smebuze
+export DB_HOST=127.0.0.1
+export DB_PORT=5432
+export DB_USER=postgres
+export DB_PASSWORD=your-secure-postgres-password
+export DB_NAME=smebuze
+npm run db:migrate
+```
+
+---
+
+## 11. After SSL: Fix API URL (no mixed content)
 
 Your frontend is built with `NEXT_PUBLIC_API_URL=https://smebuzz.ameerait.com`. All API calls go to the same origin, so no mixed content. If you had built with `http://` before, rebuild and restart:
 
@@ -310,7 +358,7 @@ pm2 restart smebuzz-web
 
 ---
 
-## 11. Summary Checklist
+## 12. Summary Checklist
 
 | Step | What |
 |------|------|
@@ -329,7 +377,7 @@ pm2 restart smebuzz-web
 
 ---
 
-## 12. Optional: Run Frontend in Docker
+## 13. Optional: Run Frontend in Docker
 
 If you prefer the frontend in Docker instead of PM2:
 
@@ -343,7 +391,7 @@ Then Nginx already proxies `/` to `127.0.0.1:3001`. No need to change the Nginx 
 
 ---
 
-## 13. Ports Used (avoid clash with existing MERN)
+## 14. Ports Used (avoid clash with existing MERN)
 
 | Service   | Port (host) | Notes                    |
 |----------|-------------|--------------------------|
@@ -355,7 +403,7 @@ If your MERN app uses 3000 or 3001, change the API or website port in docker-com
 
 ---
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 - **502 Bad Gateway:** Ensure API and frontend are running: `docker compose -f docker-compose.production.yml ps` and `pm2 list`.
 - **DB connection refused (migrations/seed):** Ensure `DB_HOST=127.0.0.1` and Postgres container is up; check password matches `.env` and `docker-compose.production.yml`.

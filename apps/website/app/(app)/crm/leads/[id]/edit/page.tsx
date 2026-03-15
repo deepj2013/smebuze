@@ -29,7 +29,7 @@ function validateEstimatedValue(value: string): string | null {
   return null;
 }
 
-const PREDEFINED_SOURCE_VALUES = new Set(LEAD_SOURCE_OPTIONS.map((o) => o.value).filter(Boolean));
+const PREDEFINED_SOURCE_VALUES = new Set<string>(LEAD_SOURCE_OPTIONS.map((o) => o.value).filter(Boolean));
 
 export default function EditLeadPage() {
   const params = useParams();
