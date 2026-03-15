@@ -31,8 +31,15 @@ Run these from the **project root** (`/Volumes/Data/Product/SMEBUZE`).
 # Copy env
 cp .env.example .env
 
-# Create database (PostgreSQL must be running)
-createdb smebuzz
+# Create database (PostgreSQL must be running). Use name "smebuze" to match API default.
+createdb smebuze
+
+# If you already have a DB with another name (e.g. smebuzz):
+#   Option A – Use it as-is: in project root .env set DB_NAME=smebuzz (no rename needed).
+#   Option B – Copy it to smebuze (same data, name smebuze): run in terminal:
+#     createdb smebuze
+#     pg_dump smebuzz | psql -d smebuze
+#   Then you can drop smebuzz if you like: dropdb smebuzz
 
 # Run migrations (includes CRM campaigns: contact categories & message templates)
 npm run db:migrate
