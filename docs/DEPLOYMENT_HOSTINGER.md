@@ -148,7 +148,10 @@ From project root:
 
 ```bash
 cd /var/www/smebuze
+# Use "docker compose" (V2 plugin) or "docker-compose" (standalone) depending on your server
 docker compose -f docker-compose.production.yml up -d
+# If the above fails with "unknown shorthand flag: 'f'", use instead:
+# docker-compose -f docker-compose.production.yml up -d
 ```
 
 Wait for Postgres to be healthy, then check:
@@ -156,6 +159,7 @@ Wait for Postgres to be healthy, then check:
 ```bash
 docker compose -f docker-compose.production.yml ps
 docker compose -f docker-compose.production.yml logs api
+# Or with standalone: docker-compose -f docker-compose.production.yml ps
 ```
 
 ---
@@ -306,13 +310,16 @@ After you push new code, redeploy on the server as follows.
 ```bash
 cd /var/www/smebuze
 git pull
+# Use docker-compose (hyphen) if "docker compose" fails on your server
 docker compose -f docker-compose.production.yml up -d --build api
+# Or: docker-compose -f docker-compose.production.yml up -d --build api
 ```
 
 This pulls the latest code, rebuilds the API image from `apps/api`, and restarts the API container. Postgres is left as-is. Check logs:
 
 ```bash
 docker compose -f docker-compose.production.yml logs -f api
+# Or: docker-compose -f docker-compose.production.yml logs -f api
 ```
 
 ### Frontend only (PM2)
@@ -409,3 +416,11 @@ If your MERN app uses 3000 or 3001, change the API or website port in docker-com
 - **DB connection refused (migrations/seed):** Ensure `DB_HOST=127.0.0.1` and Postgres container is up; check password matches `.env` and `docker-compose.production.yml`.
 - **CORS / API not found:** Frontend must use `NEXT_PUBLIC_API_URL=https://smebuzz.ameerait.com` (same origin). Rebuild after changing.
 - **Certbot:** Ensure `server_name smebuzz.ameerait.com` and port 80 is open and Nginx is running before running certbot.
+- **`KeyError: 'ContainerConfig'` when running docker-compose up:** Caused by old docker-compose (e.g. 1.29.2) with newer Docker Engine. Fix: remove the existing API container so compose creates a new one instead of recreating. Run:
+  ```bash
+  docker ps -a --format '{{.Names}}' | grep -E 'smebuze.*api'
+  # Remove the container name shown (e.g. 103d36ff4623_smebuze_api_1):
+  docker rm -f <container_name_from_above>
+  docker-compose -f docker-compose.production.yml up -d api
+  ```
+  Or use the script in `scripts/docker-api-redeploy.sh` (see below). Long-term: install Docker Compose V2 (`docker-compose-plugin`) and use `docker compose` (with a space).
