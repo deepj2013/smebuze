@@ -9,13 +9,14 @@ import { Permission } from '../auth/entities/permission.entity';
 import { RolePermission } from '../auth/entities/role-permission.entity';
 import { UserRole } from '../auth/entities/user-role.entity';
 import { PendingInvite } from '../auth/entities/pending-invite.entity';
+import { Tenant } from '../tenant/entities/tenant.entity';
 import { OrganizationService } from './organization.service';
 import { OrganizationController } from './organization.controller';
 import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Company, Branch, Department, User, Role, Permission, RolePermission, UserRole, PendingInvite]),
+    TypeOrmModule.forFeature([Company, Branch, Department, User, Role, Permission, RolePermission, UserRole, PendingInvite, Tenant]),
     AuditModule,
   ],
   controllers: [OrganizationController],

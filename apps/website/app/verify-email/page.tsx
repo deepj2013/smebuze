@@ -54,6 +54,7 @@ function VerifyEmailForm() {
         window.localStorage.setItem('smebuzz_user', JSON.stringify(data.user ?? {}));
         const businessType = data.tenant?.settings?.business_type;
         if (data.user?.isSuperAdmin && !data.user?.tenantId) router.push('/admin/tenants');
+        else if (data.tenant?.subscription_expired) router.push('/billing');
         else if (isPosBusinessType(businessType)) router.push('/pos');
         else router.push('/dashboard');
         return;

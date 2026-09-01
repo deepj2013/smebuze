@@ -2,6 +2,8 @@ import { Body, Controller, Get, Param, Patch, Post, UploadedFile, UseGuards, Use
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as fs from 'fs';
 import * as path from 'path';
+import { SaveBrandingDto } from './dto/save-branding.dto';
+import { SaveRazorpayDto } from './dto/save-razorpay.dto';
 import { OrganizationService } from './organization.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentTenant } from '../common/tenant-context';
@@ -182,6 +184,54 @@ export class OrganizationController {
     @CurrentTenant() ctx: TenantContext,
   ) {
     return this.orgService.createInvite(ctx, body.email, body.role_id);
+  }
+
+  @Get('branding')
+  @RequirePermissions('org.company.view')
+  async getBranding(@CurrentTenant() ctx: TenantContext) {
+    return this.orgService.getBranding(ctx);
+  }
+
+  @Patch('branding')
+  @RequirePermissions('org.company.update')
+  async saveBranding(
+    @Body() body: SaveBrandingDto,
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.orgService.saveBranding(ctx, body);
+  }
+
+  @Post('branding/logo')
+  @RequirePermissions('org.company.update')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
+  async uploadBrandingLogo(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('No file uploaded');
+    if (!ctx.tenantId) throw new BadRequestException('Workspace required');
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.png';
+    if (!['.png', '.jpg', '.jpeg', '.webp', '.svg'].includes(ext)) {
+      throw new BadRequestException('Logo must be PNG, JPG, WEBP or SVG');
+    }
+    const dir = path.join(process.cwd(), 'uploads', 'logos');
+    fs.mkdirSync(dir, { recursive: true });
+    const filename = `tenant-${ctx.tenantId}${ext}`;
+    fs.writeFileSync(path.join(dir, filename), file.buffer);
+    const logoUrl = `/uploads/logos/${filename}`;
+    return this.orgService.saveBranding(ctx, { logo_url: logoUrl });
+  }
+
+  @Get('payments')
+  @RequirePermissions('org.company.view')
+  async getPayments(@CurrentTenant() ctx: TenantContext) {
+    return this.orgService.getRazorpay(ctx);
+  }
+
+  @Patch('payments')
+  @RequirePermissions('org.company.update')
+  async savePayments(@Body() body: SaveRazorpayDto, @CurrentTenant() ctx: TenantContext) {
+    return this.orgService.saveRazorpay(ctx, body);
   }
 
   @Get('invites')

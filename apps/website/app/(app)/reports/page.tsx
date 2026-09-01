@@ -10,6 +10,10 @@ type ReportId =
   | 'purchase-summary'
   | 'gst-summary'
   | 'ledger-summary'
+  | 'general-ledger'
+  | 'trial-balance'
+  | 'vendor-ledger'
+  | 'tds-summary'
   | 'health-score'
   | 'ageing'
   | 'pl'
@@ -31,6 +35,10 @@ const REPORTS: { id: ReportId; label: string; description: string; hasExport: bo
   { id: 'delivery-vs-invoiced', label: 'Delivery vs invoiced', description: 'Challans and whether they are invoiced — CSV export', hasExport: true },
   { id: 'invoice-vs-payment', label: 'Invoice vs payment', description: 'Customer-wise invoiced, received, pending — CSV export', hasExport: true },
   { id: 'ledger-summary', label: 'Ledger summary', description: 'Journal entries by period', hasExport: false },
+  { id: 'general-ledger', label: 'General ledger', description: 'Journal entries grouped for GL view', hasExport: false },
+  { id: 'trial-balance', label: 'Trial balance', description: 'Debits vs credits as of a date', hasExport: false },
+  { id: 'vendor-ledger', label: 'Vendor ledger', description: 'Purchase orders and payments by vendor', hasExport: false },
+  { id: 'tds-summary', label: 'TDS summary', description: 'TDS deducted on vendor payments', hasExport: false },
   { id: 'health-score', label: 'Business health score', description: 'AI-style score 1–10 and message', hasExport: false },
   { id: 'ageing', label: 'Ageing report', description: 'Receivables/payables by bucket (0–30, 31–60, 61–90, 90+ days) — CSV export', hasExport: true },
   { id: 'pl', label: 'P&L', description: 'Profit & Loss by period', hasExport: true },
@@ -192,6 +200,7 @@ export default function ReportsPage() {
   const [to, setTo] = useState('');
   const [companyId, setCompanyId] = useState('');
   const [customerId, setCustomerId] = useState('');
+  const [vendorId, setVendorId] = useState('');
   const [data, setData] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -208,18 +217,19 @@ export default function ReportsPage() {
     try {
       const params = new URLSearchParams();
       if (selected === 'ageing') params.set('type', ageingType);
-      else {
+      else if (selected === 'health-score') {
+        /* no filters */
+      } else if (selected === 'vendor-ledger') {
+        if (vendorId) params.set('vendor_id', vendorId);
+      } else if (selected === 'trial-balance' || selected === 'balance-sheet') {
+        params.set('as_of', to || new Date().toISOString().slice(0, 10));
+        if (companyId) params.set('company_id', companyId);
+      } else {
         if (from) params.set('from', from);
         if (to) params.set('to', to);
         if (companyId) params.set('company_id', companyId);
         if (customerId && (selected === 'requirement-vs-delivery' || selected === 'invoice-vs-payment' || selected === 'delivery-vs-invoiced'))
           params.set('customer_id', customerId);
-      }
-      if (selected === 'pl' || selected === 'balance-sheet') {
-        if (from) params.set('from', from);
-        if (to) params.set('to', to);
-        if (selected === 'balance-sheet') params.set('as_of', to || new Date().toISOString().slice(0, 10));
-        if (companyId) params.set('company_id', companyId);
       }
       const qs = params.toString();
       const path = selected === 'balance-sheet' ? `reports/balance-sheet${qs ? `?${qs}` : ''}` : `reports/${selected}${qs ? `?${qs}` : ''}`;
@@ -259,6 +269,16 @@ export default function ReportsPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-slate-900 mb-4">Reports</h1>
+      <div className="grid gap-4 sm:grid-cols-2 mb-6">
+        <Link href="/reports/gstr-1" className="rounded-xl border-2 border-brand-200 bg-brand-50 p-6 hover:border-brand-400">
+          <h2 className="font-semibold text-slate-900 mb-1">GSTR-1</h2>
+          <p className="text-sm text-slate-600">Filing-ready outward supplies from all sales — B2B, B2C, HSN and credit notes. Export CSV.</p>
+        </Link>
+        <Link href="/reports/gstr-2a" className="rounded-xl border-2 border-slate-200 bg-white p-6 hover:border-brand-300">
+          <h2 className="font-semibold text-slate-900 mb-1">GSTR-2A reconciliation</h2>
+          <p className="text-sm text-slate-600">Match GST vendor bills in your books with the portal 2A download. See matched, mismatch and missing invoices.</p>
+        </Link>
+      </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-8">
         {REPORTS.map((r) => (
           <button
@@ -290,7 +310,13 @@ export default function ReportsPage() {
                 </select>
               </div>
             )}
-            {selected !== 'ageing' && (
+            {selected === 'vendor-ledger' && (
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Vendor ID (optional)</label>
+                <input type="text" value={vendorId} onChange={(e) => setVendorId(e.target.value)} placeholder="Filter by vendor UUID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm w-56" />
+              </div>
+            )}
+            {selected !== 'ageing' && selected !== 'health-score' && selected !== 'vendor-ledger' && (
               <>
                 {selected !== 'invoice-vs-payment' && (
                   <>
@@ -310,7 +336,7 @@ export default function ReportsPage() {
                     <input type="text" value={customerId} onChange={(e) => setCustomerId(e.target.value)} placeholder="Filter by customer UUID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm w-56" />
                   </div>
                 )}
-                {!CUSTOM_REPORT_IDS.includes(selected!) && (
+                {!CUSTOM_REPORT_IDS.includes(selected!) && selected !== 'tds-summary' && (
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Company ID (optional)</label>
                     <input type="text" value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="UUID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm w-64" />

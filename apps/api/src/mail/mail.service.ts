@@ -95,8 +95,16 @@ export class MailService {
     return { sent: true };
   }
 
-  async sendInvite(to: string, inviteLink: string): Promise<{ sent: boolean; devLink?: string }> {
-    const sent = await this.sendHtml(to, 'You are invited to join SMEBUZE', inviteHtml({ inviteLink }));
+  async sendInvite(
+    to: string,
+    inviteLink: string,
+    extras?: { roleName?: string; workspaceName?: string },
+  ): Promise<{ sent: boolean; devLink?: string }> {
+    const sent = await this.sendHtml(
+      to,
+      extras?.workspaceName ? `You are invited to join ${extras.workspaceName}` : 'You are invited to join SMEBUZE',
+      inviteHtml({ inviteLink, roleName: extras?.roleName, workspaceName: extras?.workspaceName }),
+    );
     if (!sent.sent) return { sent: false, devLink: inviteLink };
     return { sent: true };
   }

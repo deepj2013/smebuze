@@ -19,6 +19,15 @@ import { Company } from '../tenant/entities/company.entity';
 import { Tenant } from '../tenant/entities/tenant.entity';
 import { InventoryService } from '../inventory/inventory.service';
 import { isPosBusinessType, isStockTrackedPos } from '../common/tenant-client-types';
+import { parseTenantBranding, TenantBranding } from '../common/tenant-branding';
+import {
+  buildInvoicePaySlip,
+  frontendPayUrl,
+  InvoicePaySlip,
+  makeInvoicePayToken,
+  parseTenantRazorpay,
+  razorpayReady,
+} from '../common/tenant-razorpay';
 import { TenantContext } from '../common/tenant-context';
 import { CreateInvoiceDto, CreateInvoiceLineDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto, UpdateInvoiceLineDto } from './dto/update-invoice.dto';
@@ -439,32 +448,52 @@ export class SalesService {
 
   async createPaymentLink(invoiceId: string, ctx: TenantContext): Promise<{ enabled: boolean; url?: string }> {
     const invoice = await this.findOneInvoice(invoiceId, ctx);
-    const enabled = process.env.PAYMENT_GATEWAY_ENABLED === 'true';
-    if (!enabled) return { enabled: false };
-    const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3001';
-    const url = `${baseUrl}/payments?invoice_id=${invoiceId}&amount=${invoice.total}`;
-    return { enabled: true, url };
+    const tenant = ctx.tenantId ? await this.tenantRepo.findOne({ where: { id: ctx.tenantId } }) : null;
+    const cfg = parseTenantRazorpay(tenant?.settings as Record<string, unknown>);
+    const total = parseFloat(String(invoice.total ?? 0));
+    const paid = parseFloat(String(invoice.paid_amount ?? 0));
+    if (!razorpayReady(cfg) || total - paid < 1) return { enabled: false };
+    return { enabled: true, url: frontendPayUrl(makeInvoicePayToken(invoice.id, invoice.tenant_id)) };
   }
 
-  async recordPaymentByInvoiceId(invoiceId: string, amount: number, reference?: string): Promise<SalesInvoice | null> {
-    const invoice = await this.invoiceRepo.findOne({ where: { id: invoiceId } });
+  async recordPaymentByInvoiceId(
+    invoiceId: string,
+    amount: number,
+    reference?: string,
+    tenantId?: string,
+  ): Promise<SalesInvoice | null> {
+    const invoice = await this.invoiceRepo.findOne({
+      where: tenantId ? { id: invoiceId, tenant_id: tenantId } : { id: invoiceId },
+    });
     if (!invoice) return null;
+    if (reference) {
+      const duplicate = await this.paymentRepo.findOne({ where: { invoice_id: invoiceId, reference } });
+      if (duplicate) {
+        return this.invoiceRepo.findOne({
+          where: { id: invoiceId },
+          relations: ['customer', 'vendor', 'company', 'lines'],
+        }) as Promise<SalesInvoice>;
+      }
+    }
     const total = parseFloat(invoice.total);
     const paid = parseFloat(invoice.paid_amount);
-    const newPaid = paid + amount;
-    if (newPaid > total) return null;
+    const remaining = Math.round((total - paid) * 100) / 100;
+    if (remaining <= 0) return invoice;
+    const applied = Math.min(Math.round(Number(amount) * 100) / 100, remaining);
+    if (applied < 0.01) return invoice;
+    const newPaid = Math.round((paid + applied) * 100) / 100;
     await this.paymentRepo.save(
       this.paymentRepo.create({
         invoice_id: invoiceId,
-        amount: String(amount),
+        amount: applied.toFixed(2),
         payment_date: new Date(),
-        mode: 'gateway',
+        mode: 'razorpay',
         reference: reference ?? null,
       }),
     );
     await this.invoiceRepo.update(invoiceId, {
       paid_amount: newPaid.toFixed(2),
-      status: newPaid >= total ? 'paid' : 'partial',
+      status: newPaid >= total - 0.05 ? 'paid' : 'partial',
     });
     return this.invoiceRepo.findOne({ where: { id: invoiceId }, relations: ['customer', 'vendor', 'company', 'lines'] }) as Promise<SalesInvoice>;
   }
@@ -1068,23 +1097,27 @@ export class SalesService {
   async getQuotationPrintHtml(id: string, ctx: TenantContext): Promise<string> {
     const q = await this.findOneQuotation(id, ctx);
     const tenant = ctx.tenantId ? await this.tenantRepo.findOne({ where: { id: ctx.tenantId } }) : null;
-    if (tenant?.slug === 'ice-crest' || tenant?.settings?.business_type === 'ice_crest' || tenant?.features?.includes('ice_crest')) {
-      return this.buildIceCrestQuotationHtml(q, tenant?.settings?.terms as string | undefined);
-    }
-    return this.buildIceCrestQuotationHtml(q, undefined);
+    const branding = parseTenantBranding(tenant?.settings as Record<string, unknown>);
+    const terms = tenant?.settings?.terms as string | undefined;
+    return this.buildIceCrestQuotationHtml(q, terms, branding);
   }
 
   async getInvoicePrintHtml(id: string, ctx: TenantContext): Promise<string> {
     const inv = await this.findOneInvoice(id, ctx);
     const tenant = ctx.tenantId ? await this.tenantRepo.findOne({ where: { id: ctx.tenantId } }) : null;
+    const branding = parseTenantBranding(tenant?.settings as Record<string, unknown>);
+    const terms = tenant?.settings?.terms as string | undefined;
+    const pay = await buildInvoicePaySlip(parseTenantRazorpay(tenant?.settings as Record<string, unknown>), inv);
     if (tenant?.slug === 'star-ice') {
-      return this.buildStarIceInvoiceHtml(inv);
+      return this.buildStarIceInvoiceHtml(inv, branding, pay);
     }
-    if (tenant?.slug === 'ice-crest' || tenant?.settings?.business_type === 'ice_crest' || tenant?.features?.includes('ice_crest')) {
-      return this.buildIceCrestInvoiceHtml(inv, tenant?.settings?.terms as string | undefined);
+    const pos = isPosBusinessType(tenant?.settings?.business_type);
+    if (!pos) {
+      return this.buildIceCrestInvoiceHtml(inv, terms, branding, pay);
     }
 
-    const company = inv.company as { name: string; legal_name?: string; gstin?: string; address?: Record<string, unknown> };
+    const company = inv.company as { name: string; legal_name?: string; gstin?: string; logo_url?: string | null; address?: Record<string, unknown> };
+    const posLogo = this.resolveLogoUrl(company.logo_url || branding.logo_url);
     const billTo = (inv.vendor as { name: string; gstin?: string; address?: Record<string, unknown> } | null)
       ?? (inv.customer as { name: string; gstin?: string; address?: Record<string, unknown> } | null)
       ?? { name: 'N/A', gstin: '', address: undefined };
@@ -1120,6 +1153,7 @@ th{background:#eee;font-weight:bold}
 .footer{text-align:center;margin-top:8px;font-size:9px}
 </style></head><body>
 <h1>${inv.gst_applicable ? 'Tax Invoice' : 'Invoice / Receipt'}</h1>
+${posLogo ? `<div class="section" style="text-align:center"><img src="${escapeHtml(posLogo)}" alt="Logo" style="max-width:48px;max-height:48px;object-fit:contain"/></div>` : ''}
 <div class="section"><strong>${escapeHtml(company.name)}</strong><br>${company.legal_name ? escapeHtml(company.legal_name) + '<br>' : ''}GSTIN: ${escapeHtml(company.gstin ?? 'N/A')}<br>${escapeHtml(addr(company.address))}</div>
 <div class="section"><strong>Bill To:</strong><br>${escapeHtml(billTo.name)}<br>${billTo.gstin ? 'GSTIN: ' + escapeHtml(billTo.gstin) + '<br>' : ''}${escapeHtml(addr(billTo.address))}</div>
 <div class="section">Inv No: <strong>${escapeHtml(inv.number)}</strong> | Date: ${inv.invoice_date}${inv.due_date ? ' | Due: ' + inv.due_date : ''}</div>
@@ -1137,16 +1171,18 @@ ${discount ? `<tr><td>Discount</td><td class="right">-₹${discount.toFixed(2)}<
 <tr><td>Paid</td><td class="right">₹${paid.toFixed(2)}</td></tr>
 <tr><td>Amount Due</td><td class="right">₹${due.toFixed(2)}</td></tr></table>
 </div>
+${this.invoicePayBlockHtml(pay, true)}
 <p class="footer">Thank you | SMEBUZE</p>
 </body></html>`;
   }
 
   /** STAR ICE tenant: invoice layout matching their printed format (header, Bill To, goods table, itemized rows, tax, bank, certification). */
-  private buildStarIceInvoiceHtml(inv: SalesInvoice): string {
+  private buildStarIceInvoiceHtml(inv: SalesInvoice, branding?: TenantBranding, pay?: InvoicePaySlip): string {
     const company = inv.company as {
       name: string;
       legal_name?: string;
       gstin?: string;
+      logo_url?: string | null;
       address?: Record<string, unknown> & { email?: string; phone?: string };
       bank_details?: Record<string, unknown> & { bank_name?: string; branch?: string; account_no?: string; ifsc?: string };
     };
@@ -1172,6 +1208,7 @@ ${discount ? `<tr><td>Discount</td><td class="right">-₹${discount.toFixed(2)}<
     const bankBranch = bank?.branch ? String(bank.branch) : '';
     const bankAccount = bank?.account_no ? String(bank.account_no) : '';
     const bankIfsc = bank?.ifsc ? String(bank.ifsc) : '';
+    const starLogo = this.resolveLogoUrl(company.logo_url || branding?.logo_url);
 
     const goodsRows = lines
       .map(
@@ -1219,11 +1256,16 @@ th{background:#f0f0f0;font-weight:bold}
 .star-ice-cert p{margin:4px 0}
 </style></head><body>
 <div class="star-ice-header">
-  <h2>${escapeHtml(company.name)}</h2>
-  <p>${escapeHtml(companyAddr)}</p>
-  ${companyEmail ? `<p><strong>Email ID:</strong> ${escapeHtml(companyEmail)}</p>` : ''}
-  ${companyPhone ? `<p><strong>Mobile Numbers:</strong> ${escapeHtml(companyPhone)}</p>` : ''}
-  <p><strong>GSTIN:</strong> ${escapeHtml(company.gstin ?? 'N/A')}</p>
+  <div style="display:flex;gap:12px;align-items:flex-start">
+    ${starLogo ? `<img src="${escapeHtml(starLogo)}" alt="Logo" style="width:56px;height:56px;object-fit:contain"/>` : ''}
+    <div>
+      <h2>${escapeHtml(branding?.display_name || company.name)}</h2>
+      <p>${escapeHtml(companyAddr)}</p>
+      ${companyEmail ? `<p><strong>Email ID:</strong> ${escapeHtml(companyEmail)}</p>` : ''}
+      ${companyPhone ? `<p><strong>Mobile Numbers:</strong> ${escapeHtml(companyPhone)}</p>` : ''}
+      <p><strong>GSTIN:</strong> ${escapeHtml(company.gstin ?? 'N/A')}</p>
+    </div>
+  </div>
 </div>
 
 <p><strong>Invoice No.:</strong> ${escapeHtml(inv.number)} &nbsp; <strong>Invoice Date:</strong> ${invDate}</p>
@@ -1263,6 +1305,7 @@ ${bankName || bankAccount ? `<div class="star-ice-bank">
   ${bankAccount ? `<p><strong>Bank Account No.:</strong> ${escapeHtml(bankAccount)}</p>` : ''}
   ${bankIfsc ? `<p><strong>Bank Branch IFSC:</strong> ${escapeHtml(bankIfsc)}</p>` : ''}
 </div>` : ''}
+${this.invoicePayBlockHtml(pay)}
 
 <div class="star-ice-cert">
   <p>Certified that the particulars given above are true and correct</p>
@@ -1347,8 +1390,8 @@ ${bankName || bankAccount ? `<div class="star-ice-bank">
     return { created, errors };
   }
 
-  /** Ice Crest branded A4 letterhead for tax invoices and receipts. */
-  private buildIceCrestInvoiceHtml(inv: SalesInvoice, terms?: string): string {
+  /** Branded A4 letterhead for tax invoices and receipts. */
+  private buildIceCrestInvoiceHtml(inv: SalesInvoice, terms?: string, branding?: TenantBranding, pay?: InvoicePaySlip): string {
     const company = inv.company as {
       name: string; legal_name?: string; gstin?: string; logo_url?: string | null;
       address?: Record<string, unknown> & { email?: string; phone?: string };
@@ -1377,9 +1420,9 @@ ${bankName || bankAccount ? `<div class="star-ice-bank">
     const docTitle = inv.gst_applicable ? 'Tax Invoice' : 'Bill / Receipt';
     const defaultTerms = 'Payment due within 15 days. Quality must be checked at delivery. Subject to Mumbai jurisdiction.';
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${docTitle} ${escapeHtml(inv.number)}</title><style>
-${this.iceCrestPrintStyles()}
+${this.iceCrestPrintStyles(branding)}
 </style></head><body>
-${this.iceCrestLetterhead(company, addr, docTitle)}
+${this.iceCrestLetterhead(company, addr, docTitle, branding)}
 <p><strong>${docTitle} No.:</strong> ${escapeHtml(inv.number)} &nbsp; <strong>Date:</strong> ${invDate}${inv.due_date ? ` &nbsp; <strong>Due:</strong> ${new Date(inv.due_date as Date | string).toISOString().slice(0, 10)}` : ''}</p>
 <div class="ic-section"><h3>Bill To</h3><p><strong>${escapeHtml(billTo.name)}</strong></p>${billTo.gstin ? `<p>GSTIN: ${escapeHtml(billTo.gstin)}</p>` : ''}<p>${escapeHtml(addr(billTo.address))}</p></div>
 <table><thead><tr><th>#</th><th>Description / SKU</th><th>HSN</th><th>Qty</th><th>Rate</th><th>Taxable</th><th>CGST</th><th>Amt</th><th>SGST</th><th>Amt</th></tr></thead><tbody>${lineRows}</tbody></table>
@@ -1394,12 +1437,13 @@ ${discount ? `<tr><td>Discount</td><td class="right">-₹${discount.toFixed(2)}<
 <tr><td>Balance Due</td><td class="right">₹${(total - paid).toFixed(2)}</td></tr>
 </table></div>
 ${this.iceCrestBankBlock(bank)}
+${this.invoicePayBlockHtml(pay)}
 <div class="ic-terms"><p><strong>Terms &amp; Conditions</strong></p><p>${escapeHtml(terms || defaultTerms)}</p></div>
 <div class="ic-sign"><p>Certified that the particulars above are true and correct.</p><p>For <strong>${escapeHtml(company.name)}</strong></p><p>Authorised Signatory</p></div>
 </body></html>`;
   }
 
-  private buildIceCrestQuotationHtml(q: Quotation, terms?: string): string {
+  private buildIceCrestQuotationHtml(q: Quotation, terms?: string, branding?: TenantBranding): string {
     const company = q.company as {
       name: string; legal_name?: string; gstin?: string; logo_url?: string | null;
       address?: Record<string, unknown> & { email?: string; phone?: string };
@@ -1417,28 +1461,31 @@ ${this.iceCrestBankBlock(bank)}
       `<tr><td>${i + 1}</td><td>${escapeHtml(String(l.description ?? 'Ice product'))}</td><td class="right">${l.qty}</td><td>${l.unit ?? 'pcs'}</td><td class="right">${l.rate}</td><td class="right">${l.amount}</td><td class="right">${l.tax_rate ?? '0'}%</td></tr>`,
     ).join('');
     const defaultTerms = 'Quotation valid for 7 days. Prices exclude delivery unless stated. GST as applicable.';
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Quotation ${escapeHtml(q.number)}</title><style>${this.iceCrestPrintStyles()}</style></head><body>
-${this.iceCrestLetterhead(company, addr, 'Quotation')}
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Quotation ${escapeHtml(q.number)}</title><style>${this.iceCrestPrintStyles(branding)}</style></head><body>
+${this.iceCrestLetterhead(company, addr, 'Quotation', branding)}
 <p><strong>Quotation No.:</strong> ${escapeHtml(q.number)} &nbsp; <strong>Date:</strong> ${issueDate} &nbsp; <strong>Valid until:</strong> ${validUntil}</p>
 <div class="ic-section"><h3>Prepared For</h3><p><strong>${escapeHtml(party.name)}</strong></p></div>
 <table><thead><tr><th>#</th><th>Product / SKU</th><th>Qty</th><th>Unit</th><th>Rate (₹)</th><th>Amount (₹)</th><th>GST</th></tr></thead><tbody>${lineRows}</tbody>
 <tfoot><tr><td colspan="5" class="right"><strong>Total</strong></td><td class="right"><strong>₹${Number(q.total).toFixed(2)}</strong></td><td></td></tr></tfoot></table>
 <div class="ic-terms"><p><strong>Terms &amp; Conditions</strong></p><p>${escapeHtml(terms || defaultTerms)}</p></div>
-<div class="ic-sign"><p>For <strong>${escapeHtml(company?.name ?? 'Ice Crest')}</strong></p><p>Authorised Signatory</p></div>
+<div class="ic-sign"><p>For <strong>${escapeHtml(company?.name ?? branding?.display_name ?? 'Company')}</strong></p><p>Authorised Signatory</p></div>
 </body></html>`;
   }
 
-  private iceCrestPrintStyles(): string {
+  private iceCrestPrintStyles(branding?: TenantBranding): string {
+    const primary = branding?.primary_color || '#0891b2';
+    const accent = branding?.accent_color || '#0e7490';
     return `*{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px;line-height:1.4;max-width:210mm;margin:0 auto;padding:14px;color:#0f172a}
-.ic-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0891b2;padding-bottom:10px;margin-bottom:12px}
-.ic-logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,#06b6d4,#164e63);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:22px}
-.ic-brand h1{margin:0;font-size:20px;color:#0e7490;text-transform:uppercase;letter-spacing:.04em}
+.ic-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${primary};padding-bottom:10px;margin-bottom:12px}
+.ic-logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,${primary},${accent});color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:22px}
+.ic-brand h1{margin:0;font-size:20px;color:${accent};text-transform:uppercase;letter-spacing:.04em}
 .ic-brand p{margin:2px 0;font-size:11px;color:#475569}
-.ic-doc-title{font-size:14px;font-weight:bold;color:#0891b2;text-transform:uppercase;text-align:right}
-.ic-section{margin:10px 0}.ic-section h3{margin:0 0 4px;font-size:11px;color:#0891b2;text-transform:uppercase}
-table{border-collapse:collapse;width:100%;font-size:10px;margin:8px 0}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:left}th{background:#ecfeff;color:#0e7490}
+.ic-doc-title{font-size:14px;font-weight:bold;color:${primary};text-transform:uppercase;text-align:right}
+.ic-section{margin:10px 0}.ic-section h3{margin:0 0 4px;font-size:11px;color:${primary};text-transform:uppercase}
+table{border-collapse:collapse;width:100%;font-size:10px;margin:8px 0}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:left}th{background:#f1f5f9;color:${accent}}
 .right{text-align:right}.ic-totals table{width:280px;margin-left:auto;border:none}.ic-totals td{border:none;padding:3px 0}
-.ic-bank{margin-top:12px;padding:8px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:6px;font-size:11px}
+.ic-bank{margin-top:12px;padding:8px;background:#f8fafc;border:1px solid ${primary};border-radius:6px;font-size:11px}
+.ic-pay{margin-top:12px;padding:10px;border:1px dashed ${primary};border-radius:8px;display:flex;gap:14px;align-items:center}
 .ic-terms{margin-top:14px;font-size:10px;color:#475569}.ic-sign{margin-top:20px;font-size:11px}`;
   }
 
@@ -1453,18 +1500,21 @@ table{border-collapse:collapse;width:100%;font-size:10px;margin:8px 0}th,td{bord
     company: { name: string; legal_name?: string; gstin?: string; logo_url?: string | null; address?: Record<string, unknown> & { email?: string; phone?: string } },
     addr: (v: Record<string, unknown> | undefined) => string,
     docTitle: string,
+    branding?: TenantBranding,
   ): string {
     const email = company.address?.email ? String(company.address.email) : '';
     const phone = company.address?.phone ? String(company.address.phone) : '';
-    const logo = this.resolveLogoUrl(company.logo_url);
+    const logo = this.resolveLogoUrl(company.logo_url || branding?.logo_url);
+    const heading = branding?.display_name || company.name;
+    const initials = heading.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || 'SB';
     const logoBlock = logo
       ? `<img src="${escapeHtml(logo)}" alt="Logo" style="width:56px;height:56px;object-fit:contain;border-radius:12px"/>`
-      : `<div class="ic-logo">IC</div>`;
-    return `<div class="ic-header"><div style="display:flex;gap:12px;align-items:center">${logoBlock}<div class="ic-brand"><h1>${escapeHtml(company.name)}</h1>
-${company.legal_name && company.legal_name !== company.name ? `<p>${escapeHtml(company.legal_name)}</p>` : ''}
+      : `<div class="ic-logo">${escapeHtml(initials)}</div>`;
+    return `<div class="ic-header"><div style="display:flex;gap:12px;align-items:center">${logoBlock}<div class="ic-brand"><h1>${escapeHtml(heading)}</h1>
+${company.legal_name && company.legal_name !== heading ? `<p>${escapeHtml(company.legal_name)}</p>` : ''}
 <p>${escapeHtml(addr(company.address))}</p>
 ${email ? `<p>Email: ${escapeHtml(email)}</p>` : ''}${phone ? `<p>Phone: ${escapeHtml(phone)}</p>` : ''}
-<p><strong>GSTIN:</strong> ${escapeHtml(company.gstin ?? '—')}</p></div></div><div class="ic-doc-title">${escapeHtml(docTitle)}</div>`;
+<p><strong>GSTIN:</strong> ${escapeHtml(company.gstin ?? '—')}</p></div></div><div class="ic-doc-title">${escapeHtml(docTitle)}</div></div>`;
   }
 
   private iceCrestBankBlock(bank: Record<string, unknown>): string {
@@ -1477,6 +1527,19 @@ ${email ? `<p>Email: ${escapeHtml(email)}</p>` : ''}${phone ? `<p>Phone: ${escap
 ${name ? `<p>Bank: ${escapeHtml(name)}${branch ? `, ${escapeHtml(branch)}` : ''}</p>` : ''}
 ${account ? `<p>A/C No.: ${escapeHtml(account)}</p>` : ''}
 ${ifsc ? `<p>IFSC: ${escapeHtml(ifsc)}</p>` : ''}</div>`;
+  }
+
+  private invoicePayBlockHtml(pay?: InvoicePaySlip, compact = false): string {
+    if (!pay?.enabled || !pay.url) return '';
+    const due = Number(pay.outstanding ?? 0).toFixed(2);
+    const note = pay.accept_partial ? 'Partial or full payment accepted.' : 'Pay the full balance due.';
+    const qr = pay.qr_image
+      ? `<img src="${escapeHtml(pay.qr_image)}" alt="Scan to pay" style="width:${compact ? 88 : 112}px;height:${compact ? 88 : 112}px;object-fit:contain;background:#fff"/>`
+      : '';
+    if (compact) {
+      return `<div class="section" style="text-align:center;margin-top:8px;border-top:1px dashed #000;padding-top:6px">${qr}<p><strong>Scan to pay ₹${due}</strong></p><p>${escapeHtml(note)}</p><p style="font-size:8px;word-break:break-all">${escapeHtml(pay.url)}</p></div>`;
+    }
+    return `<div class="ic-pay">${qr}<div><p><strong>Scan to pay</strong></p><p>Balance due ₹${due}</p><p>${escapeHtml(note)}</p><p style="font-size:9px;word-break:break-all">${escapeHtml(pay.url)}</p></div></div>`;
   }
 }
 

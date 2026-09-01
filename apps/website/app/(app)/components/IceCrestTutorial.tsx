@@ -61,8 +61,8 @@ export const ICE_CREST_TUTORIAL_STEPS = [
     title: 'One-time setup',
     icon: Settings,
     href: '/organization/companies',
-    body: 'Add your registered GSTIN, bank details and company logo under Organization → Company. Connect a USB, Wi-Fi or Bluetooth printer under Organization → Printers, and WhatsApp when Meta credentials are ready.',
-    tips: ['Logo appears on printed invoices and quotations.', 'Printers: Organization → Printers. WhatsApp setup: Ice Crest menu → WhatsApp setup.'],
+    body: 'Add your registered GSTIN, bank details and company logo under Organization → Company. Connect a USB, Wi-Fi or Bluetooth printer under Organization → Printers. Admins match WhatsApp templates under WhatsApp — other roles only send messages.',
+    tips: ['Logo appears on printed invoices and quotations.', 'Printers: Organization → Printers. WhatsApp: admin matches template names; staff send from Campaigns.'],
   },
 ] as const;
 

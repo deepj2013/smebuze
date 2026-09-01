@@ -12,6 +12,7 @@ import { Lead } from '../crm/entities/lead.entity';
 import { InventoryModule } from '../inventory/inventory.module';
 import { Vendor } from '../purchase/entities/vendor.entity';
 import { SalesOrder } from '../sales/entities/sales-order.entity';
+import { AccountingModule } from '../accounting/accounting.module';
 
-@Module({ imports: [InventoryModule, TypeOrmModule.forFeature([BusinessExpense, StockMovement, Tenant, SalesInvoice, Item, Stock, Lead, Vendor, SalesOrder])], controllers: [IceCrestController], providers: [IceCrestService], exports: [IceCrestService] })
+@Module({ imports: [InventoryModule, AccountingModule, TypeOrmModule.forFeature([BusinessExpense, StockMovement, Tenant, SalesInvoice, Item, Stock, Lead, Vendor, SalesOrder])], controllers: [IceCrestController], providers: [IceCrestService], exports: [IceCrestService] })
 export class IceCrestModule {}

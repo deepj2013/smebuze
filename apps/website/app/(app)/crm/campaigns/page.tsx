@@ -51,6 +51,7 @@ export default function CampaignsPage() {
   const [messageSubject, setMessageSubject] = useState('');
   const [messageBody, setMessageBody] = useState('');
   const [testPhone, setTestPhone] = useState('');
+  const [waKind, setWaKind] = useState<'reminder' | 'invoice' | 'quotation' | 'order'>('reminder');
   const [aiSamples, setAiSamples] = useState<AiSample[]>([]);
   const [loadingAi, setLoadingAi] = useState(false);
   const [sending, setSending] = useState(false);
@@ -143,11 +144,10 @@ export default function CampaignsPage() {
       return;
     }
     setSending(true);
-    const templateName = selectedTemplateId ? templates.find((t) => t.id === selectedTemplateId)?.name || 'generic' : 'generic';
     const { data, error: err } = await apiPost<{ sent?: boolean; message?: string; to?: string; mode?: string }>('integrations/whatsapp/send', {
       to: phone,
-      template: templateName,
-      text: messageBody,
+      template: waKind,
+      param: messageBody,
       params: { body: messageBody, subject: messageSubject },
     });
     setSending(false);
@@ -156,7 +156,7 @@ export default function CampaignsPage() {
       return;
     }
     if (!data?.sent) {
-      setError(data?.message || 'WhatsApp message was not sent. Check API .env credentials.');
+      setError(data?.message || 'WhatsApp message was not sent. Ask an admin to match templates under WhatsApp.');
       return;
     }
     setSendSuccess(`Message sent to ${data.to ?? phone}${data.mode === 'live' ? ' via WhatsApp' : ''}.`);
@@ -410,13 +410,26 @@ export default function CampaignsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Test phone (WhatsApp)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">WhatsApp message</label>
+                <select
+                  value={waKind}
+                  onChange={(e) => setWaKind(e.target.value as typeof waKind)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="reminder">Payment reminder</option>
+                  <option value="invoice">Invoice / receipt</option>
+                  <option value="quotation">Quotation</option>
+                  <option value="order">Order confirmation</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Customer mobile</label>
                 <input
                   type="text"
                   value={testPhone}
                   onChange={(e) => setTestPhone(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="e.g. 919876543210 — optional; used when sending to a single number"
+                  placeholder="9876543210"
                 />
               </div>
               <div>

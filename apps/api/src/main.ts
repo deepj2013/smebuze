@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { join } from 'path';
 import * as express from 'express';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/all-exceptions.filter';
 
 function corsOrigin(): boolean | string | string[] {
   const raw = (process.env.CORS_ORIGIN || '').trim();
@@ -21,6 +22,18 @@ function corsOrigin(): boolean | string | string[] {
   return list.length <= 1 ? list[0] || true : list;
 }
 
+function securityHeaders(_req: express.Request, res: express.Response, next: express.NextFunction) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  }
+  next();
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
@@ -28,8 +41,27 @@ async function bootstrap() {
   });
   app.setGlobalPrefix('api/v1');
   const httpAdapter = app.getHttpAdapter();
-  const expressInstance = httpAdapter.getInstance();
-  expressInstance.use('/uploads', express.static(join(process.cwd(), 'uploads')));
+  const expressInstance = httpAdapter.getInstance() as express.Express;
+  expressInstance.set('trust proxy', 1);
+  expressInstance.disable('x-powered-by');
+  expressInstance.use(securityHeaders);
+  expressInstance.use(
+    '/uploads',
+    express.static(join(process.cwd(), 'uploads'), {
+      setHeaders(res, filePath) {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader(
+          'Content-Security-Policy',
+          "default-src 'none'; img-src 'self'; style-src 'none'; script-src 'none'",
+        );
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        if (filePath.toLowerCase().endsWith('.svg')) {
+          res.setHeader('Content-Disposition', 'attachment');
+        }
+      },
+    }),
+  );
+  app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -42,6 +74,7 @@ async function bootstrap() {
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    maxAge: 86400,
   });
   const port = parseInt(process.env.PORT || '3000', 10);
   const host = process.env.HOST || (process.env.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0');

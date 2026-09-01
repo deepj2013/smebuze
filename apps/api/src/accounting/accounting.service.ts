@@ -33,6 +33,114 @@ export class AccountingService {
     });
   }
 
+  private readonly systemAccounts: Array<{ code: string; name: string; type: string }> = [
+    { code: 'SB-CASH', name: 'Cash', type: 'asset' },
+    { code: 'SB-BANK', name: 'Bank', type: 'asset' },
+    { code: 'SB-AP', name: 'Accounts payable', type: 'liability' },
+    { code: 'SB-TDS', name: 'TDS payable', type: 'liability' },
+    { code: 'SB-ITC', name: 'Input GST (ITC)', type: 'asset' },
+    { code: 'SB-EXP-PROD', name: 'Production / productivity expenses', type: 'expense' },
+    { code: 'SB-EXP-OPS', name: 'Operating expenses', type: 'expense' },
+    { code: 'SB-EXP-SELL', name: 'Selling & marketing expenses', type: 'expense' },
+    { code: 'SB-EXP-ADM', name: 'Administration expenses', type: 'expense' },
+    { code: 'SB-EXP-FIN', name: 'Finance & bank charges', type: 'expense' },
+    { code: 'SB-EXP-STAT', name: 'Statutory payments', type: 'expense' },
+    { code: 'SB-PPE', name: 'Plant, machinery & assets', type: 'asset' },
+  ];
+
+  async ensureSystemAccounts(ctx: TenantContext, companyId: string): Promise<Record<string, ChartOfAccounts>> {
+    const tenantId = this.assertTenantId(ctx);
+    const existing = await this.coaRepo.find({ where: { tenant_id: tenantId, company_id: companyId } });
+    const byCode: Record<string, ChartOfAccounts> = {};
+    for (const row of existing) byCode[row.code] = row;
+    for (const def of this.systemAccounts) {
+      if (byCode[def.code]) continue;
+      const saved = await this.coaRepo.save(
+        this.coaRepo.create({
+          tenant_id: tenantId,
+          company_id: companyId,
+          code: def.code,
+          name: def.name,
+          type: def.type,
+          is_system: true,
+        }),
+      );
+      byCode[def.code] = saved;
+    }
+    return byCode;
+  }
+
+  async postBalancedEntry(
+    ctx: TenantContext,
+    dto: {
+      company_id: string;
+      entry_date: string | Date;
+      number?: string;
+      reference?: string;
+      lines: Array<{ code: string; debit?: number; credit?: number; narration?: string }>;
+    },
+  ): Promise<JournalEntry> {
+    const tenantId = this.assertTenantId(ctx);
+    const accounts = await this.ensureSystemAccounts(ctx, dto.company_id);
+    const lines = dto.lines
+      .map((l) => ({
+        ...l,
+        debit: Math.round((l.debit ?? 0) * 100) / 100,
+        credit: Math.round((l.credit ?? 0) * 100) / 100,
+      }))
+      .filter((l) => l.debit >= 0.01 || l.credit >= 0.01);
+    const totalDebit = Math.round(lines.reduce((s, l) => s + l.debit, 0) * 100) / 100;
+    const totalCredit = Math.round(lines.reduce((s, l) => s + l.credit, 0) * 100) / 100;
+    if (!lines.length || Math.abs(totalDebit - totalCredit) > 0.05) {
+      throw new ForbiddenException('Journal is not balanced');
+    }
+    const entry = await this.journalRepo.save(
+      this.journalRepo.create({
+        tenant_id: tenantId,
+        company_id: dto.company_id,
+        number: dto.number ?? `JE-${Date.now()}`,
+        entry_date: dto.entry_date instanceof Date ? dto.entry_date : new Date(dto.entry_date),
+        reference: dto.reference ?? null,
+        status: 'posted',
+        total_debit: totalDebit.toFixed(2),
+        total_credit: totalCredit.toFixed(2),
+        created_by: ctx.userId,
+      }),
+    );
+    let sort = 0;
+    for (const line of lines) {
+      const account = accounts[line.code];
+      if (!account) throw new ForbiddenException(`Account ${line.code} is missing`);
+      await this.lineRepo.save(
+        this.lineRepo.create({
+          journal_id: entry.id,
+          account_id: account.id,
+          debit: line.debit.toFixed(2),
+          credit: line.credit.toFixed(2),
+          narration: line.narration ?? null,
+          sort_order: sort++,
+        }),
+      );
+    }
+    return entry;
+  }
+
+  expenseAccountCode(nature: string): string {
+    if (nature === 'production') return 'SB-EXP-PROD';
+    if (nature === 'selling') return 'SB-EXP-SELL';
+    if (nature === 'admin') return 'SB-EXP-ADM';
+    if (nature === 'finance') return 'SB-EXP-FIN';
+    if (nature === 'statutory') return 'SB-EXP-STAT';
+    if (nature === 'capex') return 'SB-PPE';
+    return 'SB-EXP-OPS';
+  }
+
+  cashBankCode(mode?: string | null): string {
+    const m = String(mode || '').toLowerCase();
+    if (m.includes('cash')) return 'SB-CASH';
+    return 'SB-BANK';
+  }
+
   async createJournalEntry(
     dto: Partial<{ company_id: string; number: string; entry_date: string; reference: string; total_debit: number; total_credit: number }>,
     ctx: TenantContext,

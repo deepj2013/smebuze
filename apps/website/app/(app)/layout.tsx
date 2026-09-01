@@ -37,7 +37,11 @@ import {
   MoreHorizontal,
   Printer,
   Store,
+  Palette,
+  CreditCard,
 } from 'lucide-react';
+import { parseTenantBranding } from '@/lib/branding';
+import { getStaticUrl } from '@/lib/api';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -148,6 +152,9 @@ const nav: Array<{
       { label: 'Roles', href: '/organization/roles', icon: Layers, permission: 'org.role.manage' },
       { label: 'Departments', href: '/organization/departments', icon: Layers, permission: 'org.user.view' },
       { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
+      { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+      { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
+      { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
     ],
   },
   {
@@ -160,6 +167,8 @@ const nav: Array<{
     ],
   },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
   { label: 'Bulk upload', href: '/bulk-upload', icon: Upload, module: 'bulk_upload' },
 ];
 
@@ -221,6 +230,9 @@ const starIceNav: typeof nav = [
       { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
       { label: 'Roles', href: '/organization/roles', icon: Layers, permission: 'org.role.manage' },
       { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
+      { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+      { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
+      { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
     ],
   },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
@@ -230,7 +242,7 @@ const iceCrestNav: typeof nav = [
   { label: 'Dashboard', href: '/ice-crest/dashboard', icon: LayoutDashboard, module: 'dashboard', permission: 'reports.view' },
   { label: 'Getting started', href: '/ice-crest/tutorial', icon: Sparkles, module: 'dashboard', permission: 'reports.view' },
   { label: 'Staff guide', href: '/ice-crest/guide', icon: BookOpen, module: 'dashboard', permission: 'reports.view' },
-  { label: 'WhatsApp setup', href: '/ice-crest/whatsapp', icon: Megaphone, module: 'crm', permission: 'crm.lead.view' },
+  { label: 'WhatsApp', href: '/ice-crest/whatsapp', icon: Megaphone, module: 'crm', permission: 'org.company.update' },
   { label: 'CRM', icon: Users, module: 'crm', permission: 'crm.lead.view', children: [
     { label: 'Leads & enquiries', href: '/crm/leads', icon: UserPlus, permission: 'crm.lead.view' },
     { label: 'Customers', href: '/crm/customers', icon: Users, permission: 'crm.customer.view' },
@@ -253,10 +265,15 @@ const iceCrestNav: typeof nav = [
   ]},
   { label: 'Expenses', href: '/ice-crest/expenses', icon: BookMarked, module: 'reports', permission: 'reports.view' },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
   { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
     { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
     { label: 'Users & roles', href: '/organization/users', icon: Users, permission: 'org.user.view' },
     { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
+    { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+    { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
+    { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
   ]},
 ];
 
@@ -273,6 +290,9 @@ const posNav: typeof nav = [
   { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
     { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
     { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
+    { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+    { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
+    { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
   ]},
 ];
 
@@ -281,6 +301,32 @@ function getCategoryForPath(path: string, items: typeof nav): string | null {
     if (item.children?.some((c) => path.startsWith(c.href))) return item.label;
   }
   return null;
+}
+
+function BrandMark({
+  href,
+  name,
+  logoSrc,
+  onClick,
+  compact = false,
+  className = '',
+}: {
+  href: string;
+  name: string;
+  logoSrc: string | null;
+  onClick?: () => void;
+  compact?: boolean;
+  className?: string;
+}) {
+  return (
+    <Link href={href} onClick={onClick} className={`flex items-center gap-2 min-w-0 ${className}`}>
+      {logoSrc ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={logoSrc} alt="" className={`${compact ? 'h-7 w-7' : 'h-8 w-8'} rounded-md object-contain bg-white border border-slate-200 shrink-0`} />
+      ) : null}
+      <span className={`${compact ? 'text-base' : 'text-lg'} font-bold text-brand-700 truncate`}>{name}</span>
+    </Link>
+  );
 }
 
 const DEMO_EMAIL_SUFFIX = '@demo.com';
@@ -322,7 +368,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     isSuperAdmin?: boolean;
     tenantId?: string | null;
   } | null>(null);
-  const [tenant, setTenant] = useState<{ slug?: string; settings?: Record<string, unknown> } | null>(null);
+  const [tenant, setTenant] = useState<{
+    slug?: string;
+    settings?: Record<string, unknown>;
+    plan?: string;
+    subscription_expired?: boolean;
+    subscription_ends_at?: string | null;
+    days_left?: number | null;
+  } | null>(null);
   const [ready, setReady] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -332,6 +385,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isIceCrest = tenant?.slug === 'ice-crest' || tenant?.settings?.business_type === 'ice_crest';
   const posTypes = ['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop'];
   const isPosTenant = posTypes.includes(String(tenant?.settings?.business_type ?? ''));
+  const isPublicIceCrestSite = pathname === '/ice-crest';
+  const branding = parseTenantBranding(tenant?.settings);
+  const brandName = branding.display_name || (isIceCrest ? 'ICE CREST CRM' : 'SMEBUZZ');
+  const logoSrc = branding.logo_url
+    ? `${getStaticUrl(branding.logo_url)}${branding.updated_at ? `?t=${encodeURIComponent(branding.updated_at)}` : ''}`
+    : null;
   const baseNav = isIceCrest ? iceCrestNav : isStarIce ? starIceNav : isPosTenant ? posNav : nav;
   let visibleNav = filterNavByAccess(baseNav, user?.permissions ?? [], user?.allowed_modules, isDemoUser);
   if (user?.isSuperAdmin && !visibleNav.some((i) => i.label === 'Admin')) {
@@ -354,6 +413,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    if (pathname === '/ice-crest') return;
     const token = typeof window !== 'undefined' ? window.localStorage.getItem('smebuzz_token') : null;
     if (!token) {
       router.replace('/login');
@@ -368,6 +428,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             window.location.replace('/login');
           }
           return null;
+        }
+        if (r.status === 402) {
+          router.replace('/billing');
+          return r.json();
         }
         return r.json();
       })
@@ -386,7 +450,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         setUser(u ? { ...u, permissions: u.permissions ?? [], allowed_modules: u.allowed_modules } : null);
         setTenant(d?.tenant ?? null);
         setReady(true);
-        if (d?.tenant?.slug === 'ice-crest' || d?.tenant?.settings?.business_type === 'ice_crest') {
+        if (d?.tenant?.subscription_expired && !u?.isSuperAdmin && pathname !== '/billing') {
+          router.replace('/billing');
+          return;
+        }
+        if (!d?.tenant?.subscription_expired && (d?.tenant?.slug === 'ice-crest' || d?.tenant?.settings?.business_type === 'ice_crest')) {
           fetch(`${API_URL}/api/v1/onboarding/checklist`, { headers: { Authorization: `Bearer ${token}` } })
             .then((r) => r.json())
             .then((ob) => {
@@ -398,7 +466,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         }
       })
       .catch(() => setReady(true));
-  }, [router]);
+  }, [router, pathname]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--tenant-primary', branding.primary_color);
+    document.documentElement.style.setProperty('--tenant-accent', branding.accent_color);
+  }, [branding.primary_color, branding.accent_color]);
+
+  useEffect(() => {
+    const onUpdated = (event: Event) => {
+      const detail = (event as CustomEvent).detail as Record<string, unknown> | undefined;
+      if (!detail) return;
+      setTenant((prev) => ({
+        ...(prev ?? {}),
+        settings: { ...(prev?.settings ?? {}), branding: detail },
+      }));
+    };
+    window.addEventListener('smebuzz-branding-updated', onUpdated);
+    return () => window.removeEventListener('smebuzz-branding-updated', onUpdated);
+  }, []);
 
   const logout = () => {
     if (typeof window !== 'undefined') {
@@ -407,6 +493,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
     router.replace('/login');
   };
+
+  if (isPublicIceCrestSite) {
+    return <>{children}</>;
+  }
 
   if (!ready) {
     return (
@@ -418,6 +508,32 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (pathname.includes('/print')) {
     return <ToastProvider>{children}</ToastProvider>;
+  }
+
+  const paywalled = Boolean(tenant?.subscription_expired) && !user?.isSuperAdmin;
+  if (paywalled && pathname !== '/billing') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <p className="text-slate-600">Redirecting to billing…</p>
+      </div>
+    );
+  }
+  if (paywalled && pathname === '/billing') {
+    return (
+      <ToastProvider>
+        <div className="min-h-dvh bg-slate-50 flex flex-col">
+          <header className="border-b border-slate-200 bg-white" style={{ paddingTop: 'var(--safe-area-top)' }}>
+            <div className="h-14 flex items-center justify-between px-4">
+              <span className="font-bold text-brand-700">SMEBUZE</span>
+              <button type="button" onClick={logout} className="text-sm text-slate-600 hover:text-brand-600">
+                Logout
+              </button>
+            </div>
+          </header>
+          <main id="main" className="flex-1 p-4 sm:p-6">{children}</main>
+        </div>
+      </ToastProvider>
+    );
   }
 
   const closeDrawer = () => setMobileMenuOpen(false);
@@ -487,19 +603,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const isSalesActive = pathname.startsWith('/sales') || pathname.startsWith('/pos');
   const isCrmActive = pathname.startsWith('/crm');
+  const isStockActive = pathname.startsWith('/ice-crest/stock') || pathname.startsWith('/inventory') || pathname.startsWith('/ice-crest/production');
   const homeHref = isIceCrest ? '/ice-crest/dashboard' : isPosTenant ? '/pos' : '/dashboard';
-  const isHomeActive = pathname === homeHref;
+  const isHomeActive = pathname === homeHref || (isIceCrest && pathname.startsWith('/ice-crest/dashboard'));
+  const moreActive = isIceCrest
+    ? !isHomeActive && !isSalesActive && !isStockActive
+    : !isSalesActive && !isCrmActive && !isHomeActive;
 
   return (
     <ToastProvider>
     {isIceCrest && showIceCrestTutorial && (
       <IceCrestTutorial mode="modal" onDismiss={() => setShowIceCrestTutorial(false)} onComplete={() => setShowIceCrestTutorial(false)} />
     )}
-    <div className="min-h-screen flex bg-slate-50 safe-top">
+    <div className="min-h-dvh flex bg-slate-50">
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex w-56 border-r border-slate-200 bg-white flex-col shrink-0">
         <div className="p-4 border-b border-slate-200">
-          <Link href={homeHref} className="text-lg font-bold text-brand-700">{isIceCrest ? 'ICE CREST CRM' : 'SMEBUZZ'}</Link>
+          <BrandMark href={homeHref} name={brandName} logoSrc={logoSrc} />
         </div>
         <nav className="p-2 flex-1 overflow-y-auto">{renderNavContent(false)}</nav>
       </aside>
@@ -520,21 +640,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         style={{ paddingTop: 'var(--safe-area-top)' }}
       >
         <div className="flex items-center justify-between p-4 border-b border-slate-200">
-          <Link href={homeHref} onClick={closeDrawer} className="text-lg font-bold text-brand-700">{isIceCrest ? 'ICE CREST CRM' : 'SMEBUZZ'}</Link>
+          <BrandMark href={homeHref} name={brandName} logoSrc={logoSrc} onClick={closeDrawer} />
           <button type="button" onClick={closeDrawer} className="p-2 -m-2 rounded-lg text-slate-600 hover:bg-slate-100 min-touch" aria-label="Close menu">
             <X className="h-6 w-6" />
           </button>
         </div>
         <nav className="p-3 flex-1 overflow-y-auto">{renderNavContent(true)}</nav>
-        <div className="p-3 border-t border-slate-200">
+        <div className="p-3 border-t border-slate-200" style={{ paddingBottom: 'max(0.75rem, var(--safe-area-bottom))' }}>
           <p className="text-xs text-slate-500 truncate px-2">{user?.name || user?.email || 'User'}</p>
           <button type="button" onClick={() => { closeDrawer(); logout(); }} className="w-full mt-2 text-sm text-slate-600 hover:text-brand-600 py-2 min-touch">Logout</button>
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+      <div className="flex-1 flex flex-col min-w-0 min-h-dvh">
         <GlobalSearch />
-        <header className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-3 sm:px-4 shrink-0 safe-top">
+        <header className="border-b border-slate-200 bg-white shrink-0" style={{ paddingTop: 'var(--safe-area-top)' }}>
+          {typeof tenant?.days_left === 'number' && !tenant.subscription_expired && tenant.days_left <= 3 && (
+            <div className="bg-amber-50 border-b border-amber-200 px-3 sm:px-4 py-2 text-sm text-amber-900">
+              {tenant.days_left <= 0
+                ? 'Your trial ends today.'
+                : `Your trial ends in ${tenant.days_left} day${tenant.days_left === 1 ? '' : 's'}.`}{' '}
+              <Link href="/billing" className="font-semibold underline">Pay to continue</Link>
+            </div>
+          )}
+          <div className="h-14 flex items-center justify-between px-3 sm:px-4">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <button
               type="button"
@@ -544,7 +673,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             >
               <Menu className="h-6 w-6" />
             </button>
-            <Link href={homeHref} className="lg:hidden text-base font-bold text-brand-700 truncate">{isIceCrest ? 'ICE CREST' : 'SMEBUZZ'}</Link>
+            <BrandMark href={homeHref} name={isIceCrest && !branding.display_name ? 'ICE CREST' : brandName} logoSrc={logoSrc} compact className="lg:hidden" />
             <button
               type="button"
               onClick={() => typeof window !== 'undefined' && window.dispatchEvent(new CustomEvent('smebuzz-open-search'))}
@@ -566,25 +695,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           >
             Logout
           </button>
+          </div>
         </header>
-        <main className="flex-1 overflow-auto p-4 sm:p-6 pb-24 lg:pb-6">
+        <main id="main" className="flex-1 overflow-auto p-4 sm:p-6 pb-24 lg:pb-6">
           {children}
         </main>
       </div>
 
       {/* Mobile bottom navigation — app-like */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-30 lg:hidden bg-white border-t border-slate-200 safe-bottom"
+        className="fixed bottom-0 left-0 right-0 z-30 lg:hidden bg-white border-t border-slate-200"
         style={{ paddingBottom: 'var(--safe-area-bottom)' }}
       >
-        <div className="grid grid-cols-4 gap-1 px-2 py-2">
+        <div className="grid grid-cols-4 gap-1 px-2 py-1.5">
           <Link
             href={homeHref}
             className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
               isHomeActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
             }`}
           >
-            <LayoutDashboard className="h-6 w-6 shrink-0" />
+            {isPosTenant ? <Store className="h-6 w-6 shrink-0" /> : <LayoutDashboard className="h-6 w-6 shrink-0" />}
             <span className="text-xs mt-0.5 font-medium">{isPosTenant ? 'POS' : 'Home'}</span>
           </Link>
           <Link
@@ -594,22 +724,34 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             }`}
           >
             <Receipt className="h-6 w-6 shrink-0" />
-            <span className="text-xs mt-0.5 font-medium">Sales</span>
+            <span className="text-xs mt-0.5 font-medium">{isIceCrest ? 'Billing' : isPosTenant ? 'Bills' : 'Sales'}</span>
           </Link>
-          <Link
-            href="/crm/customers"
-            className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
-              isCrmActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
-            }`}
-          >
-            <Users className="h-6 w-6 shrink-0" />
-            <span className="text-xs mt-0.5 font-medium">CRM</span>
-          </Link>
+          {isIceCrest ? (
+            <Link
+              href="/ice-crest/stock-movements"
+              className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
+                isStockActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+              }`}
+            >
+              <Package className="h-6 w-6 shrink-0" />
+              <span className="text-xs mt-0.5 font-medium">Stock</span>
+            </Link>
+          ) : (
+            <Link
+              href="/crm/customers"
+              className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
+                isCrmActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+              }`}
+            >
+              <Users className="h-6 w-6 shrink-0" />
+              <span className="text-xs mt-0.5 font-medium">CRM</span>
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => setMobileMenuOpen(true)}
             className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
-              !isSalesActive && !isCrmActive && !isHomeActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+              moreActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
             }`}
           >
             <MoreHorizontal className="h-6 w-6 shrink-0" />

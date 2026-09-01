@@ -1,7 +1,4 @@
-'use client';
-
 import Link from 'next/link';
-import { useState } from 'react';
 import {
   Building2,
   TrendingUp,
@@ -17,8 +14,6 @@ import {
   MessageCircle,
   FileText,
   ChevronRight,
-  Menu,
-  X,
   Check,
   SlidersHorizontal,
   User,
@@ -34,105 +29,38 @@ import {
   Globe,
   Smartphone,
 } from 'lucide-react';
+import MarketingChrome from './components/MarketingChrome';
+import SiteFooter from './components/SiteFooter';
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, SUPPORT_EMAIL } from '@/lib/site';
 
-const NAV_LINKS = [
-  { href: '#how-it-works', label: 'How it works' },
-  { href: '#who', label: 'Who it is for' },
-  { href: '#printing', label: 'Printing' },
-  { href: '#ai', label: 'AI' },
-  { href: '#pricing', label: 'Pricing' },
-  { href: '#features', label: 'Features' },
-  { href: '#future', label: 'Roadmap' },
-];
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'SoftwareApplication',
+      name: SITE_NAME,
+      url: SITE_URL,
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Web',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'INR', description: '7-day free trial' },
+      description: SITE_DESCRIPTION,
+      areaServed: 'IN',
+    },
+    {
+      '@type': 'Organization',
+      name: SITE_NAME,
+      url: SITE_URL,
+      email: SUPPORT_EMAIL,
+      logo: `${SITE_URL}/icons/icon-512.png`,
+    },
+  ],
+};
 
 export default function Home() {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  const closeMenu = () => setMobileMenuOpen(false);
-
   return (
-    <div className="min-h-screen" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-      <header className="border-b border-slate-200/80 bg-white/95 backdrop-blur-md sticky top-0 z-50 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between min-h-[56px]">
-          <Link href="/" className="text-lg sm:text-xl font-bold text-brand-600 font-display tracking-tight shrink-0">
-            SMEBUZZ
-          </Link>
-
-          {/* Desktop nav */}
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
-            {NAV_LINKS.map((link) => (
-              <a key={link.href} href={link.href} className="hover:text-brand-600 transition-colors">
-                {link.label}
-              </a>
-            ))}
-            <Link href="/login" className="text-slate-600 hover:text-brand-600 transition-colors">Login</Link>
-            <Link href="/signup" className="bg-brand-600 text-white px-4 py-2.5 rounded-xl hover:bg-brand-700 transition-all shadow-md shadow-brand-500/20 font-semibold">
-              Sign up
-            </Link>
-          </nav>
-
-          {/* Mobile: hamburger + CTA */}
-          <div className="flex md:hidden items-center gap-2">
-            <Link href="/signup" className="rounded-xl bg-brand-600 text-white px-4 py-2.5 text-sm font-semibold hover:bg-brand-700 shadow-md min-h-[44px] inline-flex items-center justify-center">
-              Sign up
-            </Link>
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(true)}
-              className="p-2.5 -mr-2 rounded-xl text-slate-600 hover:bg-slate-100 min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
-              aria-label="Open menu"
-            >
-              <Menu className="h-6 w-6" />
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Mobile menu overlay */}
-      {mobileMenuOpen && (
-        <>
-          <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={closeMenu} aria-hidden />
-          <div
-            className="fixed inset-y-0 right-0 z-50 w-full max-w-[280px] bg-white shadow-2xl md:hidden flex flex-col"
-            style={{ paddingTop: 'max(env(safe-area-inset-top), 1rem)' }}
-          >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-              <span className="font-bold text-brand-600 font-display">Menu</span>
-              <button type="button" onClick={closeMenu} className="p-2 rounded-lg hover:bg-slate-100 min-h-[44px] min-w-[44px] flex items-center justify-center" aria-label="Close menu">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-              {NAV_LINKS.map((link) => (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  onClick={closeMenu}
-                  className="block rounded-xl px-4 py-3.5 text-slate-700 font-medium hover:bg-brand-50 hover:text-brand-700 min-h-[48px] flex items-center"
-                >
-                  {link.label}
-                </a>
-              ))}
-              <Link
-                href="/login"
-                onClick={closeMenu}
-                className="block rounded-xl px-4 py-3.5 text-slate-700 font-medium hover:bg-slate-100 min-h-[48px] flex items-center border-t border-slate-100 mt-4"
-              >
-                Login
-              </Link>
-              <Link
-                href="/signup"
-                onClick={closeMenu}
-                className="mt-2 block rounded-xl px-4 py-3.5 bg-brand-600 text-white font-semibold text-center hover:bg-brand-700 min-h-[48px] flex items-center justify-center"
-              >
-                Sign up
-              </Link>
-            </nav>
-          </div>
-        </>
-      )}
-
-      <main>
+    <MarketingChrome>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <main id="main">
         {/* Hero — mobile-first, eye-catching */}
         <section className="relative overflow-hidden py-12 sm:py-20 lg:py-28">
           <div className="absolute inset-0 bg-gradient-to-br from-brand-50 via-white to-slate-50" />
@@ -380,7 +308,7 @@ export default function Home() {
             <p className="text-center text-xs font-semibold uppercase tracking-widest text-brand-600">Pricing that grows with you</p>
             <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 text-center mt-2">Start with 7 days free. Upgrade when it fits.</h2>
             <p className="mt-2 text-slate-600 text-center max-w-2xl mx-auto text-sm sm:text-base">
-              Every new workspace begins with a full 7-day trial — no card, no salesman. Starter is built for one person and one company. Add seats, companies and modules when you are ready, or tell us how you work and we will tailor it.
+              Every new workspace begins with a full 7-day trial — no card, no salesman. Starter is built for one person and one company. Pay yearly and save 15%. Add seats, companies and modules when you are ready, or tell us how you work and we will tailor it.
             </p>
             <div className="mt-10 sm:mt-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
               {[
@@ -477,6 +405,9 @@ export default function Home() {
                     <span className={plan.custom ? 'text-2xl' : 'text-3xl'}>{plan.price}</span>
                     {plan.period && <span className="text-base font-normal text-slate-500">{plan.period}</span>}
                   </p>
+                  {!plan.custom && (
+                    <p className="mt-1 text-xs font-medium text-emerald-700">Save 15% when you pay yearly</p>
+                  )}
                   <ul className="mt-5 space-y-2 text-sm text-slate-600 flex-1">
                     {plan.features.map((f) => (
                       <li key={f} className="flex items-start gap-2">
@@ -640,7 +571,7 @@ export default function Home() {
                 Start 7-day free trial
               </Link>
               <a
-                href="mailto:hello@smebuzz.com?subject=Customise%20SMEBUZZ"
+                href={`mailto:${SUPPORT_EMAIL}?subject=Customise%20SMEBUZZ`}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 bg-white px-6 py-4 sm:py-3.5 text-base font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50/50 transition-colors min-h-[52px] sm:min-h-0"
               >
                 Customise with us
@@ -649,24 +580,7 @@ export default function Home() {
           </div>
         </section>
       </main>
-
-      {/* Mobile: sticky bottom CTA for app-like feel */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 md:hidden bg-white/95 backdrop-blur border-t border-slate-200 py-3 px-4" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
-        <Link
-          href="/signup"
-          className="block w-full rounded-xl bg-brand-600 text-white py-3.5 text-center font-semibold shadow-lg hover:bg-brand-700 min-h-[48px] flex items-center justify-center"
-        >
-          Start 7-day free trial
-        </Link>
-      </div>
-      <div className="h-20 md:h-0" />
-
-      <footer className="border-t border-slate-200 py-8 sm:py-10 bg-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
-          <span className="font-semibold text-slate-700 font-display">SMEBUZZ</span>
-          <p className="text-xs sm:text-sm text-slate-500">7-day free trial. Print on USB, Wi-Fi, internet or Bluetooth. Upgrade as you grow.</p>
-        </div>
-      </footer>
-    </div>
+      <SiteFooter />
+    </MarketingChrome>
   );
 }

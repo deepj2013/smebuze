@@ -5,7 +5,7 @@ import { apiGet } from '@/lib/api';
 
 type StockRow = { item_id: string; sku?: string; name: string; opening: number; inward: number; outward: number; reserved: number; available: number };
 type LowStock = { item_id: string; name: string; sku: string | null; reorder_level: number; current_stock: number };
-type Data = { sales: number; expenses: number; operating_profit: number; profit_margin: number; invoice_count: number; expense_breakdown: { category: string; amount: number }[]; stock: StockRow[]; stock_totals: { opening: number; inward: number; outward: number; available: number }; sales_trend?: { date: string; sales: number; invoice_count: number }[] };
+type Data = { sales: number; expenses: number; operating_profit: number; profit_margin: number; invoice_count: number; expense_breakdown: { category: string; amount: number }[]; expense_by_nature?: { nature: string; label: string; amount: number }[]; stock: StockRow[]; stock_totals: { opening: number; inward: number; outward: number; available: number }; sales_trend?: { date: string; sales: number; invoice_count: number }[] };
 
 const money = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(n || 0);
 
@@ -44,10 +44,10 @@ export default function IceCrestDashboard() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {presets(today).map(p => (
-            <button key={p.label} type="button" onClick={() => { setFrom(p.from); setTo(p.to); }} className="rounded-full border px-3 py-1 text-xs font-medium text-slate-600 hover:bg-cyan-50">{p.label}</button>
+            <button key={p.label} type="button" onClick={() => { setFrom(p.from); setTo(p.to); }} className="rounded-full border px-4 py-2 text-sm font-medium text-slate-600 hover:bg-cyan-50 min-h-[44px]">{p.label}</button>
           ))}
-          <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="rounded border px-3 py-2" aria-label="From date" />
-          <input type="date" value={to} onChange={e => setTo(e.target.value)} className="rounded border px-3 py-2" aria-label="To date" />
+          <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="rounded-lg border px-3 py-2 min-h-[44px]" aria-label="From date" />
+          <input type="date" value={to} onChange={e => setTo(e.target.value)} className="rounded-lg border px-3 py-2 min-h-[44px]" aria-label="To date" />
         </div>
       </div>
       {error && <p className="rounded bg-red-50 p-3 text-red-700">{error}</p>}
@@ -95,7 +95,7 @@ export default function IceCrestDashboard() {
           </section>
         )}
         <section className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 rounded-xl border bg-white p-4 overflow-x-auto">
+          <div className="lg:col-span-2 rounded-xl border bg-white p-4 overflow-x-auto -mx-4 sm:mx-0 px-4">
             <div className="flex justify-between"><h2 className="font-semibold">SKU-wise stock</h2><Link href="/ice-crest/stock-movements" className="text-sm text-cyan-700">Record movement →</Link></div>
             <table className="mt-3 w-full text-sm">
               <thead><tr className="border-b text-left text-slate-500"><th className="py-2">SKU / size</th><th>Opening</th><th>Inward</th><th>Outward</th><th>Reserved</th><th>Available</th></tr></thead>
@@ -108,9 +108,10 @@ export default function IceCrestDashboard() {
             <div className="rounded-xl border bg-white p-4">
               <div className="flex justify-between"><h2 className="font-semibold">Expense breakdown</h2><Link href="/ice-crest/expenses" className="text-sm text-cyan-700">Manage →</Link></div>
               <div className="mt-3 space-y-3">
-                {data.expense_breakdown.length ? data.expense_breakdown.map(x => (
-                  <div key={x.category}><div className="flex justify-between text-sm"><span>{x.category}</span><b>{money(x.amount)}</b></div><div className="mt-1 h-2 rounded bg-slate-100"><div className="h-2 rounded bg-cyan-600" style={{ width: `${Math.min(100, (x.amount / Math.max(data.expenses, 1)) * 100)}%` }} /></div></div>
-                )) : <p className="text-sm text-slate-500">No expenses in this period.</p>}
+                {(data.expense_by_nature && data.expense_by_nature.length ? data.expense_by_nature : data.expense_breakdown.map((x) => ({ label: x.category, amount: x.amount, nature: x.category }))).map((x) => (
+                  <div key={x.label}><div className="flex justify-between text-sm"><span>{x.label}</span><b>{money(x.amount)}</b></div><div className="mt-1 h-2 rounded bg-slate-100"><div className="h-2 rounded bg-cyan-600" style={{ width: `${Math.min(100, (x.amount / Math.max(data.expenses, 1)) * 100)}%` }} /></div></div>
+                ))}
+                {!data.expense_breakdown.length && <p className="text-sm text-slate-500">No expenses in this period.</p>}
               </div>
             </div>
             <div className="rounded-xl border bg-white p-4 text-sm">
@@ -120,6 +121,8 @@ export default function IceCrestDashboard() {
                 <Link href="/ice-crest/production-plan" className="text-cyan-700">Tomorrow&apos;s production plan →</Link>
                 <Link href="/sales/invoices/new" className="text-cyan-700">New invoice / bill →</Link>
                 <Link href="/sales/invoices/pending" className="text-cyan-700">Pending payments →</Link>
+                <Link href="/reports/gstr-1" className="text-cyan-700">GSTR-1 (sales GST) →</Link>
+                <Link href="/reports/gstr-2a" className="text-cyan-700">GSTR-2A purchase recon →</Link>
                 <Link href="/reports" className="text-cyan-700">SKU & customer reports →</Link>
               </div>
             </div>

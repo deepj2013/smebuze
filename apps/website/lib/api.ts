@@ -40,8 +40,20 @@ export async function api<T = unknown>(
     }
     return { error: 'Invalid or expired token', status: 401 };
   }
+  if (res.status === 402) {
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/billing')) {
+      window.location.replace('/billing');
+    }
+    const raw = (json as { message?: string | string[]; error?: string }).message
+      ?? (json as { error?: string }).error
+      ?? 'Subscription expired';
+    return { error: Array.isArray(raw) ? raw.join(' ') : String(raw), status: 402 };
+  }
   if (!res.ok) {
-    return { error: (json as { message?: string }).message || json?.error || `HTTP ${res.status}`, status: res.status };
+    const raw = (json as { message?: string | string[]; error?: string }).message
+      ?? (json as { error?: string }).error
+      ?? `HTTP ${res.status}`;
+    return { error: Array.isArray(raw) ? raw.join(' ') : String(raw), status: res.status };
   }
   return { data: json as T, status: res.status };
 }

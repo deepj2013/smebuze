@@ -10,6 +10,11 @@ export class BusinessExpense {
   @Column('uuid',{nullable:true}) vendor_id: string | null;
   @Column({type:'varchar',length:150,nullable:true}) employee_name: string | null;
   @Column({ length: 60 }) category: string;
+  /** production | operations | selling | admin | finance | statutory | capex */
+  @Column({ type: 'varchar', length: 30, default: 'operations' }) nature: string;
+  @Column({ type: 'varchar', length: 20, nullable: true }) hsn_sac: string | null;
+  @Column({ default: false }) itc_eligible: boolean;
+  @Column('uuid', { nullable: true }) journal_entry_id: string | null;
   @Column('decimal', { precision: 18, scale: 2 }) amount: string;
   @Column('decimal',{precision:18,scale:2,default:0}) taxable_amount: string;
   @Column('decimal',{precision:5,scale:2,default:0}) gst_rate: string;

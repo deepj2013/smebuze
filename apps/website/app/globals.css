@@ -5,6 +5,8 @@
 :root {
   --foreground: #0f172a;
   --background: #ffffff;
+  --tenant-primary: #0284c7;
+  --tenant-accent: #0369a1;
   /* Safe area for notched phones / PWA standalone */
   --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-right: env(safe-area-inset-right, 0px);
@@ -17,13 +19,32 @@
 html {
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
+  height: 100%;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  /* Prevent overscroll bounce on iOS for app-like feel */
+  min-height: 100%;
+  min-height: 100dvh;
   overscroll-behavior-y: none;
+}
+
+@media (display-mode: standalone) {
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+}
+
+/* 16px inputs on phones — stops iOS zoom on focus without changing desktop forms */
+@media (max-width: 640px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='range']):not([type='file']),
+  select,
+  textarea {
+    font-size: 16px !important;
+    min-height: 44px;
+  }
 }
 
 /* Mobile-first: ensure touch targets and readable tap areas */
@@ -107,6 +128,22 @@ body {
 
 .animate-slide-in-left {
   animation: slide-in-left 0.25s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 2px;
 }
 
 /* Responsive tables: horizontal scroll on small screens with shadow hint */

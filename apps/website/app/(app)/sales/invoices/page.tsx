@@ -55,9 +55,10 @@ export default function InvoicesPage() {
                 e.preventDefault();
                 e.stopPropagation();
                 setPaymentLinkLoading(inv.id);
-                const { data: link } = await apiGet<{ enabled: boolean; url?: string }>(`sales/invoices/${inv.id}/payment-link`);
+                const { data: link, error: linkErr } = await apiGet<{ enabled: boolean; url?: string }>(`sales/invoices/${inv.id}/payment-link`);
                 setPaymentLinkLoading(null);
                 if (link?.enabled && link?.url) window.open(link.url, '_blank');
+                else setError(linkErr || 'Scan to pay is off. An admin can connect Razorpay under Organization → Scan to pay.');
               }}
             >
               {paymentLinkLoading === inv.id ? '…' : 'Pay online'}

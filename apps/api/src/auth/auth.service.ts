@@ -27,6 +27,7 @@ import { AuditService } from '../audit/audit.service';
 import { Customer } from '../crm/entities/customer.entity';
 import { Warehouse } from '../inventory/entities/warehouse.entity';
 import { isPosBusinessType } from '../common/tenant-client-types';
+import { tenantSessionFrom, TenantSession } from '../common/tenant-session';
 
 export interface JwtPayload {
   sub: string;
@@ -95,7 +96,7 @@ export class AuthService {
   ) {}
 
   async login(dto: LoginDto): Promise<
-    | { access_token: string; user: TenantContext; tenant?: { slug: string; settings: Record<string, unknown> } }
+    | { access_token: string; user: TenantContext; tenant?: TenantSession }
     | { workspaces: Array<{ slug: string; name: string; tenantId: string | null; isSuperAdmin: boolean }> }
   > {
     const email = dto.email.trim();
@@ -218,7 +219,13 @@ export class AuthService {
       slug,
       plan: dto.plan,
       features,
-      settings: { business_type: businessType },
+      settings: {
+        business_type: businessType,
+        billing: {
+          interval: dto.interval || 'monthly',
+          trial: dto.trial === 'true' || dto.trial === '1',
+        },
+      },
       subscription_ends_at: subscriptionEndsAt,
       is_active: true,
     });
@@ -356,7 +363,7 @@ export class AuthService {
     };
   }
 
-  async getMe(ctx: TenantContext): Promise<{ user: TenantContext; tenant?: { slug: string; settings: Record<string, unknown> } }> {
+  async getMe(ctx: TenantContext): Promise<{ user: TenantContext; tenant?: TenantSession }> {
     const user = await this.userRepo.findOne({
       where: { id: ctx.userId, is_active: true },
     });
@@ -366,13 +373,13 @@ export class AuthService {
       const dept = await this.departmentRepo.findOne({ where: { id: user.department_id } });
       if (dept?.allowed_modules?.length) allowed_modules = dept.allowed_modules;
     }
-    let tenant: { slug: string; settings: Record<string, unknown> } | undefined;
+    let tenant: TenantSession | undefined;
     if (ctx.tenantId) {
       const t = await this.tenantRepo.findOne({
         where: { id: ctx.tenantId },
-        select: ['slug', 'settings'],
+        select: ['id', 'slug', 'settings', 'plan', 'subscription_ends_at'],
       });
-      if (t) tenant = { slug: t.slug, settings: (t.settings as Record<string, unknown>) ?? {} };
+      if (t) tenant = tenantSessionFrom(t);
     }
     return {
       user: {
@@ -475,7 +482,7 @@ export class AuthService {
     message: string;
     access_token?: string;
     user?: TenantContext;
-    tenant?: { slug: string; settings: Record<string, unknown> };
+    tenant?: TenantSession;
   }> {
     const purpose = dto.purpose || 'verify_email';
     const user = await this.findUserForEmailOrOtp(dto.email, dto.tenantSlug, purpose, dto.otp);
@@ -492,10 +499,13 @@ export class AuthService {
         roleIds: context.roleIds,
         permissions: context.permissions,
       };
-      let tenant: { slug: string; settings: Record<string, unknown> } | undefined;
+      let tenant: TenantSession | undefined;
       if (fresh.tenant_id) {
-        const t = await this.tenantRepo.findOne({ where: { id: fresh.tenant_id }, select: ['slug', 'settings'] });
-        if (t) tenant = { slug: t.slug, settings: (t.settings as Record<string, unknown>) ?? {} };
+        const t = await this.tenantRepo.findOne({
+          where: { id: fresh.tenant_id },
+          select: ['id', 'slug', 'settings', 'plan', 'subscription_ends_at'],
+        });
+        if (t) tenant = tenantSessionFrom(t);
       }
       return {
         message: 'Email confirmed.',
@@ -542,7 +552,7 @@ export class AuthService {
   private async completeLogin(user: User): Promise<{
     access_token: string;
     user: TenantContext;
-    tenant?: { slug: string; settings: Record<string, unknown> };
+    tenant?: TenantSession;
   }> {
     if (user.tenant_id) {
       const tenant = user.tenant ?? (await this.tenantRepo.findOne({ where: { id: user.tenant_id } }));
@@ -583,10 +593,13 @@ export class AuthService {
       permissions: context.permissions,
     };
 
-    let tenant: { slug: string; settings: Record<string, unknown> } | undefined;
+    let tenant: TenantSession | undefined;
     if (user.tenant_id) {
-      const t = user.tenant ?? (await this.tenantRepo.findOne({ where: { id: user.tenant_id }, select: ['slug', 'settings'] }));
-      if (t) tenant = { slug: t.slug, settings: (t.settings as Record<string, unknown>) ?? {} };
+      const t = user.tenant ?? (await this.tenantRepo.findOne({
+        where: { id: user.tenant_id },
+        select: ['id', 'slug', 'settings', 'plan', 'subscription_ends_at'],
+      }));
+      if (t) tenant = tenantSessionFrom(t);
     }
 
     return { access_token: this.jwtService.sign(payload), user: context, ...(tenant && { tenant }) };

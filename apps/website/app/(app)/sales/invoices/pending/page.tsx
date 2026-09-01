@@ -25,6 +25,7 @@ export default function PendingReceivablesPage() {
   const [mode, setMode] = useState('cash');
   const [reference, setReference] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [payLinkLoading, setPayLinkLoading] = useState<string | null>(null);
 
   const load = async () => {
     const res = await apiGet<{ invoices?: PendingRow[] }>('sales/invoices/pending');
@@ -98,8 +99,22 @@ export default function PendingReceivablesPage() {
                     <td className="p-3 text-right">₹{Number(row.total).toFixed(2)}</td>
                     <td className="p-3 text-right">₹{Number(row.paid_amount ?? 0).toFixed(2)}</td>
                     <td className="p-3 text-right text-amber-700">₹{getDue(row).toFixed(2)}</td>
-                    <td className="p-3">
+                    <td className="p-3 space-x-3">
                       <button type="button" onClick={() => openPay(row)} className="text-brand-600 hover:underline text-sm">Record payment</button>
+                      <button
+                        type="button"
+                        disabled={payLinkLoading === row.id}
+                        className="text-brand-600 hover:underline text-sm disabled:opacity-50"
+                        onClick={async () => {
+                          setPayLinkLoading(row.id);
+                          const { data: link, error: linkErr } = await apiGet<{ enabled: boolean; url?: string }>(`sales/invoices/${row.id}/payment-link`);
+                          setPayLinkLoading(null);
+                          if (link?.enabled && link?.url) window.open(link.url, '_blank');
+                          else setError(linkErr || 'Scan to pay is off. Connect Razorpay under Organization → Scan to pay.');
+                        }}
+                      >
+                        {payLinkLoading === row.id ? '…' : 'Pay online'}
+                      </button>
                     </td>
                   </tr>
                 ))

@@ -106,13 +106,15 @@ export function passwordResetHtml(opts: { name: string; otp: string; resetLink: 
   );
 }
 
-export function inviteHtml(opts: { inviteLink: string }): string {
+export function inviteHtml(opts: { inviteLink: string; roleName?: string; workspaceName?: string }): string {
+  const workspace = opts.workspaceName ? escapeHtml(opts.workspaceName) : 'your team';
+  const role = opts.roleName ? escapeHtml(opts.roleName) : 'staff';
   return layout(
     'You are invited to SMEBUZE',
-    `<h1 style="margin:0 0 12px 0;font-size:22px;">Join your team on SMEBUZE</h1>
-     <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#334155;">You have been invited to a workspace. Set your password to start billing, stock and reports with your team.</p>
+    `<h1 style="margin:0 0 12px 0;font-size:22px;">Join ${workspace} on SMEBUZE</h1>
+     <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#334155;">You have been invited as <strong>${role}</strong>. Set your password with the button below. After that you can sign in with this email and password — no workspace name needed.</p>
      <p style="margin:0;">${button(opts.inviteLink, 'Accept invite')}</p>
      <p style="margin:20px 0 0 0;font-size:13px;color:#64748b;">This link expires in 72 hours. If you were not expecting an invite, you can ignore this mail.</p>`,
-    'You have been invited to a SMEBUZE workspace.',
+    `You have been invited to ${opts.workspaceName || 'a SMEBUZE workspace'} as ${opts.roleName || 'staff'}.`,
   );
 }

@@ -5,8 +5,32 @@ import { Repository } from 'typeorm';
 import { WhatsappInboundMessage } from './entities/whatsapp-inbound-message.entity';
 import { Tenant } from '../tenant/entities/tenant.entity';
 import { Lead } from '../crm/entities/lead.entity';
+import { TenantContext } from '../common/tenant-context';
+
+export type WhatsappTemplates = {
+  reminder: string;
+  invoice: string;
+  quotation: string;
+  order: string;
+};
+
+type SendInput = {
+  to: string;
+  template?: string;
+  text?: string;
+  params?: Record<string, string>;
+  param?: string;
+  fileUrl?: string;
+  urlParam?: string;
+  headUrl?: string;
+  headParam?: string;
+  name?: string;
+  pdfName?: string;
+};
 
 type SendResult = { sent: boolean; message: string; to?: string; message_id?: string; mode?: string };
+
+const EMPTY_TEMPLATES: WhatsappTemplates = { reminder: '', invoice: '', quotation: '', order: '' };
 
 @Injectable()
 export class WhatsappService {
@@ -18,22 +42,29 @@ export class WhatsappService {
     @InjectRepository(Lead) private readonly leadRepo: Repository<Lead>,
   ) {}
 
-  getStatus() {
-    const configured = this.configured();
-    const apiPublic = process.env.API_PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`;
+  async getStatus(ctx?: TenantContext) {
+    const templates = await this.readTemplates(ctx?.tenantId);
     return {
-      configured,
-      mode: configured ? 'live' : 'pending_credentials',
-      phone_number_id_set: !!process.env.WHATSAPP_PHONE_NUMBER_ID,
-      access_token_set: !!process.env.WHATSAPP_ACCESS_TOKEN,
-      verify_token_hint: process.env.WHATSAPP_VERIFY_TOKEN ? '(set in .env)' : 'smebuzz_verify (default)',
-      default_tenant: process.env.WHATSAPP_DEFAULT_TENANT_SLUG || 'ice-crest',
-      webhook_url: `${apiPublic.replace(/\/$/, '')}/api/v1/integrations/whatsapp/webhook`,
-      api_version: process.env.WHATSAPP_API_VERSION || 'v21.0',
-      default_template: process.env.WHATSAPP_DEFAULT_TEMPLATE || null,
-      auto_reply_enabled: !!process.env.WHATSAPP_AUTO_REPLY?.trim(),
-      docs: 'docs/WHATSAPP_META_SETUP.md',
+      configured: this.configured(),
+      provider: 'ameerait',
+      mode: this.configured() ? 'live' : 'pending',
+      templates,
     };
+  }
+
+  async saveTemplates(ctx: TenantContext, incoming: Partial<WhatsappTemplates>): Promise<WhatsappTemplates> {
+    if (!ctx.tenantId) return this.readTemplates(null);
+    const tenant = await this.tenantRepo.findOne({ where: { id: ctx.tenantId } });
+    if (!tenant) return this.readTemplates(null);
+    const next: WhatsappTemplates = {
+      ...(await this.readTemplates(ctx.tenantId)),
+      ...Object.fromEntries(
+        Object.entries(incoming).map(([k, v]) => [k, String(v ?? '').trim()]),
+      ) as WhatsappTemplates,
+    };
+    tenant.settings = { ...(tenant.settings ?? {}), whatsapp_templates: next };
+    await this.tenantRepo.save(tenant);
+    return next;
   }
 
   verifySignature(rawBody: string, signatureHeader?: string): boolean {
@@ -44,12 +75,7 @@ export class WhatsappService {
   }
 
   private configured() {
-    return !!(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
-  }
-
-  private messagesUrl() {
-    const version = process.env.WHATSAPP_API_VERSION || 'v21.0';
-    return `https://graph.facebook.com/${version}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    return !!(process.env.WHATSAPP_AMEERA_LICENSE && process.env.WHATSAPP_AMEERA_API_KEY);
   }
 
   normalizePhone(to: string): string {
@@ -58,62 +84,81 @@ export class WhatsappService {
     return digits;
   }
 
-  async send(body: { to: string; template?: string; text?: string; params?: Record<string, string> }): Promise<SendResult> {
+  async send(body: SendInput, ctx?: TenantContext): Promise<SendResult> {
     const to = this.normalizePhone(body.to);
-    if (!to) return { sent: false, message: 'Valid phone number required (e.g. 919876543210)' };
+    if (!to) return { sent: false, message: 'Enter a 10-digit mobile number.' };
 
-    const text = body.text?.trim() || body.params?.body?.trim();
     if (!this.configured()) {
       return {
         sent: false,
-        mode: 'pending_credentials',
-        message: 'Add WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID to .env — see docs/WHATSAPP_META_SETUP.md',
+        mode: 'pending',
+        message: 'WhatsApp is not connected yet. Ask your admin to finish setup.',
         to,
       };
     }
 
-    const payload: Record<string, unknown> = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-    };
-
-    const templateName = body.template && body.template !== 'generic' ? body.template : process.env.WHATSAPP_DEFAULT_TEMPLATE;
-    if (templateName && !text) {
-      payload.type = 'template';
-      payload.template = {
-        name: templateName,
-        language: { code: process.env.WHATSAPP_TEMPLATE_LANG || 'en' },
-        ...(body.params?.body ? {
-          components: [{
-            type: 'body',
-            parameters: [{ type: 'text', text: body.params.body.slice(0, 1024) }],
-          }],
-        } : {}),
+    const templates = await this.readTemplates(ctx?.tenantId);
+    const requested = (body.template || '').trim();
+    const mapped =
+      requested && requested in templates
+        ? templates[requested as keyof WhatsappTemplates]
+        : requested;
+    const templateName = mapped || templates.reminder || process.env.WHATSAPP_DEFAULT_TEMPLATE || '';
+    if (!templateName) {
+      return {
+        sent: false,
+        mode: 'pending',
+        message: 'Match a WhatsApp template first (Organization → WhatsApp).',
+        to,
       };
-    } else {
-      payload.type = 'text';
-      payload.text = { preview_url: true, body: text || 'Message from Ice Crest CRM' };
     }
+
+    const param =
+      body.param?.trim() ||
+      body.params?.body?.trim() ||
+      body.text?.trim() ||
+      '';
+
+    const endpoint = process.env.WHATSAPP_AMEERA_URL || 'https://login.ameerait.com/api/sendtemplate.php';
+    const url = new URL(endpoint);
+    url.searchParams.set('LicenseNumber', process.env.WHATSAPP_AMEERA_LICENSE || '');
+    url.searchParams.set('APIKey', process.env.WHATSAPP_AMEERA_API_KEY || '');
+    url.searchParams.set('Contact', to);
+    url.searchParams.set('Template', templateName);
+    if (param) url.searchParams.set('Param', param);
+    if (body.fileUrl) url.searchParams.set('Fileurl', body.fileUrl);
+    if (body.urlParam) url.searchParams.set('URLParam', body.urlParam);
+    if (body.headUrl) url.searchParams.set('HeadURL', body.headUrl);
+    if (body.headParam) url.searchParams.set('HeadParam', body.headParam);
+    if (body.name) url.searchParams.set('Name', body.name);
+    if (body.pdfName) url.searchParams.set('PDFName', body.pdfName);
 
     try {
-      const res = await fetch(this.messagesUrl(), {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-      const json = (await res.json()) as { messages?: { id: string }[]; error?: { message?: string; code?: number } };
-      if (!res.ok) {
-        const hint = json.error?.code === 131030 ? ' Add recipient as test number in Meta → WhatsApp → API Setup (dev mode).' : '';
-        return { sent: false, message: (json.error?.message || `WhatsApp API error (${res.status})`) + hint, to, mode: 'live' };
+      const res = await fetch(url.toString(), { method: 'GET' });
+      const raw = await res.text();
+      const ok = res.ok && !/fail|error|invalid|denied/i.test(raw);
+      if (!ok) {
+        this.logger.warn(`AmeeraIT send failed (${res.status}): ${raw.slice(0, 300)}`);
+        return { sent: false, message: 'WhatsApp could not send. Check the template name and phone number.', to, mode: 'live' };
       }
-      return { sent: true, message: 'Message sent via WhatsApp Cloud API', to, message_id: json.messages?.[0]?.id, mode: 'live' };
+      return { sent: true, message: 'WhatsApp message sent', to, mode: 'live' };
     } catch (e) {
-      return { sent: false, message: e instanceof Error ? e.message : 'WhatsApp send failed', to };
+      this.logger.error(e instanceof Error ? e.stack : String(e));
+      return { sent: false, message: 'WhatsApp could not send. Try again in a moment.', to };
     }
+  }
+
+  private async readTemplates(tenantId?: string | null): Promise<WhatsappTemplates> {
+    const fromEnv: WhatsappTemplates = {
+      reminder: process.env.WHATSAPP_TEMPLATE_REMINDER || '',
+      invoice: process.env.WHATSAPP_TEMPLATE_INVOICE || '',
+      quotation: process.env.WHATSAPP_TEMPLATE_QUOTATION || '',
+      order: process.env.WHATSAPP_TEMPLATE_ORDER || '',
+    };
+    if (!tenantId) return { ...EMPTY_TEMPLATES, ...fromEnv };
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    const saved = (tenant?.settings?.whatsapp_templates ?? {}) as Partial<WhatsappTemplates>;
+    return { ...fromEnv, ...saved };
   }
 
   async handleWebhook(body: unknown): Promise<{ received: boolean; leads_created: number }> {
@@ -151,10 +196,6 @@ export class WhatsappService {
             }));
             leadId = lead.id;
             leadsCreated++;
-            const autoReply = process.env.WHATSAPP_AUTO_REPLY?.trim();
-            if (autoReply && this.configured()) {
-              await this.send({ to: from, text: autoReply }).catch((err) => this.logger.warn(`Auto-reply failed: ${err}`));
-            }
           }
 
           await this.inboundRepo.save(this.inboundRepo.create({

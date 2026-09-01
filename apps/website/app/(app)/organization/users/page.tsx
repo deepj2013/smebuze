@@ -50,14 +50,19 @@ export default function UsersPage() {
     setInviteSending(true);
     setInviteSuccess(null);
     setError(null);
-    const { data, error: err } = await apiPost<{ inviteLink: string }>('organization/invites', {
+    const { data, error: err } = await apiPost<{ inviteLink: string; sent?: boolean; roleName?: string }>('organization/invites', {
       email: inviteEmail.trim(),
       role_id: inviteRoleId || undefined,
     });
     setInviteSending(false);
     if (err) setError(err);
     else if (data?.inviteLink) {
-      setInviteSuccess(`Invite sent to ${inviteEmail}. They can join via the link (check email or share link).`);
+      const role = data.roleName || 'Staff';
+      if (data.sent) {
+        setInviteSuccess(`Invite emailed to ${inviteEmail.trim()} as ${role}. They set a password from the mail and then sign in with email and password.`);
+      } else {
+        setInviteSuccess(`Mail did not send. Share this join link with ${inviteEmail.trim()} (${role}).`);
+      }
       setInviteEmail('');
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(data.inviteLink);
     }
@@ -71,7 +76,7 @@ export default function UsersPage() {
       </div>
       <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 max-w-lg">
         <h2 className="font-semibold text-slate-900 mb-2">Invite by email</h2>
-        <p className="text-sm text-slate-500 mb-3">Send an invite link to join this workspace. They'll set their password on the join page.</p>
+        <p className="text-sm text-slate-500 mb-3">We email them from support@smebuze.com. Pick a role — Sales, Accounts, Staff, etc. They only need email and password to sign in.</p>
         <form onSubmit={handleInvite} className="flex flex-wrap gap-2 items-end">
           <div className="flex-1 min-w-[180px]">
             <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>

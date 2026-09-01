@@ -1,6 +1,6 @@
 import { Injectable, ForbiddenException, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, ILike } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Company } from '../tenant/entities/company.entity';
@@ -16,6 +16,17 @@ import { AuditService } from '../audit/audit.service';
 import { isValidGstin } from '../common/gstin.validator';
 import { RolePermission } from '../auth/entities/role-permission.entity';
 import { Permission } from '../auth/entities/permission.entity';
+import { Tenant } from '../tenant/entities/tenant.entity';
+import { parseTenantBranding, sanitizeHex, TenantBranding } from '../common/tenant-branding';
+import {
+  decryptSecret,
+  encryptSecret,
+  parseTenantRazorpay,
+  publicRazorpaySettings,
+  razorpayRequest,
+  razorpayWebhookUrl,
+  RazorpayPublicSettings,
+} from '../common/tenant-razorpay';
 
 @Injectable()
 export class OrganizationService {
@@ -38,6 +49,8 @@ export class OrganizationService {
     private readonly userRoleRepo: Repository<UserRole>,
     @InjectRepository(PendingInvite)
     private readonly pendingInviteRepo: Repository<PendingInvite>,
+    @InjectRepository(Tenant)
+    private readonly tenantRepo: Repository<Tenant>,
     private readonly mailService: MailService,
     private readonly auditService: AuditService,
   ) {}
@@ -359,27 +372,43 @@ export class OrganizationService {
     ctx: TenantContext,
     email: string,
     roleId?: string | null,
-  ): Promise<{ inviteLink: string; token: string; expiresAt: string }> {
+  ): Promise<{ inviteLink: string; token: string; expiresAt: string; sent: boolean; roleName: string }> {
     const tenantId = this.assertTenantId(ctx);
-    const existing = await this.userRepo.findOne({ where: { tenant_id: tenantId, email: email.trim().toLowerCase() } });
+    const normalized = email.trim().toLowerCase();
+    const existing = await this.userRepo.findOne({ where: { tenant_id: tenantId, email: ILike(normalized) } });
     if (existing) throw new ConflictException('A user with this email already exists');
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 72);
     const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3001';
     const inviteLink = `${baseUrl}/join?token=${token}`;
+    let roleName = 'Staff';
+    if (roleId) {
+      const role = await this.roleRepo.findOne({ where: { id: roleId, tenant_id: tenantId } });
+      if (role) roleName = role.name;
+    }
+    const company = (
+      await this.companyRepo.find({
+        where: { tenant_id: tenantId },
+        order: { is_default: 'DESC' },
+        take: 1,
+      })
+    )[0];
     await this.pendingInviteRepo.save(
       this.pendingInviteRepo.create({
         tenant_id: tenantId,
-        email: email.trim().toLowerCase(),
+        email: normalized,
         role_id: roleId ?? null,
         token,
         expires_at: expiresAt,
         created_by: ctx.userId,
       }),
     );
-    await this.mailService.sendInvite(email.trim(), inviteLink);
-    return { inviteLink, token, expiresAt: expiresAt.toISOString() };
+    const mail = await this.mailService.sendInvite(normalized, inviteLink, {
+      roleName,
+      workspaceName: company?.name || undefined,
+    });
+    return { inviteLink, token, expiresAt: expiresAt.toISOString(), sent: mail.sent, roleName };
   }
 
   async listInvites(ctx: TenantContext): Promise<{ email: string; expires_at: string; used_at: string | null }[]> {
@@ -394,5 +423,100 @@ export class OrganizationService {
       expires_at: i.expires_at.toISOString(),
       used_at: i.used_at?.toISOString() ?? null,
     }));
+  }
+
+  async getBranding(ctx: TenantContext): Promise<TenantBranding> {
+    const tenantId = this.assertTenantId(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Workspace not found');
+    return parseTenantBranding(tenant.settings as Record<string, unknown>);
+  }
+
+  async saveBranding(
+    ctx: TenantContext,
+    dto: Partial<{ primary_color: string; accent_color: string; display_name: string | null; logo_url: string | null }>,
+  ): Promise<TenantBranding> {
+    const tenantId = this.assertTenantId(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Workspace not found');
+    const current = parseTenantBranding(tenant.settings as Record<string, unknown>);
+    const next: TenantBranding = {
+      ...current,
+      primary_color: dto.primary_color != null ? sanitizeHex(dto.primary_color, current.primary_color) : current.primary_color,
+      accent_color: dto.accent_color != null ? sanitizeHex(dto.accent_color, current.accent_color) : current.accent_color,
+      display_name:
+        dto.display_name === undefined
+          ? current.display_name
+          : dto.display_name && String(dto.display_name).trim()
+            ? String(dto.display_name).trim()
+            : null,
+      logo_url: dto.logo_url !== undefined ? dto.logo_url : current.logo_url,
+      updated_at: new Date().toISOString(),
+    };
+    tenant.settings = { ...(tenant.settings ?? {}), branding: next };
+    await this.tenantRepo.save(tenant);
+    if (next.logo_url) {
+      const companies = await this.companyRepo.find({ where: { tenant_id: tenantId } });
+      if (companies.length) {
+        for (const company of companies) company.logo_url = next.logo_url;
+        await this.companyRepo.save(companies);
+      }
+    }
+    await this.auditService.log(ctx, 'branding.update', 'tenant', tenantId, { primary_color: next.primary_color }).catch(() => {});
+    return next;
+  }
+
+  async getRazorpay(ctx: TenantContext): Promise<RazorpayPublicSettings> {
+    const tenantId = this.assertTenantId(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Workspace not found');
+    return publicRazorpaySettings(parseTenantRazorpay(tenant.settings as Record<string, unknown>), razorpayWebhookUrl());
+  }
+
+  async saveRazorpay(
+    ctx: TenantContext,
+    dto: Partial<{
+      enabled: boolean;
+      key_id: string;
+      key_secret: string;
+      webhook_secret: string;
+      accept_partial: boolean;
+      min_partial_rupees: number;
+    }>,
+  ): Promise<RazorpayPublicSettings> {
+    const tenantId = this.assertTenantId(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Workspace not found');
+    const current = parseTenantRazorpay(tenant.settings as Record<string, unknown>);
+    const next = {
+      ...current,
+      enabled: dto.enabled ?? current.enabled,
+      key_id: dto.key_id !== undefined ? String(dto.key_id).trim() : current.key_id,
+      key_secret:
+        dto.key_secret !== undefined && String(dto.key_secret).trim()
+          ? encryptSecret(String(dto.key_secret).trim())
+          : current.key_secret,
+      webhook_secret:
+        dto.webhook_secret !== undefined && String(dto.webhook_secret).trim()
+          ? encryptSecret(String(dto.webhook_secret).trim())
+          : current.webhook_secret,
+      accept_partial: dto.accept_partial ?? current.accept_partial,
+      min_partial_rupees:
+        dto.min_partial_rupees != null ? Math.max(1, Number(dto.min_partial_rupees)) : current.min_partial_rupees,
+    };
+    if (next.enabled) {
+      if (!next.key_id.startsWith('rzp_')) throw new BadRequestException('Key ID should start with rzp_test_ or rzp_live_');
+      const secret = decryptSecret(next.key_secret);
+      if (!secret) throw new BadRequestException('Key secret is required to enable scan-to-pay');
+      try {
+        await razorpayRequest(next.key_id, secret, 'GET', '/payments?count=1');
+      } catch (e) {
+        throw new BadRequestException((e as Error).message || 'Razorpay keys were rejected. Check Key ID and Secret.');
+      }
+    }
+    tenant.settings = { ...(tenant.settings ?? {}), razorpay: next };
+    await this.tenantRepo.save(tenant);
+    await this.auditService.log(ctx, 'razorpay.update', 'tenant', tenantId, { enabled: next.enabled }).catch(() => {});
+    return publicRazorpaySettings(next, razorpayWebhookUrl());
   }
 }

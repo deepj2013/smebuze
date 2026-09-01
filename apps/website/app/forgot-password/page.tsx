@@ -86,7 +86,7 @@ export default function ForgotPasswordPage() {
 
   if (sent) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col">
+      <div className="min-h-dvh bg-slate-50 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <header className="border-b border-slate-200 bg-white">
           <div className="max-w-6xl mx-auto px-4 py-4">
             <Link href="/" className="text-xl font-bold text-brand-700">SMEBUZZ</Link>
@@ -159,7 +159,7 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-dvh bg-slate-50 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <header className="border-b border-slate-200 bg-white">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="text-xl font-bold text-brand-700">SMEBUZZ</Link>

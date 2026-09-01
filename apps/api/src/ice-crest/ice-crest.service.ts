@@ -12,7 +12,11 @@ import { Stock } from '../inventory/entities/stock.entity';
 import { Lead } from '../crm/entities/lead.entity';
 import { Vendor } from '../purchase/entities/vendor.entity';
 import { SalesOrder } from '../sales/entities/sales-order.entity';
+import { Company } from '../tenant/entities/company.entity';
+import { AccountingService } from '../accounting/accounting.service';
+import { defaultExpenseNature, EXPENSE_NATURES, isValidExpenseNature } from '../common/gst-returns';
 
+export { EXPENSE_NATURES };
 export const ICE_CREST_EXPENSE_CATEGORIES = ['Purchase / raw material', 'Salary', 'Daily wages', 'Contract labour', 'Transport', 'Fuel', 'Electricity', 'Water', 'Rent', 'Repairs & maintenance', 'Plastic/packaging charges', 'Machinery / equipment', 'Marketing', 'Professional fees', 'Bank charges', 'Taxes & licences', 'Miscellaneous', 'Other operational expenses'];
 export const ICE_CREST_ENTRY_TYPES = ['purchase','wage','salary','operating_expense','asset_purchase','statutory_payment'];
 
@@ -29,6 +33,7 @@ export class IceCrestService {
     @InjectRepository(Vendor) private readonly vendorRepo: Repository<Vendor>,
     @InjectRepository(SalesOrder) private readonly orderRepo: Repository<SalesOrder>,
     private readonly inventoryService: InventoryService,
+    private readonly accountingService: AccountingService,
     private readonly dataSource:DataSource,
   ) {}
 
@@ -46,10 +51,11 @@ export class IceCrestService {
     return tenant;
   }
 
-  async createExpense(body: { company_id?: string; entry_type?: string; expense_number?: string; vendor_id?: string; employee_name?: string; category: string; taxable_amount?: number; gst_rate?: number; tds_amount?: number; amount?: number; paid_amount?: number; expense_date: string; due_date?: string; description?: string; payment_mode?: string; reference?: string; invoice_number?: string; attachment_url?: string }, ctx: TenantContext) {
+  async createExpense(body: { company_id?: string; entry_type?: string; expense_number?: string; vendor_id?: string; employee_name?: string; category: string; nature?: string; hsn_sac?: string; itc_eligible?: boolean; taxable_amount?: number; gst_rate?: number; tds_amount?: number; amount?: number; paid_amount?: number; expense_date: string; due_date?: string; description?: string; payment_mode?: string; reference?: string; invoice_number?: string; attachment_url?: string }, ctx: TenantContext) {
     const tenantId = this.tenantId(ctx); await this.assertIceCrest(tenantId);
     if (!ICE_CREST_EXPENSE_CATEGORIES.includes(body.category)) throw new ForbiddenException('Invalid expense category');
     const entryType=body.entry_type??'operating_expense';if(!ICE_CREST_ENTRY_TYPES.includes(entryType))throw new ForbiddenException('Invalid expense entry type');
+    const nature = body.nature && isValidExpenseNature(body.nature) ? body.nature : defaultExpenseNature(body.category);
     const taxable=Number(body.taxable_amount??body.amount??0),gstRate=Number(body.gst_rate??0),tds=Number(body.tds_amount??0);
     if(!Number.isFinite(taxable)||taxable<=0)throw new ForbiddenException('Taxable/base amount must be greater than zero');
     if(![0,5,12,18,28].includes(gstRate))throw new ForbiddenException('GST rate must be 0, 5, 12, 18 or 28 percent');
@@ -63,21 +69,35 @@ export class IceCrestService {
     if(body.vendor_id&&body.invoice_number?.trim()){const duplicate=await this.expenseRepo.findOne({where:{tenant_id:tenantId,vendor_id:body.vendor_id,invoice_number:body.invoice_number.trim()}});if(duplicate)throw new ForbiddenException('This vendor invoice number is already recorded');}
     if(tds<0||tds>total)throw new ForbiddenException('TDS cannot be negative or exceed total');
     const settled=paid+tds,status=settled<=0?'unpaid':settled>=total?'paid':'partial';
-    return this.expenseRepo.save(this.expenseRepo.create({
-      tenant_id: tenantId, company_id: body.company_id ?? ctx.companyId ?? null, entry_type:entryType,expense_number:body.expense_number?.trim()||`EXP-${Date.now()}`,
-      vendor_id:body.vendor_id??null,employee_name:body.employee_name?.trim()||null,category: body.category,taxable_amount:taxable.toFixed(2),gst_rate:String(gstRate),gst_amount:gst.toFixed(2),tds_amount:tds.toFixed(2),
+    const itcEligible = body.itc_eligible === true || (body.itc_eligible !== false && gstRate > 0 && Boolean(body.vendor_id) && !['wage', 'salary', 'statutory_payment'].includes(entryType));
+    const companyId = body.company_id ?? ctx.companyId ?? (await this.dataSource.getRepository(Company).findOne({ where: { tenant_id: tenantId } }))?.id ?? null;
+    const saved = await this.expenseRepo.save(this.expenseRepo.create({
+      tenant_id: tenantId, company_id: companyId, entry_type:entryType,expense_number:body.expense_number?.trim()||`EXP-${Date.now()}`,
+      vendor_id:body.vendor_id??null,employee_name:body.employee_name?.trim()||null,category: body.category, nature, hsn_sac: body.hsn_sac?.trim() || null, itc_eligible: itcEligible,
+      taxable_amount:taxable.toFixed(2),gst_rate:String(gstRate),gst_amount:gst.toFixed(2),tds_amount:tds.toFixed(2),
       amount: total.toFixed(2),paid_amount:paid.toFixed(2),status,due_date:dueDate, expense_date: expenseDate,
       description: body.description ?? null, payment_mode: body.payment_mode ?? null,
       reference: body.reference ?? null,invoice_number:body.invoice_number??null,attachment_url:body.attachment_url??null, created_by: ctx.userId,
     }));
+    if (saved.company_id) {
+      try {
+        const je = await this.postExpenseJournal(saved, ctx);
+        saved.journal_entry_id = je.id;
+        await this.expenseRepo.save(saved);
+      } catch {
+        // Expense is booked even if books posting is skipped (missing company accounts).
+      }
+    }
+    return saved;
   }
 
-  async listExpenses(from: string | undefined, to: string | undefined, category: string | undefined, ctx: TenantContext) {
+  async listExpenses(from: string | undefined, to: string | undefined, category: string | undefined, ctx: TenantContext, nature?: string) {
     const tenantId = this.tenantId(ctx); await this.assertIceCrest(tenantId);
     const qb = this.expenseRepo.createQueryBuilder('e').where('e.tenant_id = :tenantId', { tenantId });
     if (from) qb.andWhere('e.expense_date >= :from', { from });
     if (to) qb.andWhere('e.expense_date <= :to', { to });
     if (category) qb.andWhere('e.category = :category', { category });
+    if (nature) qb.andWhere('e.nature = :nature', { nature });
     return qb.orderBy('e.expense_date', 'DESC').addOrderBy('e.created_at', 'DESC').getMany();
   }
 
@@ -85,7 +105,23 @@ export class IceCrestService {
     const tenantId=this.tenantId(ctx);await this.assertIceCrest(tenantId);const amount=Number(body.amount);if(!Number.isFinite(amount)||amount<=0)throw new ForbiddenException('Payment amount must be greater than zero');
     return this.dataSource.transaction(async manager=>{const row=await manager.getRepository(BusinessExpense).createQueryBuilder('e').setLock('pessimistic_write').where('e.id=:id AND e.tenant_id=:tenantId',{id,tenantId}).getOne();if(!row)throw new NotFoundException('Expense entry not found');
       const total=Number(row.amount),paid=Number(row.paid_amount),tds=Number(row.tds_amount),outstanding=total-paid-tds;if(amount>outstanding)throw new ForbiddenException(`Payment exceeds outstanding amount ${outstanding.toFixed(2)}`);
-      row.paid_amount=(paid+amount).toFixed(2);row.status=paid+amount+tds>=total?'paid':'partial';if(body.payment_mode)row.payment_mode=body.payment_mode;if(body.reference)row.reference=body.reference;return manager.save(row);});
+      row.paid_amount=(paid+amount).toFixed(2);row.status=paid+amount+tds>=total?'paid':'partial';if(body.payment_mode)row.payment_mode=body.payment_mode;if(body.reference)row.reference=body.reference;
+      const saved=await manager.save(row);
+      if (saved.company_id) {
+        try {
+          await this.accountingService.postBalancedEntry(ctx, {
+            company_id: saved.company_id,
+            entry_date: new Date().toISOString().slice(0, 10),
+            number: `EXP-PAY-${saved.expense_number || saved.id.slice(0, 8)}-${Date.now().toString().slice(-4)}`,
+            reference: saved.id,
+            lines: [
+              { code: 'SB-AP', debit: amount, narration: `Pay ${saved.expense_number}` },
+              { code: this.accountingService.cashBankCode(body.payment_mode || saved.payment_mode), credit: amount, narration: `Pay ${saved.expense_number}` },
+            ],
+          });
+        } catch { /* payment is recorded even if journal is skipped */ }
+      }
+      return saved;});
   }
 
   async recordMovement(body: { warehouse_id: string; item_id: string; movement_type: 'opening'|'inward'|'outward'|'adjustment'; quantity: number; movement_date?: string; notes?: string; reference_number?: string }, ctx: TenantContext) {
@@ -121,6 +157,7 @@ export class IceCrestService {
     const sales = invoices.reduce((s, i) => s + Number(i.total), 0);
     const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
     const expenseBreakdown = ICE_CREST_EXPENSE_CATEGORIES.map(category => ({ category, amount: expenses.filter(e => e.category === category).reduce((s,e) => s + Number(e.amount), 0) })).filter(x => x.amount > 0);
+    const expenseByNature = EXPENSE_NATURES.map(n => ({ nature: n.id, label: n.label, amount: expenses.filter(e => (e.nature || defaultExpenseNature(e.category)) === n.id).reduce((s,e) => s + Number(e.amount), 0) })).filter(x => x.amount > 0);
     const skuStock = items.map(item => ({ item_id: item.id, sku: item.sku, name: item.name,
       opening: priorMovements.filter(m=>m.item_id===item.id).reduce((s,m)=>s+(m.movement_type==='outward'?-Number(m.quantity):Number(m.quantity)),0),
       inward: movements.filter(m => m.item_id === item.id && ['opening','inward','adjustment'].includes(m.movement_type)).reduce((s,m)=>s+Number(m.quantity),0),
@@ -129,7 +166,7 @@ export class IceCrestService {
       available: stock.filter(s => s.item_id === item.id).reduce((n,s)=>n+Number(s.quantity)-Number(s.reserved),0) }));
     return { from, to, sales, expenses: totalExpenses, operating_profit: sales-totalExpenses,
       profit_margin: sales ? ((sales-totalExpenses)/sales)*100 : 0, invoice_count: invoices.length,
-      expense_breakdown: expenseBreakdown, stock: skuStock,
+      expense_breakdown: expenseBreakdown, expense_by_nature: expenseByNature, stock: skuStock,
       sales_trend: this.buildSalesTrend(invoices),
       stock_totals: { opening: skuStock.reduce((s,x)=>s+x.opening,0), inward: skuStock.reduce((s,x)=>s+x.inward,0), outward: skuStock.reduce((s,x)=>s+x.outward,0), available: skuStock.reduce((s,x)=>s+x.available,0) } };
   }
@@ -172,6 +209,30 @@ export class IceCrestService {
       return { item_id: item.id, sku: item.sku, name: item.name, confirmed_orders: orderQty, available_stock: onHand, safety_stock: safety, produce_tomorrow: produce };
     }).filter(r => r.confirmed_orders > 0);
     return { plan_date: date, order_count: activeOrders.length, safety_stock: safety, rows, totals: { confirmed: rows.reduce((s, r) => s + r.confirmed_orders, 0), to_produce: rows.reduce((s, r) => s + r.produce_tomorrow, 0) } };
+  }
+
+  private async postExpenseJournal(row: BusinessExpense, ctx: TenantContext) {
+    const taxable = Number(row.taxable_amount);
+    const gst = Number(row.gst_amount);
+    const tds = Number(row.tds_amount);
+    const paid = Number(row.paid_amount);
+    const total = Number(row.amount);
+    const expenseAmt = row.itc_eligible ? taxable : taxable + gst;
+    const itc = row.itc_eligible ? gst : 0;
+    const payable = Math.max(0, total - tds - paid);
+    return this.accountingService.postBalancedEntry(ctx, {
+      company_id: row.company_id!,
+      entry_date: row.expense_date,
+      number: `EXP-${row.expense_number || row.id.slice(0, 8)}`,
+      reference: row.id,
+      lines: [
+        { code: this.accountingService.expenseAccountCode(row.nature), debit: expenseAmt, narration: row.description || row.category },
+        { code: 'SB-ITC', debit: itc, narration: 'Input GST' },
+        { code: 'SB-TDS', credit: tds, narration: 'TDS deducted' },
+        { code: this.accountingService.cashBankCode(row.payment_mode), credit: paid, narration: 'Amount paid' },
+        { code: 'SB-AP', credit: payable, narration: 'Vendor / payable' },
+      ],
+    });
   }
 
   async captureWebsiteLead(tenantSlug: string, body: { name: string; phone?: string; email?: string; company?: string; requirement?: string; quantity?: number; product_sku?: string; message?: string }) {

@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentTenant } from '../common/tenant-context';
@@ -6,11 +6,16 @@ import { TenantContext } from '../common/tenant-context';
 import { RequirePermissions } from '../common/decorators/require-permissions';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { ReportsService } from './reports.service';
+import { GstReturnsService } from './gst-returns.service';
+import { UploadGstr2aDto } from './dto/upload-gstr2a.dto';
 
 @Controller('reports')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class ReportsController {
-  constructor(private readonly reportsService: ReportsService) {}
+  constructor(
+    private readonly reportsService: ReportsService,
+    private readonly gstReturns: GstReturnsService,
+  ) {}
 
   @Get('dashboard')
   @RequirePermissions('reports.view')
@@ -318,5 +323,47 @@ export class ReportsController {
       return;
     }
     return data;
+  }
+
+  @Get('gstr-1')
+  @RequirePermissions('reports.view')
+  async gstr1(
+    @CurrentTenant() ctx: TenantContext,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('company_id') companyId?: string,
+    @Query('format') format?: string,
+    @Res({ passthrough: true }) res?: Response,
+  ) {
+    const month = period || (from ? String(from).slice(0, 7) : new Date().toISOString().slice(0, 7));
+    const data = await this.gstReturns.getGstr1(ctx, month, companyId);
+    if (format === 'csv' && res) {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=gstr-1-${month}.csv`);
+      res.send(this.gstReturns.gstr1Csv(data));
+      return;
+    }
+    return data;
+  }
+
+  @Post('gstr-2a/upload')
+  @RequirePermissions('reports.view')
+  async uploadGstr2a(
+    @CurrentTenant() ctx: TenantContext,
+    @Body() body: UploadGstr2aDto,
+  ) {
+    return this.gstReturns.uploadGstr2a(ctx, body);
+  }
+
+  @Get('gstr-2a')
+  @RequirePermissions('reports.view')
+  async gstr2a(
+    @CurrentTenant() ctx: TenantContext,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('company_id') companyId?: string,
+  ) {
+    const month = period || (from ? String(from).slice(0, 7) : new Date().toISOString().slice(0, 7));
+    return this.gstReturns.reconcileGstr2a(ctx, month, companyId);
   }
 }

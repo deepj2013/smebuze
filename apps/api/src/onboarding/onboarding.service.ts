@@ -78,6 +78,8 @@ export class OnboardingService {
     const isIceCrestTenant = tenantSlug === 'ice-crest' || settings?.business_type === 'ice_crest';
     const businessType = typeof settings?.business_type === 'string' ? settings.business_type : '';
     const isPosTenant = ['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop'].includes(businessType);
+    const razorpay = (settings?.razorpay ?? {}) as { enabled?: boolean; key_id?: string; key_secret?: string };
+    const paymentsReady = razorpay.enabled === true && typeof razorpay.key_id === 'string' && razorpay.key_id.startsWith('rzp_') && Boolean(razorpay.key_secret);
 
     if (isIceCrestTenant) {
       const steps: ChecklistStep[] = [
@@ -86,6 +88,7 @@ export class OnboardingService {
         { id: 'ic_customer', label: 'Add a customer or capture a lead', done: customerCount > 0, href: '/crm/leads' },
         { id: 'ic_company', label: 'Confirm company GSTIN, bank & logo', done: companyCount > 0, href: '/organization/companies' },
         { id: 'ic_printer', label: 'Connect a printer (USB, Wi-Fi or Bluetooth)', done: false, href: '/organization/printers' },
+        { id: 'ic_payments', label: 'Connect Razorpay for scan-to-pay on invoices', done: paymentsReady, href: '/organization/payments' },
       ];
       return {
         steps,
@@ -104,6 +107,7 @@ export class OnboardingService {
         { id: 'pos_items', label: `Add your first ${itemWord}s for the counter`, done: false, href: '/inventory/items/new' },
         { id: 'pos_bill', label: 'Take your first bill at the counter', done: invoiceCount > 0, href: '/pos' },
         { id: 'setup_printer', label: 'Connect the counter printer (USB, Wi-Fi or Bluetooth)', done: false, href: '/organization/printers' },
+        { id: 'pos_payments', label: 'Connect Razorpay for scan-to-pay on bills', done: paymentsReady, href: '/organization/payments' },
       ];
       return {
         steps,
@@ -119,6 +123,7 @@ export class OnboardingService {
       { id: 'add_customer', label: 'Add your first customer or vendor', done: customerCount > 0, href: '/crm/customers' },
       { id: 'create_invoice', label: 'Create your first invoice', done: invoiceCount > 0, href: '/sales/invoices' },
       { id: 'setup_printer', label: 'Connect a printer (USB, Wi-Fi, internet or Bluetooth)', done: false, href: '/organization/printers' },
+      { id: 'setup_payments', label: 'Connect Razorpay for scan-to-pay on invoices', done: paymentsReady, href: '/organization/payments' },
     ];
 
     return {

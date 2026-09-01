@@ -24,10 +24,14 @@ export default function LoginPage() {
 
   function goAfterLogin(data: {
     user?: { isSuperAdmin?: boolean; tenantId?: string | null };
-    tenant?: { slug?: string; settings?: { business_type?: string } };
+    tenant?: { slug?: string; settings?: { business_type?: string }; subscription_expired?: boolean };
   }) {
     if (data.user?.isSuperAdmin && !data.user?.tenantId) {
       router.push('/admin/tenants');
+      return;
+    }
+    if (data.tenant?.subscription_expired) {
+      router.push('/billing');
       return;
     }
     if (data.tenant?.slug === 'ice-crest' || data.tenant?.settings?.business_type === 'ice_crest') {
@@ -99,14 +103,14 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+    <div className="min-h-dvh bg-slate-50 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <header className="border-b border-slate-200 bg-white">
         <div className="max-w-6xl mx-auto px-4 py-3 sm:py-4 flex items-center justify-between min-h-[44px]">
           <Link href="/" className="text-lg sm:text-xl font-bold text-brand-700 min-h-[44px] flex items-center">SMEBUZZ</Link>
           <Link href="/" className="text-sm text-slate-600 hover:text-brand-600 py-2 px-1 min-h-[44px] inline-flex items-center">Back to home</Link>
         </div>
       </header>
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-6" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <main id="main" className="flex-1 flex items-center justify-center p-4 sm:p-6" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-slate-200 p-5 sm:p-8">
           {workspaces ? (
             <>
@@ -196,6 +200,11 @@ export default function LoginPage() {
                 Don’t have an account? <Link href="/signup" className="text-brand-600 hover:underline">Start a 7-day free trial</Link>
                 {' · '}
                 Joining a team? <Link href="/join" className="text-brand-600 hover:underline">Join workspace</Link>
+              </p>
+              <p className="text-xs text-slate-400">
+                <Link href="/privacy" className="hover:underline">Privacy</Link>
+                {' · '}
+                <Link href="/terms" className="hover:underline">Terms</Link>
               </p>
             </div>
           )}

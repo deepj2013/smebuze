@@ -25,6 +25,8 @@ import { SearchModule } from './search/search.module';
 import { HrModule } from './hr/hr.module';
 import { ServiceModule } from './service/service.module';
 import { IceCrestModule } from './ice-crest/ice-crest.module';
+import { BillingModule } from './billing/billing.module';
+import { SubscriptionGuard } from './common/guards/subscription.guard';
 
 @Module({
   imports: [
@@ -32,7 +34,7 @@ import { IceCrestModule } from './ice-crest/ice-crest.module';
       isGlobal: true,
       envFilePath: ['.env', '../../.env'],
     }),
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60000, limit: 120 }]),
     TypeOrmModule.forRootAsync({
       useFactory: () => ({
         type: 'postgres',
@@ -66,10 +68,12 @@ import { IceCrestModule } from './ice-crest/ice-crest.module';
     HrModule,
     ServiceModule,
     IceCrestModule,
+    BillingModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: SubscriptionGuard },
   ],
 })
 export class AppModule {}

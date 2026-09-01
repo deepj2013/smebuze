@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { SIGNUP_BUSINESS_TYPES, type SignupBusinessTypeId } from '@/lib/business-types';
+import { quotePlan } from '@/lib/plans';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -17,7 +18,7 @@ const PLANS = [
 const INTERVALS = [
   { id: 'monthly', name: 'Monthly' },
   { id: 'quarterly', name: 'Quarterly' },
-  { id: 'yearly', name: 'Yearly' },
+  { id: 'yearly', name: 'Yearly · 15% off' },
 ];
 
 function SignupForm() {
@@ -39,6 +40,7 @@ function SignupForm() {
   const [businessType, setBusinessType] = useState<SignupBusinessTypeId | ''>('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const yearlyQuote = interval === 'yearly' ? quotePlan(plan, 'yearly') : null;
 
   const deriveSlug = (value: string) =>
     value
@@ -140,7 +142,7 @@ function SignupForm() {
           <Link href="/login" className="text-sm text-slate-600 hover:text-brand-600 py-2 px-1 min-h-[44px] inline-flex items-center">Already have an account? Log in</Link>
         </div>
       </header>
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-6" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <main id="main" className="flex-1 flex items-center justify-center p-4 sm:p-6" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="w-full max-w-lg bg-white rounded-2xl shadow-lg border border-slate-200 p-5 sm:p-8">
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Create your workspace</h1>
           <p className="text-slate-600 text-sm mb-6">
@@ -307,6 +309,12 @@ function SignupForm() {
                     </label>
                   ))}
                 </div>
+                {yearlyQuote && (
+                  <p className="mt-2 text-sm text-emerald-700">
+                    15% off yearly. After the trial you pay ₹{yearlyQuote.amount_rupees.toLocaleString('en-IN')} for 12 months
+                    (save ₹{yearlyQuote.savings_rupees.toLocaleString('en-IN')}).
+                  </p>
+                )}
               </div>
               <label className="flex items-start gap-2 cursor-pointer rounded-xl border border-brand-200 bg-brand-50 p-3">
                 <input type="checkbox" checked={trial} onChange={(e) => setTrial(e.target.checked)} className="mt-0.5 rounded border-slate-300 text-brand-600" />

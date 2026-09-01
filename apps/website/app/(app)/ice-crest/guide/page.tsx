@@ -9,8 +9,8 @@ const STEPS = [
   { n: 4, title: 'Confirm order', body: 'Convert accepted quotation to a sales order. Stock is reserved immediately — available qty drops but physical stock stays until invoiced.', href: '/sales/orders/new' },
   { n: 5, title: 'Check production plan', body: 'Before the next production run, open Production plan to see confirmed orders minus available stock plus safety buffer.', href: '/ice-crest/production-plan' },
   { n: 6, title: 'Invoice & deduct stock', body: 'Create invoice from the reserved order. GST, shipping and discounts can be added. Stock outward is posted automatically.', href: '/sales/invoices/new' },
-  { n: 7, title: 'Delivery & payment', body: 'Record delivery challan when goods leave the factory. Track pending payments under Payment tracking.', href: '/sales/invoices/pending' },
-  { n: 8, title: 'Record expenses', body: 'Log transport, electricity, wages, packaging and purchases under Expenses. These feed the profit dashboard.', href: '/ice-crest/expenses' },
+  { n: 7, title: 'Delivery & payment', body: 'Record delivery when goods leave. Share the invoice QR or Pay online link so the customer can pay in Razorpay (partial or full). Track the rest under Payment tracking. Connect Razorpay once under Organization → Scan to pay.', href: '/sales/invoices/pending' },
+  { n: 8, title: 'Record expenses', body: 'Log production, operations, selling and admin costs. GST vendor bills with a GSTIN post to the books and appear in GSTR-2A recon.', href: '/ice-crest/expenses' },
   { n: 9, title: 'Review dashboard', body: 'End of day: check sales, expenses, profit margin, SKU stock and sales trend on the Ice Crest dashboard.', href: '/ice-crest/dashboard' },
 ];
 
@@ -38,7 +38,7 @@ export default function IceCrestGuidePage() {
       </ol>
       <div className="rounded-xl bg-cyan-950 p-5 text-white text-sm">
         <p className="font-semibold">WhatsApp & website leads</p>
-        <p className="mt-1 text-cyan-100">Website form: <Link href="/ice-crest" className="underline" target="_blank">/ice-crest</Link> · WhatsApp messages create leads when Meta API credentials are configured in .env</p>
+        <p className="mt-1 text-cyan-100">Website form: <Link href="/ice-crest" className="underline" target="_blank">/ice-crest</Link>. Send WhatsApp from Campaigns after an admin matches template names under WhatsApp.</p>
       </div>
     </div>
   );

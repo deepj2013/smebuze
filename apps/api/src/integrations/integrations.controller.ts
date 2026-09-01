@@ -1,23 +1,28 @@
-import { Body, Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Public } from '../common/decorators/public';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
-import { SalesService } from '../sales/sales.service';
-import { WhatsappSendDto } from './dto/whatsapp-send.dto';
+import { RequirePermissions } from '../common/decorators/require-permissions';
+import { CurrentTenant, TenantContext } from '../common/tenant-context';
+import { WhatsappSendDto, WhatsappTemplatesDto } from './dto/whatsapp-send.dto';
 import { WhatsappService } from './whatsapp.service';
 
 @Controller('integrations')
 export class IntegrationsController {
-  constructor(
-    private readonly salesService: SalesService,
-    private readonly whatsappService: WhatsappService,
-  ) {}
+  constructor(private readonly whatsappService: WhatsappService) {}
 
   @Get('whatsapp/status')
   @UseGuards(JwtAuthGuard, TenantGuard)
-  whatsappStatus() {
-    return this.whatsappService.getStatus();
+  whatsappStatus(@CurrentTenant() ctx: TenantContext) {
+    return this.whatsappService.getStatus(ctx);
+  }
+
+  @Patch('whatsapp/templates')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @RequirePermissions('org.company.update')
+  saveWhatsappTemplates(@Body() body: WhatsappTemplatesDto, @CurrentTenant() ctx: TenantContext) {
+    return this.whatsappService.saveTemplates(ctx, body);
   }
 
   @Public()
@@ -49,17 +54,17 @@ export class IntegrationsController {
 
   @Post('whatsapp/send')
   @UseGuards(JwtAuthGuard, TenantGuard)
-  async whatsappSend(@Body() body: WhatsappSendDto) {
-    return this.whatsappService.send(body);
+  async whatsappSend(@Body() body: WhatsappSendDto, @CurrentTenant() ctx: TenantContext) {
+    return this.whatsappService.send(body, ctx);
   }
 
-  @Public()
   @Post('payment-webhook')
-  async paymentWebhook(@Body() body: { invoice_id?: string; amount?: number; payment_id?: string; gateway?: string }) {
-    if (!body?.invoice_id || body?.amount == null) {
-      return { ok: false, message: 'Missing invoice_id or amount' };
-    }
-    const updated = await this.salesService.recordPaymentByInvoiceId(body.invoice_id, Number(body.amount), body.payment_id ?? body.gateway);
-    return { ok: !!updated, invoice_id: body.invoice_id };
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @RequirePermissions('org.company.update')
+  async paymentWebhook() {
+    return {
+      ok: false,
+      message: 'Use POST /api/v1/integrations/razorpay/webhook with the Razorpay signature. Unsigned payment webhooks are disabled.',
+    };
   }
 }
