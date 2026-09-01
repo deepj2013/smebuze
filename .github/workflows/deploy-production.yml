@@ -20,6 +20,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
+      - name: Require repository secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          echo "VPS_HOST set: $([ -n "$VPS_HOST" ] && echo yes || echo NO)"
+          echo "VPS_USER set: $([ -n "$VPS_USER" ] && echo yes || echo NO)"
+          echo "VPS_SSH_KEY set: $([ -n "$VPS_SSH_KEY" ] && echo yes || echo NO)"
+          if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$VPS_SSH_KEY" ]; then
+            echo "::error::Add repository secrets (not Environment secrets): VPS_HOST, VPS_USER, VPS_SSH_KEY"
+            echo "GitHub → this repo → Settings → Secrets and variables → Actions → New repository secret"
+            echo "VPS_HOST = 194.238.19.224"
+            echo "VPS_USER = root"
+            echo "VPS_SSH_KEY = private key from ~/.ssh/smebuze_github_actions on your Mac"
+            exit 1
+          fi
+
       - name: Show what GitHub is shipping
         run: |
           echo "event=${{ github.event_name }}"
@@ -34,7 +52,6 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
-          script_stop: true
           command_timeout: 30m
           script: |
             set -euo pipefail
