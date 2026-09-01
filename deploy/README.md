@@ -26,13 +26,15 @@ Logs (on the VPS):
 
 ### 1. GitHub secrets
 
-Repo → **Settings** → **Secrets and variables** → **Actions**:
+Repo → **Settings** → **Environments** → **smebuze** → **Environment secrets**:
 
 | Secret | Value |
 |--------|--------|
 | `VPS_HOST` | VPS IP |
 | `VPS_USER` | `root` or `smebuze` (the user you SSH as) |
 | `VPS_SSH_KEY` | **Private** key that can SSH as that user (see below) |
+
+The deploy job uses GitHub environment **`smebuze`**. Secrets on that environment are used; leave **Required reviewers** off so deploys are not stuck waiting.
 
 Create the key on your laptop:
 

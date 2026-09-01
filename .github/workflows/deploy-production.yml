@@ -18,6 +18,7 @@ jobs:
   deploy:
     name: SSH to Hostinger VPS
     runs-on: ubuntu-latest
+    environment: smebuze
     timeout-minutes: 40
     steps:
       - name: Require repository secrets
@@ -30,10 +31,10 @@ jobs:
           echo "VPS_USER set: $([ -n "$VPS_USER" ] && echo yes || echo NO)"
           echo "VPS_SSH_KEY set: $([ -n "$VPS_SSH_KEY" ] && echo yes || echo NO)"
           if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$VPS_SSH_KEY" ]; then
-            echo "::error::GitHub has no VPS_HOST / VPS_USER / VPS_SSH_KEY yet."
-            echo "Open: https://github.com/deepj2013/smebuze/settings/secrets/actions"
-            echo "Click New repository secret. Names must match exactly (all caps, underscores)."
-            echo "Do not use Settings → Environments. Do not use the Variables tab for VPS_SSH_KEY."
+            echo "::error::GitHub environment 'smebuze' has no VPS_HOST / VPS_USER / VPS_SSH_KEY."
+            echo "Open: https://github.com/deepj2013/smebuze/settings/environments"
+            echo "Click environment smebuze → Environment secrets → Add secret."
+            echo "Names: VPS_HOST, VPS_USER, VPS_SSH_KEY (all caps)."
             exit 1
           fi
 
