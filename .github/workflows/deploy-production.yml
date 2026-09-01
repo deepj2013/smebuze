@@ -51,14 +51,23 @@ jobs:
           GIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          HOST="$(printf '%s' "$HOST" | tr -d '\r' | xargs)"
+          SSH_USER="$(printf '%s' "$SSH_USER" | tr -d '\r' | xargs)"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "$KEY" | sed 's/\r$//' > ~/.ssh/deploy_key
+          python3 - << 'PY'
+          import os
+          key = os.environ["KEY"].replace("\r", "").strip() + "\n"
+          open(os.path.expanduser("~/.ssh/deploy_key"), "w").write(key)
+          PY
           chmod 600 ~/.ssh/deploy_key
           if ! ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null; then
-            echo "::error::VPS_SSH_KEY is not a valid private key. Paste cat ~/.ssh/smebuze_github_actions from your Mac (BEGIN/END lines)."
+            echo "::error::VPS_SSH_KEY is not a valid private key."
             exit 1
           fi
+          echo "ssh user='${SSH_USER}' user_len=${#SSH_USER}"
+          echo "GitHub key fingerprint (must match: ssh-keygen -lf ~/.ssh/smebuze_github_actions.pub on your Mac):"
+          ssh-keygen -lf ~/.ssh/deploy_key
           if [ "$FORCE_FULL" = "true" ]; then FORCE_FULL=1; fi
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 \
