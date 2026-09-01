@@ -131,10 +131,8 @@ fi
 
 log "plan: npm_ci=${NEED_NPM} migrate=${NEED_MIGRATE} api=${NEED_API} website=${NEED_WEB} nginx=${NEED_NGINX}"
 
-set -a
-# shellcheck disable=SC1091
-source .env
-set +a
+# Never `source .env` — MAIL_FROM and similar values are not valid bash.
+eval "$(node "${APP_DIR}/scripts/export-dotenv.js" "${APP_DIR}/.env")"
 
 if [[ "${NEED_NPM}" == "1" || "${NEED_MIGRATE}" == "1" || "${NEED_API}" == "1" || "${NEED_WEB}" == "1" ]]; then
   DATABASE_URL="$(node -e "
