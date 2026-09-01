@@ -72,28 +72,6 @@ export default function IceCrestWhatsappPage() {
       </div>
     );
   }
-  const [status, setStatus] = useState<Status>();
-  const [templates, setTemplates] = useState<Templates>({ reminder: '', invoice: '', quotation: '', order: '' });
-  const [phone, setPhone] = useState('');
-  const [kind, setKind] = useState<keyof Templates>('reminder');
-  const [param, setParam] = useState('');
-  const [fileUrl, setFileUrl] = useState('');
-  const [error, setError] = useState('');
-  const [ok, setOk] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [sending, setSending] = useState(false);
-
-  const load = () => {
-    apiGet<Status>('integrations/whatsapp/status').then((r) => {
-      if (r.data) {
-        setStatus(r.data);
-        setTemplates({ reminder: '', invoice: '', quotation: '', order: '', ...r.data.templates });
-      }
-      setError(r.error || '');
-    });
-  };
-
-  useEffect(() => { void load(); }, []);
 
   async function saveTemplates(e: React.FormEvent) {
     e.preventDefault();
