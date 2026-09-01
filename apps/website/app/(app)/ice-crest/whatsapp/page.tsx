@@ -11,6 +11,17 @@ type Status = {
   templates: Templates;
 };
 
+const EMPTY_TEMPLATES: Templates = { reminder: '', invoice: '', quotation: '', order: '' };
+
+function mergeTemplates(partial?: Partial<Templates> | null): Templates {
+  return {
+    reminder: partial?.reminder ?? '',
+    invoice: partial?.invoice ?? '',
+    quotation: partial?.quotation ?? '',
+    order: partial?.order ?? '',
+  };
+}
+
 const KINDS: { key: keyof Templates; label: string; hint: string }[] = [
   { key: 'reminder', label: 'Payment reminder', hint: 'Overdue or pending bills' },
   { key: 'invoice', label: 'Invoice / receipt', hint: 'After you raise a bill' },
@@ -35,7 +46,7 @@ function canManageWhatsapp(): boolean {
 export default function IceCrestWhatsappPage() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [status, setStatus] = useState<Status>();
-  const [templates, setTemplates] = useState<Templates>({ reminder: '', invoice: '', quotation: '', order: '' });
+  const [templates, setTemplates] = useState<Templates>(EMPTY_TEMPLATES);
   const [phone, setPhone] = useState('');
   const [kind, setKind] = useState<keyof Templates>('reminder');
   const [param, setParam] = useState('');
@@ -49,7 +60,7 @@ export default function IceCrestWhatsappPage() {
     apiGet<Status>('integrations/whatsapp/status').then((r) => {
       if (r.data) {
         setStatus(r.data);
-        setTemplates({ reminder: '', invoice: '', quotation: '', order: '', ...r.data.templates });
+        setTemplates(mergeTemplates(r.data.templates));
       }
       setError(r.error || '');
     });
@@ -82,7 +93,7 @@ export default function IceCrestWhatsappPage() {
     setSaving(false);
     if (r.error) setError(r.error);
     else {
-      if (r.data) setTemplates({ reminder: '', invoice: '', quotation: '', order: '', ...r.data });
+      if (r.data) setTemplates(mergeTemplates(r.data));
       setOk('Template names saved. Campaigns and this screen will use them.');
     }
   }
