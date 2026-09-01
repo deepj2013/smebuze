@@ -22,6 +22,7 @@ import { SignupDto } from './dto/signup.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ResendOtpDto, ResetPasswordOtpDto, VerifyOtpDto } from './dto/otp.dto';
+import { GoogleCompleteDto } from './dto/google-complete.dto';
 import { MailService } from '../mail/mail.service';
 import { AuditService } from '../audit/audit.service';
 import { Customer } from '../crm/entities/customer.entity';
@@ -131,6 +132,145 @@ export class AuthService {
       return { workspaces: await this.workspacesFromUsers(usable) };
     }
 
+    return this.completeLogin(usable[0]);
+  }
+
+  googleConfigured(): boolean {
+    return Boolean(
+      (process.env.GOOGLE_CLIENT_ID || '').trim() && (process.env.GOOGLE_CLIENT_SECRET || '').trim(),
+    );
+  }
+
+  googleStatus() {
+    return { enabled: this.googleConfigured() };
+  }
+
+  private googleRedirectUri(): string {
+    const base = (process.env.API_PUBLIC_URL || 'http://localhost:3000').replace(/\/$/, '');
+    return `${base}/api/v1/auth/google/callback`;
+  }
+
+  private frontendAuthUrl(query: Record<string, string>, hash?: Record<string, unknown>): string {
+    const base = (process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3001').replace(/\/$/, '');
+    const qs = new URLSearchParams(query).toString();
+    const url = `${base}/login${qs ? `?${qs}` : ''}`;
+    if (!hash) return url;
+    return `${url}#g=${encodeURIComponent(JSON.stringify(hash))}`;
+  }
+
+  googleAuthUrl(): string {
+    const clientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
+    const state = this.jwtService.sign({ purpose: 'google_oauth' }, { expiresIn: '10m' });
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: this.googleRedirectUri(),
+      response_type: 'code',
+      scope: 'openid email profile',
+      access_type: 'online',
+      prompt: 'select_account',
+      state,
+    });
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  }
+
+  async handleGoogleCallback(code: string | undefined, state: string | undefined, googleError?: string): Promise<string> {
+    if (googleError) return this.frontendAuthUrl({ error: googleError === 'access_denied' ? 'google_denied' : 'google_failed' });
+    if (!this.googleConfigured()) return this.frontendAuthUrl({ error: 'google_off' });
+    if (!code || !state) return this.frontendAuthUrl({ error: 'google_failed' });
+    try {
+      const st = this.jwtService.verify(state) as { purpose?: string };
+      if (st.purpose !== 'google_oauth') return this.frontendAuthUrl({ error: 'google_failed' });
+    } catch {
+      return this.frontendAuthUrl({ error: 'google_failed' });
+    }
+    try {
+      const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: (process.env.GOOGLE_CLIENT_ID || '').trim(),
+          client_secret: (process.env.GOOGLE_CLIENT_SECRET || '').trim(),
+          redirect_uri: this.googleRedirectUri(),
+          grant_type: 'authorization_code',
+        }),
+      });
+      const tokenJson = (await tokenRes.json().catch(() => ({}))) as { access_token?: string; error?: string };
+      if (!tokenRes.ok || !tokenJson.access_token) {
+        return this.frontendAuthUrl({ error: 'google_failed' });
+      }
+      const profileRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+      });
+      const profile = (await profileRes.json().catch(() => ({}))) as {
+        email?: string;
+        email_verified?: boolean | string;
+        name?: string;
+      };
+      const email = String(profile.email || '').trim();
+      const verified = profile.email_verified === true || profile.email_verified === 'true';
+      if (!email || !verified) return this.frontendAuthUrl({ error: 'google_failed' });
+
+      const candidates = await this.findUsersByEmail(email);
+      const usable: User[] = [];
+      for (const user of candidates) {
+        if (user.is_super_admin && !user.tenant_id) {
+          usable.push(user);
+          continue;
+        }
+        const tenant = user.tenant ?? (user.tenant_id ? await this.tenantRepo.findOne({ where: { id: user.tenant_id } }) : null);
+        if (tenant?.is_active) usable.push(user);
+      }
+      if (usable.length === 0) {
+        return this.frontendAuthUrl({ error: 'no_account', email });
+      }
+
+      const displayName = String(profile.name || '').trim();
+      for (const user of usable) {
+        const patch: { email_verified: boolean; name?: string } = { email_verified: true };
+        if (displayName && !user.name) patch.name = displayName;
+        await this.userRepo.update(user.id, patch);
+        user.email_verified = true;
+        if (displayName && !user.name) user.name = displayName;
+      }
+
+      if (usable.length > 1) {
+        const ticket = this.jwtService.sign({ purpose: 'google_login', email }, { expiresIn: '10m' });
+        return this.frontendAuthUrl({ google_ticket: ticket });
+      }
+      const session = await this.completeLogin(usable[0]);
+      return this.frontendAuthUrl({}, session);
+    } catch {
+      return this.frontendAuthUrl({ error: 'google_failed' });
+    }
+  }
+
+  async completeGoogleLogin(dto: GoogleCompleteDto) {
+    let payload: { purpose?: string; email?: string };
+    try {
+      payload = this.jwtService.verify(dto.ticket);
+    } catch {
+      throw new UnauthorizedException('Google sign-in expired. Try again.');
+    }
+    if (payload.purpose !== 'google_login' || !payload.email) {
+      throw new UnauthorizedException('Google sign-in expired. Try again.');
+    }
+    const candidates = dto.platformAdmin
+      ? await this.findUsersByEmail(payload.email, undefined, true)
+      : await this.findUsersByEmail(payload.email, dto.tenantSlug);
+    const usable: User[] = [];
+    for (const user of candidates) {
+      if (user.is_super_admin && !user.tenant_id) {
+        usable.push(user);
+        continue;
+      }
+      const tenant = user.tenant ?? (user.tenant_id ? await this.tenantRepo.findOne({ where: { id: user.tenant_id } }) : null);
+      if (tenant?.is_active) usable.push(user);
+    }
+    if (usable.length === 0) throw new UnauthorizedException('No workspace for this Google account.');
+    if (usable.length > 1 && !dto.tenantSlug?.trim() && !dto.platformAdmin) {
+      return { workspaces: await this.workspacesFromUsers(usable) };
+    }
     return this.completeLogin(usable[0]);
   }
 

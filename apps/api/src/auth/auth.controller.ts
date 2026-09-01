@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { Body, Controller, Get, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -8,6 +9,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { ResendOtpDto, ResetPasswordOtpDto, VerifyOtpDto } from './dto/otp.dto';
+import { GoogleCompleteDto } from './dto/google-complete.dto';
 import { Public } from '../common/decorators/public';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentTenant } from '../common/tenant-context';
@@ -22,6 +24,43 @@ export class AuthController {
   @Post('login')
   async login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Public()
+  @Get('google/status')
+  googleStatus() {
+    return this.authService.googleStatus();
+  }
+
+  @Public()
+  @SkipThrottle()
+  @Get('google')
+  googleStart(@Res() res: Response) {
+    if (!this.authService.googleConfigured()) {
+      const front = (process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3001').replace(/\/$/, '');
+      return res.redirect(`${front}/login?error=google_off`);
+    }
+    return res.redirect(this.authService.googleAuthUrl());
+  }
+
+  @Public()
+  @SkipThrottle()
+  @Get('google/callback')
+  async googleCallback(
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Query('error') googleError: string,
+    @Res() res: Response,
+  ) {
+    const url = await this.authService.handleGoogleCallback(code, state, googleError);
+    return res.redirect(url);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 8, ttl: 60000 } })
+  @Post('google/complete')
+  async googleComplete(@Body() dto: GoogleCompleteDto) {
+    return this.authService.completeGoogleLogin(dto);
   }
 
   @Public()
