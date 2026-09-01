@@ -21,7 +21,7 @@ jobs:
     environment: smebuze
     timeout-minutes: 40
     steps:
-      - name: Require repository secrets
+      - name: Require environment secrets
         env:
           VPS_HOST: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
@@ -31,10 +31,7 @@ jobs:
           echo "VPS_USER set: $([ -n "$VPS_USER" ] && echo yes || echo NO)"
           echo "VPS_SSH_KEY set: $([ -n "$VPS_SSH_KEY" ] && echo yes || echo NO)"
           if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$VPS_SSH_KEY" ]; then
-            echo "::error::GitHub environment 'smebuze' has no VPS_HOST / VPS_USER / VPS_SSH_KEY."
-            echo "Open: https://github.com/deepj2013/smebuze/settings/environments"
-            echo "Click environment smebuze → Environment secrets → Add secret."
-            echo "Names: VPS_HOST, VPS_USER, VPS_SSH_KEY (all caps)."
+            echo "::error::Environment smebuze needs secrets VPS_HOST, VPS_USER, VPS_SSH_KEY."
             exit 1
           fi
 
@@ -45,29 +42,41 @@ jobs:
           echo "ref=${{ github.ref }}"
           echo "force_full=${{ github.event.inputs.force_full || 'false' }}"
 
-      - name: Run scripts/deploy.sh on the VPS
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
-          username: ${{ secrets.VPS_USER || vars.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          command_timeout: 30m
-          script: |
-            set -euo pipefail
-            export APP_DIR=/var/www/smebuze
-            export DEPLOY_BRANCH=production
-            export FORCE_FULL="${{ github.event.inputs.force_full || '0' }}"
-            if [ "$FORCE_FULL" = "true" ]; then export FORCE_FULL=1; fi
-            echo "[github] sha=${{ github.sha }} force_full=$FORCE_FULL"
-            if [ ! -f "$APP_DIR/scripts/deploy.sh" ]; then
-              echo "Clone production to $APP_DIR first."
-              exit 1
-            fi
-            if [ "$(id -un)" = "root" ] && id smebuze >/dev/null 2>&1; then
-              echo "[github] running deploy as user smebuze"
-              sudo -u smebuze -H env APP_DIR="$APP_DIR" DEPLOY_BRANCH="$DEPLOY_BRANCH" FORCE_FULL="$FORCE_FULL" \
-                bash "$APP_DIR/scripts/deploy.sh"
-            else
-              bash "$APP_DIR/scripts/deploy.sh"
-            fi
+      - name: SSH and run deploy.sh
+        env:
+          HOST: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
+          SSH_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          FORCE_FULL: ${{ github.event.inputs.force_full || '0' }}
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" | sed 's/\r$//' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if ! ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null; then
+            echo "::error::VPS_SSH_KEY is not a valid private key. Paste cat ~/.ssh/smebuze_github_actions from your Mac (BEGIN/END lines)."
+            exit 1
+          fi
+          if [ "$FORCE_FULL" = "true" ]; then FORCE_FULL=1; fi
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 \
+            "${SSH_USER}@${HOST}" bash -s << EOF
+          set -euo pipefail
+          export APP_DIR=/var/www/smebuze
+          export DEPLOY_BRANCH=production
+          export FORCE_FULL='$FORCE_FULL'
+          echo "[github] sha=$GIT_SHA force_full=\$FORCE_FULL user=\$(id -un)"
+          if [ ! -f /var/www/smebuze/scripts/deploy.sh ]; then
+            echo "Clone production to /var/www/smebuze first."
+            exit 1
+          fi
+          if [ "\$(id -un)" = "root" ] && id smebuze >/dev/null 2>&1; then
+            echo "[github] running deploy as user smebuze"
+            sudo -u smebuze -H env APP_DIR=/var/www/smebuze DEPLOY_BRANCH=production FORCE_FULL=\$FORCE_FULL \
+              bash /var/www/smebuze/scripts/deploy.sh
+          else
+            bash /var/www/smebuze/scripts/deploy.sh
+          fi
+          EOF
