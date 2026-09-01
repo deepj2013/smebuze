@@ -4,6 +4,11 @@ on:
   push:
     branches: [production]
   workflow_dispatch:
+    inputs:
+      force_full:
+        description: Rebuild API + website, run migrations, reload nginx
+        type: boolean
+        default: false
 
 concurrency:
   group: smebuze-production-deploy
@@ -15,6 +20,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
+      - name: Show what GitHub is shipping
+        run: |
+          echo "event=${{ github.event_name }}"
+          echo "sha=${{ github.sha }}"
+          echo "ref=${{ github.ref }}"
+          echo "force_full=${{ github.event.inputs.force_full || 'false' }}"
+
       - name: Run scripts/deploy.sh on the VPS
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -28,8 +40,11 @@ jobs:
             set -euo pipefail
             export APP_DIR=/var/www/smebuze
             export DEPLOY_BRANCH=production
+            export FORCE_FULL="${{ github.event.inputs.force_full || '0' }}"
+            if [ "$FORCE_FULL" = "true" ]; then export FORCE_FULL=1; fi
+            echo "[github] sha=${{ github.sha }} force_full=$FORCE_FULL"
             if [ ! -f "$APP_DIR/scripts/deploy.sh" ]; then
-              echo "Clone the production branch to $APP_DIR first (see README.md)."
+              echo "Clone production to $APP_DIR first."
               exit 1
             fi
             bash "$APP_DIR/scripts/deploy.sh"
