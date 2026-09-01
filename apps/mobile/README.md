@@ -1,6 +1,6 @@
 # SMEBUZE Mobile (Flutter)
 
-Minimal Flutter app that uses the **same REST API** as the web app. Login (email, password, tenant slug) and dashboard are implemented; add more screens (Vendors, Invoices, etc.) by calling endpoints from `docs/API_FOR_MOBILE.md`.
+Minimal Flutter app that uses the **same REST API** as the web app (`/api/v1`). Login (email, password, tenant slug) and dashboard are implemented; add more screens by calling the same endpoints as the website.
 
 ## Prerequisites
 
@@ -28,4 +28,4 @@ flutter run
 
 ## Phase 11
 
-This starter includes login (email, password, tenant slug), home/dashboard, customers list, and invoices list (see docs/TODO.md). Extend with more screens using the same API as the web app (docs/API_FOR_MOBILE.md).
+This starter includes login (email, password, tenant slug), home/dashboard, customers list, and invoices list. Extend with more screens using the same `/api/v1` API as the web app.

@@ -15,7 +15,7 @@ fi
 cd "${APP_DIR}"
 
 if [[ ! -d .git ]]; then
-  echo "ERROR: ${APP_DIR} is not a git clone. Finish docs/DEPLOY.md Part B once, then retry." >&2
+  echo "ERROR: ${APP_DIR} is not a git clone. Clone branch production to /var/www/smebuze first (see README.md)." >&2
   exit 1
 fi
 

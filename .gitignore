@@ -22,3 +22,6 @@ yarn-error.log*
 /apps/api/uploads/**
 !/apps/api/uploads/logos/
 !/apps/api/uploads/logos/ice-crest.svg
+
+.cursor/
+/docs/

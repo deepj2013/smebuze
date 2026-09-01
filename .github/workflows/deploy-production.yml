@@ -29,7 +29,7 @@ jobs:
             export APP_DIR=/var/www/smebuze
             export DEPLOY_BRANCH=production
             if [ ! -f "$APP_DIR/scripts/deploy.sh" ]; then
-              echo "Clone the production branch to $APP_DIR first (docs/DEPLOY.md Part B)."
+              echo "Clone the production branch to $APP_DIR first (see README.md)."
               exit 1
             fi
             bash "$APP_DIR/scripts/deploy.sh"
