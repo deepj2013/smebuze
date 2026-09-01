@@ -1,11 +1,8 @@
 const path = require('path');
-const fs = require('fs');
 
 const root = __dirname;
 const apiDir = path.join(root, 'apps/api');
-const apiMain = fs.existsSync(path.join(apiDir, 'dist/main.js'))
-  ? 'dist/main.js'
-  : 'dist/src/main.js';
+const apiMain = 'dist/main.js';
 
 module.exports = {
   apps: [

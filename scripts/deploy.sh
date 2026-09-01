@@ -214,12 +214,9 @@ if [[ "${RESTART_API}" == "1" && "${RESTART_WEB}" == "1" ]]; then
   pm2 startOrReload "${APP_DIR}/ecosystem.config.cjs" --update-env
   pm2 save
 elif [[ "${RESTART_API}" == "1" ]]; then
-  log "RUN pm2 restart smebuze-api only"
-  if pm2 describe smebuze-api >/dev/null 2>&1; then
-    pm2 restart smebuze-api --update-env
-  else
-    pm2 startOrReload "${APP_DIR}/ecosystem.config.cjs" --update-env
-  fi
+  log "RUN pm2 reload smebuze-api from ecosystem.config.cjs"
+  pm2 delete smebuze-api >/dev/null 2>&1 || true
+  pm2 start "${APP_DIR}/ecosystem.config.cjs" --only smebuze-api --update-env
   pm2 save
 elif [[ "${RESTART_WEB}" == "1" ]]; then
   log "RUN pm2 restart smebuze-web only"
