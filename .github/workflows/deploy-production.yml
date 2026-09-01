@@ -22,19 +22,18 @@ jobs:
     steps:
       - name: Require repository secrets
         env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
           echo "VPS_HOST set: $([ -n "$VPS_HOST" ] && echo yes || echo NO)"
           echo "VPS_USER set: $([ -n "$VPS_USER" ] && echo yes || echo NO)"
           echo "VPS_SSH_KEY set: $([ -n "$VPS_SSH_KEY" ] && echo yes || echo NO)"
           if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$VPS_SSH_KEY" ]; then
-            echo "::error::Add repository secrets (not Environment secrets): VPS_HOST, VPS_USER, VPS_SSH_KEY"
-            echo "GitHub → this repo → Settings → Secrets and variables → Actions → New repository secret"
-            echo "VPS_HOST = 194.238.19.224"
-            echo "VPS_USER = root"
-            echo "VPS_SSH_KEY = private key from ~/.ssh/smebuze_github_actions on your Mac"
+            echo "::error::GitHub has no VPS_HOST / VPS_USER / VPS_SSH_KEY yet."
+            echo "Open: https://github.com/deepj2013/smebuze/settings/secrets/actions"
+            echo "Click New repository secret. Names must match exactly (all caps, underscores)."
+            echo "Do not use Settings → Environments. Do not use the Variables tab for VPS_SSH_KEY."
             exit 1
           fi
 
@@ -48,8 +47,8 @@ jobs:
       - name: Run scripts/deploy.sh on the VPS
         uses: appleboy/ssh-action@v1.2.2
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
+          host: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
+          username: ${{ secrets.VPS_USER || vars.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
           command_timeout: 30m
