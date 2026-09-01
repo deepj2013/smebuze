@@ -1,13 +1,18 @@
 const path = require('path');
+const fs = require('fs');
 
 const root = __dirname;
+const apiDir = path.join(root, 'apps/api');
+const apiMain = fs.existsSync(path.join(apiDir, 'dist/main.js'))
+  ? 'dist/main.js'
+  : 'dist/src/main.js';
 
 module.exports = {
   apps: [
     {
       name: 'smebuze-api',
-      cwd: path.join(root, 'apps/api'),
-      script: 'dist/main.js',
+      cwd: apiDir,
+      script: apiMain,
       instances: 1,
       exec_mode: 'fork',
       env: {
