@@ -1,85 +1,58 @@
 # SMEBUZE
 
-Multi-tenant GST ERP for MSMEs (India). NestJS API + Next.js app. Live domain: **https://smebuze.com** (API: **https://api.smebuze.com**).
+ERP for Indian MSMEs — GST billing, stock, purchase, and a cash counter that matches how the shop already works. One workspace per business. Open **https://smebuze.com** to start a 7-day trial.
 
-## Branches
+You do not buy a giant ERP. You open a workspace, put the printer at the counter, and run quotation → order → invoice → payment with GST on the bill.
 
-| Branch | What it is | When to use |
-|--------|------------|-------------|
-| **`main`** | Development. Day-to-day commits. | Build features here. Push `main` anytime. **Does not** deploy the VPS. |
-| **`production`** | What Hostinger runs. | Merge `main` into `production` and push when the live site should update. GitHub Actions SSHs to the VPS and reloads PM2. |
+---
 
-```bash
-# daily work
-git checkout main
-git add -A && git commit -m "Your message"
-git push origin main
+## Who it is for
 
-# ship to smebuze.com
-bash scripts/promote-to-production.sh
-```
+| Business | What they get |
+|----------|----------------|
+| Dine-in restaurant | Menu on the counter, tap to bill, cash or UPI, kitchen/bill slip |
+| Sweet shop | Fast billing, stock down on each sale, printer at the counter |
+| Garment / kirana | Scan or tap items, settle in cash or UPI, day bills in one list |
+| Trading / wholesale | Quotations, GST invoices, godown stock, purchase and books |
+| Services / workshop | CRM and GST invoices without a shop-counter flow |
 
-`scripts/promote-to-production.sh` merges `main` → `production` and pushes. Never commit secrets. Never put `.env` in git.
+At signup we ask how you work. A restaurant sees POS. A trader sees the full desk. Same product, opened the way you sell.
 
-Payment gateway is **off** until you add a provider (`PAYMENT_GATEWAY_ENABLED` unset).
+---
 
-## START.md — run on your machine
+## Features
 
-**[START.md](START.md)** is the local runbook: first-time database, how to start API + website, and demo logins.
+**Sales** — Quotations, orders, delivery, GST invoices, payments, print and share. Walk-in POS (cash, UPI, card) with categories, MRP/sale price, and live short-stock.
 
-Summary:
+**Purchase** — Vendors, purchase orders, goods receipt, payables.
 
-1. `cp .env.example .env` and set `JWT_SECRET` / `DB_*`
-2. PostgreSQL running, database `smebuze`
-3. `npm run db:migrate` then optional `npm run seed:demo`
-4. `npm run api:dev` → http://localhost:3000/api/v1
-5. `npm run website:dev` → http://localhost:3001 (login at `/login`)
+**Inventory** — Items, categories, warehouses, stock levels, low-stock alerts.
 
-## Repo layout
+**CRM** — Leads, customers, follow-ups, campaigns.
 
-| Path | Role |
-|------|------|
-| `apps/api` | NestJS API (`/api/v1`) — auth, tenants, CRM, sales, purchase, inventory, accounting, Ice Crest, POS |
-| `apps/website` | Next.js marketing site + logged-in app |
-| `packages/db-migrations` | SQL migrations (`npm run db:migrate`) |
-| `ecosystem.config.cjs` | PM2: `smebuze-api` (127.0.0.1:3000), `smebuze-web` (127.0.0.1:3001) |
-| `scripts/deploy.sh` | VPS deploy (production branch only) |
-| `deploy/nginx/` | Nginx site files for smebuze.com and api.smebuze.com |
+**Accounts** — Chart of accounts, journals, GST-aware totals, a dashboard of invoiced vs received vs pending.
 
-`.cursor/` and `docs/` stay on your computer only. They are gitignored and not pushed.
+**Organization** — Companies, branches, roles, users. Super-admin can set plan, features, and licence per workspace.
 
-## Production (Hostinger VPS)
+**Printing** — USB, Wi-Fi, AirPrint, or Bluetooth thermal (58 mm / 80 mm). Inkjet, laser, or pocket bill printer. Each device remembers paper size.
 
-First time only (shared VPS — do not `pm2 delete all` or overwrite other Nginx sites):
+**WhatsApp** — Share bills and receive customer messages where the business already talks (optional Meta setup).
 
-1. DNS A records: `smebuze.com`, `www.smebuze.com`, `api.smebuze.com` → VPS IP
-2. Ubuntu: Node 20+, PM2, Nginx, Certbot, PostgreSQL, UFW 22/80/443
-3. Postgres user + database `smebuze` (do not drop other databases)
-4. Clone **production** into `/var/www/smebuze`
-5. Create `/var/www/smebuze/.env` from `.env.example` (production URLs, `HOST=127.0.0.1`, Hostinger SMTP). `chmod 600`
-6. `apps/website/.env.local`: `NEXT_PUBLIC_API_URL=https://api.smebuze.com`
-7. `npm ci`, `npm run db:migrate`, `npm run api:build`, `npm run website:build`
-8. `pm2 start ecosystem.config.cjs` && `pm2 save`
-9. Copy `deploy/nginx/*.conf` into `/etc/nginx/sites-available/`, enable, `nginx -t`, reload
-10. `sudo certbot --nginx -d smebuze.com -d www.smebuze.com -d api.smebuze.com`
-11. GitHub secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`. VPS needs a read-only GitHub deploy key to `git fetch`.
+**Email** — Welcome, OTP, and password reset from your mailbox.
 
-Later updates: push **`production`**. Action runs `scripts/deploy.sh` (migrate, build, reload **only** `smebuze-api` and `smebuze-web`).
+**Ice Crest (and similar plants)** — Production plan, stock movements, expenses, and a simple staff flow on top of the same ERP.
 
-## API (local)
+Payment gateway on invoices will be added later. Until then, record cash / UPI / card as you do today.
 
-- `POST /api/v1/auth/signup` — new organisation
-- `POST /api/v1/auth/login` — body `email`, `password`, optional `tenantSlug`
-- `POST /api/v1/auth/verify-otp` / `resend-otp` — email verification
-- `POST /api/v1/auth/forgot-password` — OTP + reset link
-- Tenant-scoped CRM, sales, purchase, inventory, accounting, reports — JWT required
+---
 
-Demo password after `npm run seed:demo`: `Password123`. Super admin `superadmin@smebuzz.com` (empty workspace). Tenant admin `admin@demo.com` / slug `demo`.
+## How a day looks
 
-## Docker (optional)
+1. Start free for 7 days — one company, one login, full Starter access.
+2. Connect the printer you already have.
+3. Run the real flow: quotation → order → delivery → invoice → payment.
+4. Add people and branches when the floor gets busy.
 
-```bash
-docker compose up -d
-```
+---
 
-API http://localhost:3000 — Postgres on 5432. Prefer [START.md](START.md) for local UI work.
+Live product: [smebuze.com](https://smebuze.com)
