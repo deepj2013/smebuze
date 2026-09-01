@@ -172,7 +172,11 @@ RESTART_WEB=0
 
 if [[ "${NEED_API}" == "1" ]]; then
   log "RUN api:build"
+  rm -f "${APP_DIR}/apps/api/tsconfig.tsbuildinfo" "${APP_DIR}/apps/api/dist/tsconfig.tsbuildinfo"
   npm run api:build
+  if [[ ! -f "${APP_DIR}/apps/api/dist/main.js" ]]; then
+    die "api:build finished but apps/api/dist/main.js is missing"
+  fi
   RESTART_API=1
 else
   log "SKIP api:build"
