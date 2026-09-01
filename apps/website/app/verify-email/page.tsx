@@ -14,7 +14,7 @@ function VerifyEmailForm() {
   const slugFromUrl = searchParams.get('slug') ?? '';
 
   const [email, setEmail] = useState(emailFromUrl);
-  const [tenantSlug, setTenantSlug] = useState(slugFromUrl);
+  const tenantSlug = slugFromUrl;
   const [otp, setOtp] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -121,16 +121,6 @@ function VerifyEmailForm() {
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
                 required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Workspace slug (if asked)</label>
-              <input
-                type="text"
-                value={tenantSlug}
-                onChange={(e) => setTenantSlug(e.target.value)}
-                placeholder="your-workspace"
-                className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
               />
             </div>
             <div>

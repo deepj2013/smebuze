@@ -9,7 +9,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 export default function ForgotPasswordPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
-  const [tenantSlug, setTenantSlug] = useState('');
   const [sent, setSent] = useState(false);
   const [resetLink, setResetLink] = useState<string | null>(null);
   const [otp, setOtp] = useState('');
@@ -25,8 +24,7 @@ export default function ForgotPasswordPage() {
     setError(null);
     setResetLink(null);
     try {
-      const body: { email: string; tenantSlug?: string } = { email: email.trim() };
-      if (tenantSlug.trim()) body.tenantSlug = tenantSlug.trim();
+      const body = { email: email.trim() };
       const res = await fetch(`${API_URL}/api/v1/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -63,12 +61,11 @@ export default function ForgotPasswordPage() {
     }
     setResetting(true);
     try {
-      const body: { email: string; otp: string; newPassword: string; tenantSlug?: string } = {
+      const body = {
         email: email.trim(),
         otp: otp.replace(/\D/g, '').slice(0, 6),
         newPassword,
       };
-      if (tenantSlug.trim()) body.tenantSlug = tenantSlug.trim();
       const res = await fetch(`${API_URL}/api/v1/auth/reset-password-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -186,17 +183,6 @@ export default function ForgotPasswordPage() {
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                 required
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Workspace slug (optional)</label>
-              <input
-                type="text"
-                value={tenantSlug}
-                onChange={(e) => setTenantSlug(e.target.value)}
-                placeholder="your-workspace"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
-              />
-              <p className="mt-1 text-xs text-slate-500">Needed if the same email is used in more than one workspace.</p>
             </div>
             {error && <div className="p-3 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>}
             <button

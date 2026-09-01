@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Repository } from 'typeorm';
@@ -94,65 +94,43 @@ export class AuthService {
     private readonly auditService: AuditService,
   ) {}
 
-  async login(dto: LoginDto): Promise<{ access_token: string; user: TenantContext }> {
-    let user: User | null = null;
+  async login(dto: LoginDto): Promise<
+    | { access_token: string; user: TenantContext; tenant?: { slug: string; settings: Record<string, unknown> } }
+    | { workspaces: Array<{ slug: string; name: string; tenantId: string | null; isSuperAdmin: boolean }> }
+  > {
+    const email = dto.email.trim();
+    const candidates = dto.platformAdmin
+      ? await this.findUsersByEmail(email, undefined, true)
+      : await this.findUsersByEmail(email, dto.tenantSlug);
 
-    if (dto.tenantSlug) {
-      const tenant = await this.tenantRepo.findOne({
-        where: { slug: dto.tenantSlug, is_active: true },
-      });
-      if (!tenant) throw new UnauthorizedException('Invalid tenant');
-      user = await this.userRepo.findOne({
-        where: { email: dto.email, tenant_id: tenant.id, is_active: true },
-        relations: ['defaultCompany', 'defaultBranch'],
-      });
-    } else {
-      user = await this.userRepo.findOne({
-        where: { email: dto.email, tenant_id: IsNull(), is_super_admin: true, is_active: true },
-      });
+    const matched: User[] = [];
+    for (const candidate of candidates) {
+      if (!candidate.password_hash) continue;
+      if (await bcrypt.compare(dto.password, candidate.password_hash)) matched.push(candidate);
     }
 
-    if (!user || !user.password_hash) {
+    if (matched.length === 0) {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const match = await bcrypt.compare(dto.password, user.password_hash);
-    if (!match) throw new UnauthorizedException('Invalid email or password');
-
-    if (!user.is_super_admin && user.email_verified === false) {
-      throw new HttpException(
-        {
-          statusCode: HttpStatus.FORBIDDEN,
-          code: 'EMAIL_NOT_VERIFIED',
-          message: 'Confirm the 6-digit code we sent to your email before signing in.',
-          email: user.email,
-        },
-        HttpStatus.FORBIDDEN,
-      );
+    const usable: User[] = [];
+    for (const user of matched) {
+      if (user.is_super_admin && !user.tenant_id) {
+        usable.push(user);
+        continue;
+      }
+      const tenant = user.tenant ?? (user.tenant_id ? await this.tenantRepo.findOne({ where: { id: user.tenant_id } }) : null);
+      if (tenant?.is_active) usable.push(user);
+    }
+    if (usable.length === 0) {
+      throw new UnauthorizedException('Invalid email or password');
     }
 
-    await this.userRepo.update(user.id, { last_login_at: new Date() });
+    if (usable.length > 1 && !dto.tenantSlug?.trim() && !dto.platformAdmin) {
+      return { workspaces: await this.workspacesFromUsers(usable) };
+    }
 
-    await this.auditService.log(
-      { tenantId: user.tenant_id ?? null, userId: user.id },
-      'login',
-      'auth',
-      user.id,
-      { email: user.email },
-    ).catch(() => {});
-
-    const context = await this.buildContext(user);
-    const payload: JwtPayload = {
-      sub: user.id,
-      email: user.email,
-      tenantId: user.tenant_id,
-      isSuperAdmin: user.is_super_admin,
-      roleIds: context.roleIds,
-      permissions: context.permissions,
-    };
-
-    const access_token = this.jwtService.sign(payload);
-    return { access_token, user: context };
+    return this.completeLogin(usable[0]);
   }
 
   async register(dto: RegisterDto): Promise<{ access_token: string; user: TenantContext }> {
@@ -445,30 +423,36 @@ export class AuthService {
   }
 
   async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string; resetLink?: string }> {
-    const user = await this.findUserForEmail(dto.email, dto.tenantSlug);
-    if (!user) {
+    const users = await this.findUsersByEmail(dto.email, dto.tenantSlug);
+    if (users.length === 0) {
       return { message: 'If an account exists with this email, you will receive a reset code.' };
     }
-    const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
-    await this.passwordResetRepo.save(
-      this.passwordResetRepo.create({
-        user_id: user.id,
-        token,
-        expires_at: expiresAt,
-      }),
-    );
-    const otp = await this.issueOtp(user.id, 'reset_password');
     const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3001';
-    const resetLink = `${baseUrl}/reset-password?token=${token}`;
-    const { sent, devLink } = await this.mailService.sendPasswordReset(
-      user.email,
-      user.name || 'there',
-      otp,
-      resetLink,
-    );
-    if (!sent && process.env.NODE_ENV !== 'production' && devLink) {
+    let devLink: string | undefined;
+    for (const user of users) {
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24);
+      await this.passwordResetRepo.save(
+        this.passwordResetRepo.create({
+          user_id: user.id,
+          token,
+          expires_at: expiresAt,
+        }),
+      );
+      const otp = await this.issueOtp(user.id, 'reset_password');
+      const resetLink = `${baseUrl}/reset-password?token=${token}`;
+      const result = await this.mailService.sendPasswordReset(
+        user.email,
+        user.name || 'there',
+        otp,
+        resetLink,
+      );
+      if (!result.sent && process.env.NODE_ENV !== 'production' && result.devLink) {
+        devLink = result.devLink;
+      }
+    }
+    if (devLink) {
       return { message: 'If an account exists with this email, you will receive a reset code.', resetLink: devLink };
     }
     return { message: 'If an account exists with this email, you will receive a reset code.' };
@@ -494,9 +478,7 @@ export class AuthService {
     tenant?: { slug: string; settings: Record<string, unknown> };
   }> {
     const purpose = dto.purpose || 'verify_email';
-    const user = await this.findUserForEmail(dto.email, dto.tenantSlug);
-    if (!user) throw new BadRequestException('Invalid code or email');
-    await this.assertOtp(user.id, purpose, dto.otp);
+    const user = await this.findUserForEmailOrOtp(dto.email, dto.tenantSlug, purpose, dto.otp);
     if (purpose === 'verify_email') {
       await this.userRepo.update(user.id, { email_verified: true });
       const fresh = await this.userRepo.findOne({ where: { id: user.id }, relations: ['defaultCompany', 'defaultBranch'] });
@@ -527,49 +509,157 @@ export class AuthService {
 
   async resendOtp(dto: ResendOtpDto): Promise<{ message: string }> {
     const purpose = dto.purpose || 'verify_email';
-    const user = await this.findUserForEmail(dto.email, dto.tenantSlug);
-    if (!user) return { message: 'If an account exists, a new code has been sent.' };
-    const otp = await this.issueOtp(user.id, purpose);
+    const users = await this.findUsersByEmail(dto.email, dto.tenantSlug);
+    if (users.length === 0) return { message: 'If an account exists, a new code has been sent.' };
     const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3001';
-    if (purpose === 'reset_password') {
-      const token = crypto.randomBytes(32).toString('hex');
-      const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + 24);
-      await this.passwordResetRepo.save(this.passwordResetRepo.create({ user_id: user.id, token, expires_at: expiresAt }));
-      await this.mailService.sendPasswordReset(user.email, user.name || 'there', otp, `${baseUrl}/reset-password?token=${token}`);
-    } else {
-      await this.mailService.sendOtp(
-        user.email,
-        user.name || 'there',
-        otp,
-        'Enter this code to confirm your SMEBUZE email and open your workspace.',
-      );
+    for (const user of users) {
+      const otp = await this.issueOtp(user.id, purpose);
+      if (purpose === 'reset_password') {
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date();
+        expiresAt.setHours(expiresAt.getHours() + 24);
+        await this.passwordResetRepo.save(this.passwordResetRepo.create({ user_id: user.id, token, expires_at: expiresAt }));
+        await this.mailService.sendPasswordReset(user.email, user.name || 'there', otp, `${baseUrl}/reset-password?token=${token}`);
+      } else {
+        await this.mailService.sendOtp(
+          user.email,
+          user.name || 'there',
+          otp,
+          'Enter this code to confirm your SMEBUZE email and open your workspace.',
+        );
+      }
     }
     return { message: 'If an account exists, a new code has been sent.' };
   }
 
   async resetPasswordWithOtp(dto: ResetPasswordOtpDto): Promise<{ message: string }> {
-    const user = await this.findUserForEmail(dto.email, dto.tenantSlug);
-    if (!user) throw new BadRequestException('Invalid code or email');
-    await this.assertOtp(user.id, 'reset_password', dto.otp);
+    const user = await this.findUserForEmailOrOtp(dto.email, dto.tenantSlug, 'reset_password', dto.otp);
     const password_hash = await bcrypt.hash(dto.newPassword, 10);
     await this.userRepo.update(user.id, { password_hash, email_verified: true });
     return { message: 'Password updated. You can now sign in.' };
   }
 
-  private async findUserForEmail(email: string, tenantSlug?: string): Promise<User | null> {
+  private async completeLogin(user: User): Promise<{
+    access_token: string;
+    user: TenantContext;
+    tenant?: { slug: string; settings: Record<string, unknown> };
+  }> {
+    if (user.tenant_id) {
+      const tenant = user.tenant ?? (await this.tenantRepo.findOne({ where: { id: user.tenant_id } }));
+      if (!tenant?.is_active) throw new UnauthorizedException('Invalid email or password');
+    }
+
+    if (!user.is_super_admin && user.email_verified === false) {
+      const tenant = user.tenant ?? (user.tenant_id ? await this.tenantRepo.findOne({ where: { id: user.tenant_id } }) : null);
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.FORBIDDEN,
+          code: 'EMAIL_NOT_VERIFIED',
+          message: 'Confirm the 6-digit code we sent to your email before signing in.',
+          email: user.email,
+          tenantSlug: tenant?.slug ?? '',
+        },
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    await this.userRepo.update(user.id, { last_login_at: new Date() });
+
+    await this.auditService.log(
+      { tenantId: user.tenant_id ?? null, userId: user.id },
+      'login',
+      'auth',
+      user.id,
+      { email: user.email },
+    ).catch(() => {});
+
+    const context = await this.buildContext(user);
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      tenantId: user.tenant_id,
+      isSuperAdmin: user.is_super_admin,
+      roleIds: context.roleIds,
+      permissions: context.permissions,
+    };
+
+    let tenant: { slug: string; settings: Record<string, unknown> } | undefined;
+    if (user.tenant_id) {
+      const t = user.tenant ?? (await this.tenantRepo.findOne({ where: { id: user.tenant_id }, select: ['slug', 'settings'] }));
+      if (t) tenant = { slug: t.slug, settings: (t.settings as Record<string, unknown>) ?? {} };
+    }
+
+    return { access_token: this.jwtService.sign(payload), user: context, ...(tenant && { tenant }) };
+  }
+
+  private async workspacesFromUsers(
+    users: User[],
+  ): Promise<Array<{ slug: string; name: string; tenantId: string | null; isSuperAdmin: boolean }>> {
+    const workspaces: Array<{ slug: string; name: string; tenantId: string | null; isSuperAdmin: boolean }> = [];
+    for (const user of users) {
+      if (user.is_super_admin && !user.tenant_id) {
+        workspaces.push({ slug: '', name: 'Platform admin', tenantId: null, isSuperAdmin: true });
+        continue;
+      }
+      const tenant = user.tenant ?? (user.tenant_id ? await this.tenantRepo.findOne({ where: { id: user.tenant_id } }) : null);
+      if (!tenant?.is_active) continue;
+      workspaces.push({ slug: tenant.slug, name: tenant.name, tenantId: tenant.id, isSuperAdmin: false });
+    }
+    return workspaces;
+  }
+
+  private async findUsersByEmail(email: string, tenantSlug?: string, platformAdmin = false): Promise<User[]> {
+    const normalized = email.trim();
+    const relations = ['defaultCompany', 'defaultBranch', 'tenant'] as const;
+    if (platformAdmin) {
+      const user = await this.userRepo.findOne({
+        where: { email: normalized, tenant_id: IsNull(), is_super_admin: true, is_active: true },
+        relations: [...relations],
+      });
+      return user ? [user] : [];
+    }
     if (tenantSlug?.trim()) {
       const tenant = await this.tenantRepo.findOne({ where: { slug: tenantSlug.trim(), is_active: true } });
-      if (!tenant) return null;
-      return this.userRepo.findOne({ where: { email, tenant_id: tenant.id, is_active: true } });
+      if (!tenant) return [];
+      const user = await this.userRepo.findOne({
+        where: { email: normalized, tenant_id: tenant.id, is_active: true },
+        relations: [...relations],
+      });
+      return user ? [user] : [];
     }
-    const superAdmin = await this.userRepo.findOne({
-      where: { email, tenant_id: IsNull(), is_super_admin: true, is_active: true },
+    return this.userRepo.find({
+      where: { email: normalized, is_active: true },
+      relations: [...relations],
     });
-    if (superAdmin) return superAdmin;
-    const matches = await this.userRepo.find({ where: { email, is_active: true } });
-    if (matches.length === 1) return matches[0];
-    return null;
+  }
+
+  /** When the same email exists in more than one workspace, match the OTP instead of asking for a slug. */
+  private async findUserForEmailOrOtp(
+    email: string,
+    tenantSlug: string | undefined,
+    purpose: string,
+    code: string,
+  ): Promise<User> {
+    const users = await this.findUsersByEmail(email, tenantSlug);
+    if (users.length === 0) throw new BadRequestException('Invalid code or email');
+    if (users.length === 1) {
+      await this.assertOtp(users[0].id, purpose, code);
+      return users[0];
+    }
+    for (const user of users) {
+      const row = await this.otpRepo.findOne({
+        where: { user_id: user.id, purpose, used_at: IsNull() },
+        order: { created_at: 'DESC' },
+      });
+      if (!row || new Date() > row.expires_at || row.attempts >= 5) continue;
+      const ok = await bcrypt.compare(code, row.code_hash);
+      if (!ok) continue;
+      row.attempts += 1;
+      row.used_at = new Date();
+      await this.otpRepo.save(row);
+      return user;
+    }
+    throw new BadRequestException('Invalid or expired code');
   }
 
   private sixDigit(): string {
