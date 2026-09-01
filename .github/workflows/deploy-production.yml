@@ -47,4 +47,10 @@ jobs:
               echo "Clone production to $APP_DIR first."
               exit 1
             fi
-            bash "$APP_DIR/scripts/deploy.sh"
+            if [ "$(id -un)" = "root" ] && id smebuze >/dev/null 2>&1; then
+              echo "[github] running deploy as user smebuze"
+              sudo -u smebuze -H env APP_DIR="$APP_DIR" DEPLOY_BRANCH="$DEPLOY_BRANCH" FORCE_FULL="$FORCE_FULL" \
+                bash "$APP_DIR/scripts/deploy.sh"
+            else
+              bash "$APP_DIR/scripts/deploy.sh"
+            fi
