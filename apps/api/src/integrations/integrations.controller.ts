@@ -1,12 +1,25 @@
-import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
-import { Response } from 'express';
+import { Body, Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { Public } from '../common/decorators/public';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
 import { SalesService } from '../sales/sales.service';
 import { WhatsappSendDto } from './dto/whatsapp-send.dto';
+import { WhatsappService } from './whatsapp.service';
 
 @Controller('integrations')
 export class IntegrationsController {
-  constructor(private readonly salesService: SalesService) {}
+  constructor(
+    private readonly salesService: SalesService,
+    private readonly whatsappService: WhatsappService,
+  ) {}
+
+  @Get('whatsapp/status')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  whatsappStatus() {
+    return this.whatsappService.getStatus();
+  }
+
   @Public()
   @Get('whatsapp/webhook')
   async whatsappWebhookVerify(
@@ -25,21 +38,19 @@ export class IntegrationsController {
 
   @Public()
   @Post('whatsapp/webhook')
-  async whatsappWebhook(@Body() body: unknown) {
-    return {
-      received: true,
-      message: 'WhatsApp webhook - integrate with WhatsApp Business API',
-    };
+  async whatsappWebhook(@Req() req: Request, @Body() body: unknown) {
+    const raw = (req as Request & { rawBody?: string }).rawBody;
+    const sig = req.headers['x-hub-signature-256'] as string | undefined;
+    if (raw && !this.whatsappService.verifySignature(raw, sig)) {
+      return { received: false, error: 'Invalid signature' };
+    }
+    return this.whatsappService.handleWebhook(body);
   }
 
   @Post('whatsapp/send')
+  @UseGuards(JwtAuthGuard, TenantGuard)
   async whatsappSend(@Body() body: WhatsappSendDto) {
-    return {
-      sent: true,
-      message: 'WhatsApp send - integrate with WhatsApp Cloud API; use template messages for invoice link, payment reminder, etc.',
-      to: body.to,
-      template: body.template,
-    };
+    return this.whatsappService.send(body);
   }
 
   @Public()

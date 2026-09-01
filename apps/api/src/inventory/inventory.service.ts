@@ -1,8 +1,9 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Warehouse } from './entities/warehouse.entity';
 import { Item } from './entities/item.entity';
+import { ItemCategory } from './entities/item-category.entity';
 import { Stock } from './entities/stock.entity';
 import { StockTransfer } from './entities/stock-transfer.entity';
 import { StockTransferLine } from './entities/stock-transfer-line.entity';
@@ -15,6 +16,8 @@ export class InventoryService {
     private readonly warehouseRepo: Repository<Warehouse>,
     @InjectRepository(Item)
     private readonly itemRepo: Repository<Item>,
+    @InjectRepository(ItemCategory)
+    private readonly categoryRepo: Repository<ItemCategory>,
     @InjectRepository(Stock)
     private readonly stockRepo: Repository<Stock>,
     @InjectRepository(StockTransfer)
@@ -68,6 +71,75 @@ export class InventoryService {
     return this.warehouseRepo.save(wh);
   }
 
+  async findCategories(ctx: TenantContext) {
+    const tenantId = this.assertTenantId(ctx);
+    return this.categoryRepo.find({
+      where: { tenant_id: tenantId, is_active: true },
+      order: { sort_order: 'ASC', name: 'ASC' },
+    });
+  }
+
+  async createCategory(dto: { name: string; sort_order?: number }, ctx: TenantContext) {
+    const tenantId = this.assertTenantId(ctx);
+    const name = dto.name.trim();
+    if (!name) throw new ForbiddenException('Category name is required');
+    const existing = await this.categoryRepo.findOne({ where: { tenant_id: tenantId, name } });
+    if (existing) {
+      if (!existing.is_active) {
+        existing.is_active = true;
+        existing.sort_order = dto.sort_order ?? existing.sort_order;
+        return this.categoryRepo.save(existing);
+      }
+      throw new ConflictException('That category already exists');
+    }
+    return this.categoryRepo.save(
+      this.categoryRepo.create({
+        tenant_id: tenantId,
+        name,
+        sort_order: dto.sort_order ?? 0,
+        is_active: true,
+      }),
+    );
+  }
+
+  async updateCategory(id: string, dto: { name?: string; sort_order?: number; is_active?: boolean }, ctx: TenantContext) {
+    const tenantId = this.assertTenantId(ctx);
+    const row = await this.categoryRepo.findOne({ where: { id, tenant_id: tenantId } });
+    if (!row) throw new NotFoundException('Category not found');
+    const oldName = row.name;
+    if (dto.name != null) {
+      const name = dto.name.trim();
+      if (!name) throw new ForbiddenException('Category name is required');
+      row.name = name;
+    }
+    if (dto.sort_order != null) row.sort_order = dto.sort_order;
+    if (dto.is_active != null) row.is_active = dto.is_active;
+    const saved = await this.categoryRepo.save(row);
+    if (dto.name && dto.name.trim() !== oldName) {
+      await this.itemRepo
+        .createQueryBuilder()
+        .update(Item)
+        .set({ category: saved.name })
+        .where('tenant_id = :tenantId AND category = :old', { tenantId, old: oldName })
+        .execute();
+    }
+    return saved;
+  }
+
+  async archiveCategory(id: string, ctx: TenantContext) {
+    return this.updateCategory(id, { is_active: false }, ctx);
+  }
+
+  async ensureCategory(name: string, ctx: TenantContext) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    try {
+      await this.createCategory({ name: trimmed }, ctx);
+    } catch (e) {
+      if (!(e instanceof ConflictException)) throw e;
+    }
+  }
+
   async generateNextSku(ctx: TenantContext): Promise<string> {
     const tenantId = this.assertTenantId(ctx);
     const items = await this.itemRepo.find({
@@ -100,7 +172,11 @@ export class InventoryService {
       hsn_sac: string;
       reorder_level: number;
       mrp: number;
+      cost_price: number;
+      sale_price: number;
+      discount_percent: number;
       tax_rate: number;
+      opening_qty: number;
     }>,
     ctx: TenantContext,
   ) {
@@ -120,9 +196,18 @@ export class InventoryService {
       hsn_sac: dto.hsn_sac ?? null,
       reorder_level: dto.reorder_level != null ? String(dto.reorder_level) : '0',
       mrp: dto.mrp != null ? String(dto.mrp) : null,
+      cost_price: dto.cost_price != null ? String(dto.cost_price) : null,
+      sale_price: dto.sale_price != null ? String(dto.sale_price) : dto.mrp != null ? String(dto.mrp) : null,
+      discount_percent: dto.discount_percent != null ? String(dto.discount_percent) : null,
       tax_rate: dto.tax_rate != null ? String(dto.tax_rate) : '0',
     });
-    return this.itemRepo.save(item);
+    const saved = await this.itemRepo.save(item);
+    if (dto.category?.trim()) await this.ensureCategory(dto.category, ctx);
+    if (dto.opening_qty && dto.opening_qty > 0) {
+      const warehouseId = await this.getDefaultWarehouse(ctx);
+      if (warehouseId) await this.receiveStock(ctx, warehouseId, saved.id, dto.opening_qty);
+    }
+    return saved;
   }
 
   async findItems(ctx: TenantContext) {
@@ -162,6 +247,9 @@ export class InventoryService {
       hsn_sac: string;
       reorder_level: number;
       mrp: number;
+      cost_price: number;
+      sale_price: number;
+      discount_percent: number;
       tax_rate: number;
     }>,
     ctx: TenantContext,
@@ -173,10 +261,16 @@ export class InventoryService {
     if (dto.image_urls !== undefined) item.image_urls = Array.isArray(dto.image_urls) ? dto.image_urls : item.image_urls;
     if (dto.description != null) item.description = dto.description;
     if (dto.unit != null) item.unit = dto.unit;
-    if (dto.category != null) item.category = dto.category;
+    if (dto.category != null) {
+      item.category = dto.category;
+      if (dto.category.trim()) await this.ensureCategory(dto.category, ctx);
+    }
     if (dto.hsn_sac != null) item.hsn_sac = dto.hsn_sac;
     if (dto.reorder_level != null) item.reorder_level = String(dto.reorder_level);
     if (dto.mrp !== undefined) item.mrp = dto.mrp != null ? String(dto.mrp) : null;
+    if (dto.cost_price !== undefined) item.cost_price = dto.cost_price != null ? String(dto.cost_price) : null;
+    if (dto.sale_price !== undefined) item.sale_price = dto.sale_price != null ? String(dto.sale_price) : null;
+    if (dto.discount_percent !== undefined) item.discount_percent = dto.discount_percent != null ? String(dto.discount_percent) : null;
     if (dto.tax_rate !== undefined) item.tax_rate = dto.tax_rate != null ? String(dto.tax_rate) : '0';
     return this.itemRepo.save(item);
   }
@@ -223,29 +317,33 @@ export class InventoryService {
     await this.stockRepo.save(row);
   }
 
-  async findLowStock(ctx: TenantContext): Promise<{ item_id: string; name: string; sku: string | null; reorder_level: number; current_stock: number }[]> {
+  async findLowStock(ctx: TenantContext): Promise<{ item_id: string; name: string; sku: string | null; category: string | null; reorder_level: number; current_stock: number }[]> {
     const tenantId = this.assertTenantId(ctx);
-    const items = await this.itemRepo.find({ where: { tenant_id: tenantId } });
+    const items = await this.itemRepo.find({ where: { tenant_id: tenantId, is_active: true } });
     const stockList = await this.stockRepo.find({ where: { tenant_id: tenantId } });
     const byItem: Record<string, number> = {};
     for (const s of stockList) {
       byItem[s.item_id] = (byItem[s.item_id] ?? 0) + parseFloat(s.quantity);
     }
-    const result: { item_id: string; name: string; sku: string | null; reorder_level: number; current_stock: number }[] = [];
+    const result: { item_id: string; name: string; sku: string | null; category: string | null; reorder_level: number; current_stock: number }[] = [];
     for (const item of items) {
-      const reorder = parseFloat(item.reorder_level ?? '0');
+      const reorder = parseFloat(item.reorder_level ?? '0') || 0;
+      const hasRow = Object.prototype.hasOwnProperty.call(byItem, item.id);
       const current = byItem[item.id] ?? 0;
-      if (reorder > 0 && current < reorder) {
+      const shortByReorder = reorder > 0 && current <= reorder;
+      const outOfStock = hasRow && current <= 0;
+      if (shortByReorder || outOfStock) {
         result.push({
           item_id: item.id,
           name: item.name,
           sku: item.sku,
+          category: item.category,
           reorder_level: reorder,
           current_stock: current,
         });
       }
     }
-    return result;
+    return result.sort((a, b) => a.current_stock - b.current_stock);
   }
 
   async createStockTransfer(

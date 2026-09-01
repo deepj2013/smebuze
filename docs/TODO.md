@@ -16,6 +16,10 @@
 
 ## Work queue — do one by one
 
+### Ice Crest custom vertical
+
+- [x] Tenant-only Ice Crest CRM foundation, stock movements, billing charges/GST mode, expense management, financial/stock dashboard, website lead capture, custom seed and navigation. Detailed production follow-ups: `docs/ICE_CREST_TODO.md`.
+
 *Start from **#1** and work down. Mark each `[ ]` → `[x]` when done. One task at a time; everything gets added sequentially.*
 
 ### Deal tracking & pipeline (Tier 6)

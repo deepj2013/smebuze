@@ -13,6 +13,9 @@ import { UserRole } from './entities/user-role.entity';
 import { RolePermission } from './entities/role-permission.entity';
 import { PasswordResetToken } from './entities/password-reset-token.entity';
 import { PendingInvite } from './entities/pending-invite.entity';
+import { Customer } from '../crm/entities/customer.entity';
+import { Warehouse } from '../inventory/entities/warehouse.entity';
+import { EmailOtp } from './entities/email-otp.entity';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { AuthController } from './auth.controller';
@@ -44,6 +47,9 @@ import { AuditModule } from '../audit/audit.module';
       RolePermission,
       PasswordResetToken,
       PendingInvite,
+      Customer,
+      Warehouse,
+      EmailOtp,
     ]),
     AuditModule,
   ],

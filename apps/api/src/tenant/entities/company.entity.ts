@@ -37,6 +37,9 @@ export class Company {
   @Column({ type: 'jsonb', nullable: true })
   bank_details: Record<string, unknown> | null;
 
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  logo_url: string | null;
+
   @Column({ default: false })
   is_default: boolean;
 

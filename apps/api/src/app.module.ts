@@ -24,10 +24,14 @@ import { AiModule } from './ai/ai.module';
 import { SearchModule } from './search/search.module';
 import { HrModule } from './hr/hr.module';
 import { ServiceModule } from './service/service.module';
+import { IceCrestModule } from './ice-crest/ice-crest.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['.env', '../../.env'],
+    }),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     TypeOrmModule.forRootAsync({
       useFactory: () => ({
@@ -61,6 +65,7 @@ import { ServiceModule } from './service/service.module';
     SearchModule,
     HrModule,
     ServiceModule,
+    IceCrestModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

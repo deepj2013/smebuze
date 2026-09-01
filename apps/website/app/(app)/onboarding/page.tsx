@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
+import { printerSetupDone } from '@/lib/printers';
 
 interface OnboardingStep {
   id: string;
@@ -24,7 +25,16 @@ export default function OnboardingWizardPage() {
   useEffect(() => {
     (async () => {
       const { data } = await apiGet<OnboardingChecklist & { onboardingCompletedAt?: string; tenantSlug?: string }>('onboarding/checklist');
-      if (data) setOnboarding({ steps: data.steps, showOnboarding: data.showOnboarding });
+      if (data?.tenantSlug === 'ice-crest') {
+        window.location.replace('/ice-crest/dashboard');
+        return;
+      }
+      if (data) {
+        const steps = data.steps.map((s) =>
+          s.id === 'setup_printer' || s.id === 'ic_printer' ? { ...s, done: printerSetupDone() } : s,
+        );
+        setOnboarding({ steps, showOnboarding: data.showOnboarding });
+      }
       setLoading(false);
     })();
   }, []);
@@ -59,7 +69,7 @@ export default function OnboardingWizardPage() {
   return (
     <div className="max-w-lg mx-auto py-12">
       <h1 className="text-2xl font-bold text-slate-900 mb-2">Set up your workspace</h1>
-      <p className="text-slate-600 mb-8">Complete these steps to get the most out of SMEBUZZ.</p>
+      <p className="text-slate-600 mb-8">Complete these steps to get the most out of SMEBUZZ — including the printer at the counter.</p>
 
       <ol className="space-y-4 mb-8">
         {onboarding.steps.map((step, i) => (

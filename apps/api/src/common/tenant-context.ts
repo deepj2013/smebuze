@@ -14,6 +14,7 @@ export interface TenantContext {
   branchId?: string;
   /** When set, menu is filtered to these modules (e.g. crm, sales). If not set, use permissions. */
   allowed_modules?: string[];
+  email_verified?: boolean;
 }
 
 export const CurrentTenant = createParamDecorator(

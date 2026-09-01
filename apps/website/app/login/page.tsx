@@ -28,13 +28,24 @@ export default function LoginPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.message || data.error || `HTTP ${res.status}`);
+        const code = data.code || (typeof data.message === 'object' ? data.message?.code : undefined);
+        if (res.status === 403 && code === 'EMAIL_NOT_VERIFIED') {
+          const em = data.email || (typeof data.message === 'object' ? data.message?.email : email);
+          router.push(`/verify-email?email=${encodeURIComponent(em || email)}&slug=${encodeURIComponent(tenantSlug.trim())}`);
+          return;
+        }
+        const msg = typeof data.message === 'string' ? data.message : data.message?.message || data.error || `HTTP ${res.status}`;
+        setError(msg);
         return;
       }
       if (data.access_token) {
         if (typeof window !== 'undefined') {
           window.localStorage.setItem('smebuzz_token', data.access_token);
           window.localStorage.setItem('smebuzz_user', JSON.stringify(data.user ?? {}));
+        }
+        if (data.user?.isSuperAdmin && !data.user?.tenantId) {
+          router.push('/admin/tenants');
+          return;
         }
         router.push('/dashboard');
         return;
@@ -59,7 +70,7 @@ export default function LoginPage() {
         <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-slate-200 p-5 sm:p-8">
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Sign in</h1>
           <p className="text-slate-600 text-sm mb-6">
-            Enter your business email and password to access your SMEBUZZ workspace.
+            Open your workspace to raise invoices, check stock, and print from the printer you set up on this device.
           </p>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -68,7 +79,8 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. admin@demo.com"
+                placeholder="you@company.com"
+                autoComplete="email"
                 className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
                 required
               />
@@ -79,21 +91,23 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password123"
+                placeholder="Enter your password"
+                autoComplete="current-password"
                 className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Workspace slug (optional)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Workspace (optional)</label>
               <input
                 type="text"
                 value={tenantSlug}
                 onChange={(e) => setTenantSlug(e.target.value)}
-                placeholder="e.g. demo"
+                placeholder="your-workspace"
+                autoComplete="off"
                 className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
               />
-              <p className="mt-1 text-xs text-slate-500">Ask your admin for the workspace slug if you’re joining a team.</p>
+              <p className="mt-1 text-xs text-slate-500">Needed when your team has a shared workspace name.</p>
             </div>
             <button
               type="submit"
@@ -113,7 +127,7 @@ export default function LoginPage() {
               <Link href="/forgot-password" className="text-brand-600 hover:underline">Forgot password?</Link>
             </p>
             <p className="text-slate-500">
-              Don’t have an account? <Link href="/signup" className="text-brand-600 hover:underline">Sign up</Link>
+              Don’t have an account? <Link href="/signup" className="text-brand-600 hover:underline">Start a 7-day free trial</Link>
               {' · '}
               Joining a team? <Link href="/join" className="text-brand-600 hover:underline">Join workspace</Link>
             </p>

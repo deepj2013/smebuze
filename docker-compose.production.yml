@@ -1,6 +1,9 @@
 # Production: Database + API on Hostinger VPS
 # Usage: copy .env.example to .env, set JWT_SECRET and DB_PASSWORD, then:
 #   docker compose -f docker-compose.production.yml up -d
+# Then migrate + seed from the host (not during image build):
+#   DB_HOST=127.0.0.1 npm run db:migrate
+#   DB_HOST=127.0.0.1 npm run seed:ice-crest
 # Postgres is bound to 127.0.0.1 so only the host (migrations/seed) and API can connect.
 
 version: '3.8'
@@ -15,6 +18,7 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - HOST=0.0.0.0
       - PORT=3000
       - JWT_SECRET=${JWT_SECRET}
       - DB_HOST=postgres
@@ -22,6 +26,16 @@ services:
       - DB_USER=postgres
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=smebuze
+      - CORS_ORIGIN=${CORS_ORIGIN:-https://smebuze.com,https://www.smebuze.com}
+      - API_PUBLIC_URL=${API_PUBLIC_URL:-https://api.smebuze.com}
+      - FRONTEND_URL=${FRONTEND_URL:-https://smebuze.com}
+      - APP_URL=${APP_URL:-https://smebuze.com}
+      - MAIL_HOST=${MAIL_HOST:-smtp.hostinger.com}
+      - MAIL_PORT=${MAIL_PORT:-465}
+      - MAIL_SECURE=${MAIL_SECURE:-true}
+      - MAIL_USER=${MAIL_USER}
+      - MAIL_PASS=${MAIL_PASS}
+      - "MAIL_FROM=${MAIL_FROM:-SMEBUZE <support@smebuze.com>}"
     depends_on:
       postgres:
         condition: service_healthy

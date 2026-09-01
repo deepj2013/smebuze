@@ -10,8 +10,9 @@ const plusJakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: 'SMEBUZZ — Modular AI-Powered ERP for MSME',
-  description: 'Configure only what you need. WhatsApp-first, multi-tenant ERP for manufacturing, trading, and services. India & Global Bharat.',
+  title: 'SMEBUZZ — GST ERP for MSMEs | 7-day free trial',
+  description:
+    'Run sales, stock, purchase and accounts in one login. Print GST invoices on USB, Wi-Fi, internet or Bluetooth printers — inkjet, laser or thermal. Start a 7-day free trial, no card needed.',
 };
 
 export const viewport: Viewport = {

@@ -9,6 +9,8 @@ interface Company { id: string; name: string }
 interface Branch { id: string; name: string }
 interface Customer { id: string; name: string }
 interface Quotation { id: string; number: string; customer_id?: string | null; lead_id?: string | null; customer?: { name: string }; lead?: { name: string } }
+interface Item { id:string; name:string; sku?:string|null; unit?:string; mrp?:string|null }
+interface OrderLine { item_id:string; qty:number; rate:number; unit:string; description:string }
 
 export default function NewSalesOrderPage() {
   const router = useRouter();
@@ -25,13 +27,16 @@ export default function NewSalesOrderPage() {
   const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [items,setItems]=useState<Item[]>([]);
+  const [lines,setLines]=useState<OrderLine[]>([{item_id:'',qty:1,rate:0,unit:'pcs',description:''}]);
 
   useEffect(() => {
     (async () => {
-      const [cRes, custRes, qRes] = await Promise.all([
+      const [cRes, custRes, qRes,itemRes] = await Promise.all([
         apiGet<Company[] | { data: Company[] }>('organization/companies'),
         apiGet<Customer[] | { data: Customer[] }>('crm/customers'),
         apiGet<Quotation[] | { data: Quotation[] }>('sales/quotations'),
+        apiGet<Item[]>('inventory/items'),
       ]);
       const cList = Array.isArray(cRes.data) ? cRes.data : (cRes.data as { data?: Company[] })?.data ?? [];
       const custList = Array.isArray(custRes.data) ? custRes.data : (custRes.data as { data?: Customer[] })?.data ?? [];
@@ -39,6 +44,7 @@ export default function NewSalesOrderPage() {
       setCompanies(cList);
       setCustomers(custList);
       setQuotations(qList);
+      setItems(itemRes.data||[]);
       if (cList.length) setCompanyId(cList[0].id);
     })();
   }, []);
@@ -73,6 +79,7 @@ export default function NewSalesOrderPage() {
       customer_id: customerId || undefined,
       quotation_id: quotationId || undefined,
       order_date: orderDate,
+      lines,
     };
     const { data, error: err } = await apiPost<{ id: string }>('sales/orders', body);
     setLoading(false);
@@ -86,7 +93,7 @@ export default function NewSalesOrderPage() {
       <Link href="/sales/orders" className="text-sm text-slate-600 hover:text-slate-900 mb-4 inline-block">← Sales orders</Link>
       <h1 className="text-2xl font-bold text-slate-900 mb-4">Create sales order</h1>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
-      <form onSubmit={submit} className="max-w-md space-y-4 rounded-xl border border-slate-200 bg-white p-6">
+      <form onSubmit={submit} className="max-w-4xl space-y-4 rounded-xl border border-slate-200 bg-white p-6">
         {quotations.length > 0 && (
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Link from quotation</label>
@@ -105,6 +112,7 @@ export default function NewSalesOrderPage() {
             {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
+        <div className="sm:col-span-2"><div className="flex items-center justify-between"><label className="block text-sm font-medium text-slate-700">Order items — stock is reserved immediately</label><button type="button" onClick={()=>setLines(v=>[...v,{item_id:'',qty:1,rate:0,unit:'pcs',description:''}])} className="text-sm text-brand-600">+ Add line</button></div><div className="mt-2 space-y-2">{lines.map((line,i)=><div key={i} className="grid gap-2 rounded border p-3 sm:grid-cols-5"><select required value={line.item_id} onChange={e=>{const item=items.find(x=>x.id===e.target.value);setLines(v=>v.map((x,j)=>j===i?{...x,item_id:e.target.value,description:item?.name||'',unit:item?.unit||'pcs',rate:Number(item?.mrp||0)}:x))}} className="rounded border px-2 py-2 sm:col-span-2"><option value="">Select Ice SKU</option>{items.map(x=><option key={x.id} value={x.id}>{x.name} {x.sku?`(${x.sku})`:''}</option>)}</select><input aria-label="Quantity" required min="0.01" step="0.01" type="number" value={line.qty} onChange={e=>setLines(v=>v.map((x,j)=>j===i?{...x,qty:Number(e.target.value)}:x))} className="rounded border px-2 py-2" placeholder="Qty"/><input aria-label="Rate" required min="0" step="0.01" type="number" value={line.rate} onChange={e=>setLines(v=>v.map((x,j)=>j===i?{...x,rate:Number(e.target.value)}:x))} className="rounded border px-2 py-2" placeholder="Rate"/><button type="button" disabled={lines.length===1} onClick={()=>setLines(v=>v.filter((_,j)=>j!==i))} className="text-sm text-red-600 disabled:opacity-30">Remove</button></div>)}</div></div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Branch</label>
           <select value={branchId} onChange={(e) => setBranchId(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm">

@@ -35,6 +35,28 @@ export class InventoryController {
     return this.inventoryService.updateWarehouse(id, body as Parameters<InventoryService['updateWarehouse']>[1], ctx);
   }
 
+  @Get('categories')
+  @RequirePermissions('inventory.item.view')
+  async getCategories(@CurrentTenant() ctx: TenantContext) {
+    return this.inventoryService.findCategories(ctx);
+  }
+
+  @Post('categories')
+  @RequirePermissions('inventory.item.create')
+  async createCategory(@Body() body: { name: string; sort_order?: number }, @CurrentTenant() ctx: TenantContext) {
+    return this.inventoryService.createCategory(body, ctx);
+  }
+
+  @Patch('categories/:id')
+  @RequirePermissions('inventory.item.create')
+  async updateCategory(
+    @Param('id') id: string,
+    @Body() body: { name?: string; sort_order?: number; is_active?: boolean },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.inventoryService.updateCategory(id, body, ctx);
+  }
+
   @Get('items/next-sku')
   @RequirePermissions('inventory.item.view')
   async getNextSku(@CurrentTenant() ctx: TenantContext) {

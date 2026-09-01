@@ -17,4 +17,8 @@ yarn-error.log*
 
 /apps/website/.next
 /apps/api/dist
+*.tsbuildinfo
 
+/apps/api/uploads/**
+!/apps/api/uploads/logos/
+!/apps/api/uploads/logos/ice-crest.svg

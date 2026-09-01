@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
 import { useToast } from '@/app/(app)/components/ToastContext';
@@ -11,6 +11,7 @@ interface Company { id: string; name: string }
 interface Branch { id: string; name: string }
 interface Customer { id: string; name: string }
 interface Vendor { id: string; name: string }
+interface SalesOrderOption { id:string; number:string; customer_id?:string|null; status:string; lines?:Array<{item_id?:string|null;description?:string|null;quantity:string;unit:string;rate:string;item?:{name:string;sku?:string|null;hsn_sac?:string|null}}> }
 
 interface SearchItem { id: string; name: string; sku: string | null; category?: string | null }
 interface FullItem {
@@ -65,6 +66,7 @@ const emptyLine = (): LineRow => ({
 
 export default function NewInvoicePage() {
   const router = useRouter();
+  const searchParams=useSearchParams();
   const { success, error: showError } = useToast();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -82,6 +84,13 @@ export default function NewInvoicePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [customerCreditLimit, setCustomerCreditLimit] = useState<number | null>(null);
+  const [gstApplicable, setGstApplicable] = useState(true);
+  const [shippingCharges, setShippingCharges] = useState(0);
+  const [otherCharges, setOtherCharges] = useState(0);
+  const [discountAmount, setDiscountAmount] = useState(0);
+  const [salesOrders,setSalesOrders]=useState<SalesOrderOption[]>([]);
+  const [salesOrderId,setSalesOrderId]=useState('');
+  useEffect(()=>{const id=searchParams?.get('sales_order_id');if(id&&salesOrders.some(x=>x.id===id)){const o=salesOrders.find(x=>x.id===id)!;setSalesOrderId(id);setCustomerId(o.customer_id||'');setVendorId('');setLines((o.lines||[]).map(l=>({item_id:l.item_id||undefined,item_sku:l.item?.sku,item_name:l.item?.name,hsn_sac:l.item?.hsn_sac||'22019010',description:l.description||l.item?.name||'Item',qty:Number(l.quantity),unit:l.unit||'pcs',rate:Number(l.rate),cgst_rate:9,sgst_rate:9}))) }},[searchParams,salesOrders]);
 
   // Derive due date from payment term and invoice date
   useEffect(() => {
@@ -100,10 +109,11 @@ export default function NewInvoicePage() {
 
   useEffect(() => {
     (async () => {
-      const [cRes, custRes, vRes] = await Promise.all([
+      const [cRes, custRes, vRes,orderRes] = await Promise.all([
         apiGet<Company[] | { data: Company[] }>('organization/companies'),
         apiGet<Customer[] | { data: Customer[] }>('crm/customers'),
         apiGet<Vendor[] | { data: Vendor[] }>('purchase/vendors'),
+        apiGet<SalesOrderOption[]>('sales/orders'),
       ]);
       const cList = Array.isArray(cRes.data) ? cRes.data : (cRes.data as { data?: Company[] })?.data ?? [];
       const custList = Array.isArray(custRes.data) ? custRes.data : (custRes.data as { data?: Customer[] })?.data ?? [];
@@ -111,6 +121,7 @@ export default function NewInvoicePage() {
       setCompanies(cList);
       setCustomers(custList);
       setVendors(vList);
+      setSalesOrders((orderRes.data||[]).filter(x=>!['cancelled','rejected','invoiced','closed'].includes(x.status)));
       if (cList.length) setCompanyId(cList[0].id);
     })();
   }, []);
@@ -170,12 +181,17 @@ export default function NewInvoicePage() {
     setLoading(true);
     const body = {
       company_id: companyId,
+      sales_order_id: salesOrderId||undefined,
       branch_id: branchId || undefined,
       customer_id: customerId || undefined,
       vendor_id: vendorId || undefined,
       invoice_date: invoiceDate,
       due_date: dueDate || undefined,
       number: number || undefined,
+      gst_applicable: gstApplicable,
+      shipping_charges: shippingCharges,
+      other_charges: otherCharges,
+      discount_amount: discountAmount,
       lines: lines.map((l) => ({
         item_id: l.item_id || undefined,
         hsn_sac: l.hsn_sac,
@@ -183,8 +199,8 @@ export default function NewInvoicePage() {
         qty: l.qty,
         unit: l.unit,
         rate: l.rate,
-        cgst_rate: l.cgst_rate,
-        sgst_rate: l.sgst_rate,
+        cgst_rate: gstApplicable ? l.cgst_rate : 0,
+        sgst_rate: gstApplicable ? l.sgst_rate : 0,
       })),
     };
     const { error: err } = await apiPost('sales/invoices', body);
@@ -210,6 +226,7 @@ export default function NewInvoicePage() {
       )}
       <form onSubmit={submit} className="space-y-6 max-w-5xl">
         <div className="rounded-xl border border-slate-200 bg-white p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Invoice reserved sales order (recommended)</label><select value={salesOrderId} onChange={e=>{const id=e.target.value;setSalesOrderId(id);const o=salesOrders.find(x=>x.id===id);if(o){setCustomerId(o.customer_id||'');setVendorId('');setLines((o.lines||[]).map(l=>({item_id:l.item_id||undefined,item_sku:l.item?.sku,item_name:l.item?.name,hsn_sac:l.item?.hsn_sac||'22019010',description:l.description||l.item?.name||'Item',qty:Number(l.quantity),unit:l.unit||'pcs',rate:Number(l.rate),cgst_rate:9,sgst_rate:9})));}}} className="w-full rounded border border-slate-300 px-3 py-2 text-sm"><option value="">Direct invoice — use unreserved stock</option>{salesOrders.map(o=><option key={o.id} value={o.id}>{o.number} — {o.status}</option>)}</select><p className="mt-1 text-xs text-slate-500">Linked invoices consume the order reservation atomically and never deduct twice.</p></div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Company *</label>
             <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm">
@@ -331,6 +348,12 @@ export default function NewInvoicePage() {
           </div>
         </div>
 
+        <div className="rounded-xl border border-slate-200 bg-white p-5 grid gap-4 sm:grid-cols-4">
+          <label className="text-sm font-medium text-slate-700 flex items-center gap-2"><input type="checkbox" checked={gstApplicable} onChange={(e) => setGstApplicable(e.target.checked)} /> GST customer</label>
+          <label className="text-sm text-slate-700">Shipping charges<input type="number" min="0" step="0.01" value={shippingCharges} onChange={(e)=>setShippingCharges(Number(e.target.value))} className="mt-1 w-full rounded border border-slate-300 px-3 py-2" /></label>
+          <label className="text-sm text-slate-700">Other charges<input type="number" min="0" step="0.01" value={otherCharges} onChange={(e)=>setOtherCharges(Number(e.target.value))} className="mt-1 w-full rounded border border-slate-300 px-3 py-2" /></label>
+          <label className="text-sm text-slate-700">Discount<input type="number" min="0" step="0.01" value={discountAmount} onChange={(e)=>setDiscountAmount(Number(e.target.value))} className="mt-1 w-full rounded border border-slate-300 px-3 py-2" /></label>
+        </div>
         <div className="flex gap-2">
           <button type="submit" disabled={loading} className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50">Create invoice</button>
           <Link href="/sales/invoices" className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</Link>

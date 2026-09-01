@@ -144,9 +144,10 @@ export default function CampaignsPage() {
     }
     setSending(true);
     const templateName = selectedTemplateId ? templates.find((t) => t.id === selectedTemplateId)?.name || 'generic' : 'generic';
-    const { data, error: err } = await apiPost<{ sent?: boolean; message?: string; to?: string }>('integrations/whatsapp/send', {
+    const { data, error: err } = await apiPost<{ sent?: boolean; message?: string; to?: string; mode?: string }>('integrations/whatsapp/send', {
       to: phone,
       template: templateName,
+      text: messageBody,
       params: { body: messageBody, subject: messageSubject },
     });
     setSending(false);
@@ -154,7 +155,11 @@ export default function CampaignsPage() {
       setError(err);
       return;
     }
-    setSendSuccess(data?.sent ? `Message sent to ${data.to ?? phone}.` : (data as { message?: string })?.message || 'Done.');
+    if (!data?.sent) {
+      setError(data?.message || 'WhatsApp message was not sent. Check API .env credentials.');
+      return;
+    }
+    setSendSuccess(`Message sent to ${data.to ?? phone}${data.mode === 'live' ? ' via WhatsApp' : ''}.`);
     setTimeout(() => setSendSuccess(null), 4000);
   };
 

@@ -5,6 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPatch } from '@/lib/api';
 import { Barcode, ImagePlus, X } from 'lucide-react';
+import CategoryPicker from '../../../../components/CategoryPicker';
+import PosSwitcher from '../../../../components/PosSwitcher';
 
 function validateHsnSac(v: string): string | null {
   if (!v.trim()) return null;
@@ -27,6 +29,9 @@ export default function EditItemPage() {
   const [hsnSac, setHsnSac] = useState('9983');
   const [reorderLevel, setReorderLevel] = useState('');
   const [mrp, setMrp] = useState('');
+  const [costPrice, setCostPrice] = useState('');
+  const [salePrice, setSalePrice] = useState('');
+  const [discountPercent, setDiscountPercent] = useState('');
   const [taxRate, setTaxRate] = useState('');
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -48,6 +53,9 @@ export default function EditItemPage() {
         setHsnSac((d.hsn_sac as string) ?? '9983');
         setReorderLevel(d.reorder_level != null ? String(d.reorder_level) : '');
         setMrp(d.mrp != null ? String(d.mrp) : '');
+        setCostPrice(d.cost_price != null ? String(d.cost_price) : '');
+        setSalePrice(d.sale_price != null ? String(d.sale_price) : '');
+        setDiscountPercent(d.discount_percent != null ? String(d.discount_percent) : '');
         setTaxRate(d.tax_rate != null ? String(d.tax_rate) : '');
         setImageUrls(Array.isArray(d.image_urls) ? (d.image_urls as string[]) : []);
       }
@@ -80,6 +88,18 @@ export default function EditItemPage() {
     if (mrp.trim()) {
       const n = parseFloat(mrp);
       if (Number.isNaN(n) || n < 0) errs.mrp = 'MRP must be 0 or greater';
+    }
+    if (costPrice.trim()) {
+      const n = parseFloat(costPrice);
+      if (Number.isNaN(n) || n < 0) errs.costPrice = 'Cost must be 0 or greater';
+    }
+    if (salePrice.trim()) {
+      const n = parseFloat(salePrice);
+      if (Number.isNaN(n) || n < 0) errs.salePrice = 'Sale price must be 0 or greater';
+    }
+    if (discountPercent.trim()) {
+      const n = parseFloat(discountPercent);
+      if (Number.isNaN(n) || n < 0 || n > 100) errs.discountPercent = 'Discount must be 0–100';
     }
     if (taxRate.trim()) {
       const n = parseFloat(taxRate);
@@ -115,6 +135,12 @@ export default function EditItemPage() {
     if (reorderLevel.trim() !== '') body.reorder_level = parseFloat(reorderLevel) || 0;
     if (mrp.trim() !== '') body.mrp = parseFloat(mrp);
     else body.mrp = null;
+    if (costPrice.trim() !== '') body.cost_price = parseFloat(costPrice);
+    else body.cost_price = null;
+    if (salePrice.trim() !== '') body.sale_price = parseFloat(salePrice);
+    else body.sale_price = null;
+    if (discountPercent.trim() !== '') body.discount_percent = parseFloat(discountPercent);
+    else body.discount_percent = null;
     if (taxRate.trim() !== '') body.tax_rate = parseFloat(taxRate) || 0;
     const { error: err } = await apiPatch(`inventory/items/${id}`, body);
     setLoading(false);
@@ -125,6 +151,7 @@ export default function EditItemPage() {
   if (loadErr) return <div className="p-4 text-red-600">{loadErr}</div>;
   return (
     <div>
+      <PosSwitcher />
       <Link href="/inventory/items" className="text-sm text-slate-600 hover:text-slate-900 mb-4 inline-block">← Items</Link>
       <h1 className="text-2xl font-bold text-slate-900 mb-4">Edit item</h1>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
@@ -187,7 +214,7 @@ export default function EditItemPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
-              <input type="text" value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+              <CategoryPicker value={category} onChange={setCategory} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -216,6 +243,11 @@ export default function EditItemPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Cost price</label>
+              <input type="number" step="0.01" min={0} value={costPrice} onChange={(e) => { setCostPrice(e.target.value); setFieldErrors((p) => ({ ...p, costPrice: '' })); }} className={`w-full rounded border px-3 py-2 text-sm ${fieldErrors.costPrice ? 'border-red-500' : 'border-slate-300'}`} />
+              {fieldErrors.costPrice && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.costPrice}</p>}
+            </div>
+            <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">MRP</label>
               <input
                 type="number"
@@ -223,11 +255,19 @@ export default function EditItemPage() {
                 min={0}
                 value={mrp}
                 onChange={(e) => { setMrp(e.target.value); setFieldErrors((p) => ({ ...p, mrp: '' })); }}
-                placeholder="Default price when no client-specific rate"
                 className={`w-full rounded border px-3 py-2 text-sm ${fieldErrors.mrp ? 'border-red-500' : 'border-slate-300'}`}
               />
               {fieldErrors.mrp && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.mrp}</p>}
-              <p className="text-xs text-slate-500 mt-0.5">Default selling price if no price is set for a particular client.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Sale price</label>
+              <input type="number" step="0.01" min={0} value={salePrice} onChange={(e) => { setSalePrice(e.target.value); setFieldErrors((p) => ({ ...p, salePrice: '' })); }} className={`w-full rounded border px-3 py-2 text-sm ${fieldErrors.salePrice ? 'border-red-500' : 'border-slate-300'}`} />
+              {fieldErrors.salePrice && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.salePrice}</p>}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Discount % (optional)</label>
+              <input type="number" step="0.01" min={0} max={100} value={discountPercent} onChange={(e) => { setDiscountPercent(e.target.value); setFieldErrors((p) => ({ ...p, discountPercent: '' })); }} className={`w-full rounded border px-3 py-2 text-sm ${fieldErrors.discountPercent ? 'border-red-500' : 'border-slate-300'}`} />
+              {fieldErrors.discountPercent && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.discountPercent}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Tax rate (%)</label>

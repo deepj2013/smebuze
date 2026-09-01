@@ -48,7 +48,7 @@ export class OrganizationService {
   }
 
   async createCompany(
-    dto: { name: string; legal_name?: string; gstin?: string; address?: Record<string, unknown> },
+    dto: { name: string; legal_name?: string; gstin?: string; address?: Record<string, unknown>; bank_details?: Record<string, unknown>; logo_url?: string },
     ctx: TenantContext,
   ): Promise<Company> {
     const tenantId = this.assertTenantId(ctx);
@@ -59,6 +59,8 @@ export class OrganizationService {
       legal_name: dto.legal_name ?? null,
       gstin: dto.gstin ?? null,
       address: dto.address ?? {},
+      bank_details: dto.bank_details ?? null,
+      logo_url: dto.logo_url ?? null,
     });
     const saved = await this.companyRepo.save(company);
     await this.auditService.log(ctx, 'company.create', 'company', saved.id, { name: saved.name }).catch(() => {});
@@ -115,7 +117,7 @@ export class OrganizationService {
 
   async updateCompany(
     id: string,
-    dto: Partial<{ name: string; legal_name: string; gstin: string; address: Record<string, unknown> }>,
+    dto: Partial<{ name: string; legal_name: string; gstin: string; address: Record<string, unknown>; bank_details: Record<string, unknown> | null; logo_url: string | null }>,
     ctx: TenantContext,
   ): Promise<Company> {
     if (dto.gstin != null && !isValidGstin(dto.gstin)) throw new BadRequestException('Invalid GSTIN format');
@@ -124,6 +126,8 @@ export class OrganizationService {
     if (dto.legal_name != null) company.legal_name = dto.legal_name;
     if (dto.gstin != null) company.gstin = dto.gstin;
     if (dto.address != null) company.address = dto.address;
+    if (dto.bank_details !== undefined) company.bank_details = dto.bank_details;
+    if (dto.logo_url !== undefined) company.logo_url = dto.logo_url;
     const saved = await this.companyRepo.save(company);
     await this.auditService.log(ctx, 'company.update', 'company', id, { name: saved.name }).catch(() => {});
     return saved;

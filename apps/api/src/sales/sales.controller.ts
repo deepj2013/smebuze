@@ -26,8 +26,14 @@ export class SalesController {
 
   @Get('invoices')
   @RequirePermissions('sales.invoice.view')
-  async listInvoices(@Query('status') status: string | undefined, @CurrentTenant() ctx: TenantContext) {
-    return this.salesService.findInvoices(ctx, status);
+  async listInvoices(
+    @Query('status') status: string | undefined,
+    @Query('from') from: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    const take = limit ? parseInt(limit, 10) : undefined;
+    return this.salesService.findInvoices(ctx, status, undefined, from, Number.isFinite(take) ? take : undefined);
   }
 
   @Get('invoices/pending')
@@ -98,6 +104,14 @@ export class SalesController {
   @RequirePermissions('sales.quotation.view')
   async getQuotation(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
     return this.salesService.findOneQuotation(id, ctx);
+  }
+
+  @Get('quotations/:id/print')
+  @RequirePermissions('sales.quotation.view')
+  async printQuotation(@Param('id') id: string, @Res() res: Response, @CurrentTenant() ctx: TenantContext) {
+    const html = await this.salesService.getQuotationPrintHtml(id, ctx);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
   }
 
   @Patch('quotations/:id')

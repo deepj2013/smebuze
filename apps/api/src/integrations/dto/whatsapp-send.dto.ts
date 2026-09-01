@@ -4,8 +4,13 @@ export class WhatsappSendDto {
   @IsString()
   to: string;
 
+  @IsOptional()
   @IsString()
-  template: string;
+  template?: string;
+
+  @IsOptional()
+  @IsString()
+  text?: string;
 
   @IsOptional()
   @IsObject()

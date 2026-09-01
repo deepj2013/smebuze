@@ -1,4 +1,7 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UploadedFile, UseGuards, UseInterceptors, BadRequestException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import * as fs from 'fs';
+import * as path from 'path';
 import { OrganizationService } from './organization.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentTenant } from '../common/tenant-context';
@@ -114,10 +117,31 @@ export class OrganizationController {
   @RequirePermissions('org.company.create')
   async updateCompany(
     @Param('id') id: string,
-    @Body() body: Partial<{ name: string; legal_name: string; gstin: string; address: Record<string, unknown> }>,
+    @Body() body: Partial<{ name: string; legal_name: string; gstin: string; address: Record<string, unknown>; bank_details: Record<string, unknown> | null; logo_url: string | null }>,
     @CurrentTenant() ctx: TenantContext,
   ) {
     return this.orgService.updateCompany(id, body, ctx);
+  }
+
+  @Post('companies/:id/logo')
+  @RequirePermissions('org.company.create')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
+  async uploadCompanyLogo(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('No file uploaded');
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.png';
+    if (!['.png', '.jpg', '.jpeg', '.webp', '.svg'].includes(ext)) {
+      throw new BadRequestException('Logo must be PNG, JPG, WEBP or SVG');
+    }
+    const dir = path.join(process.cwd(), 'uploads', 'logos');
+    fs.mkdirSync(dir, { recursive: true });
+    const filename = `company-${id}${ext}`;
+    fs.writeFileSync(path.join(dir, filename), file.buffer);
+    const logoUrl = `/uploads/logos/${filename}`;
+    return this.orgService.updateCompany(id, { logo_url: logoUrl }, ctx);
   }
 
   @Post('branches')

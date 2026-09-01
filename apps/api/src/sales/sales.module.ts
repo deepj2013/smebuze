@@ -21,6 +21,10 @@ import { Tenant } from '../tenant/entities/tenant.entity';
 import { InventoryModule } from '../inventory/inventory.module';
 import { SalesService } from './sales.service';
 import { SalesController } from './sales.controller';
+import { StockMovement } from '../ice-crest/entities/stock-movement.entity';
+import { StockReservation } from '../inventory/entities/stock-reservation.entity';
+import { Stock } from '../inventory/entities/stock.entity';
+import { Warehouse } from '../inventory/entities/warehouse.entity';
 
 @Module({
   imports: [
@@ -44,6 +48,10 @@ import { SalesController } from './sales.controller';
       Company,
       Branch,
       Tenant,
+      StockMovement,
+      StockReservation,
+      Stock,
+      Warehouse,
     ]),
   ],
   controllers: [SalesController],

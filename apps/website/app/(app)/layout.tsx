@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import GlobalSearch from './components/GlobalSearch';
+import IceCrestTutorial from './components/IceCrestTutorial';
 import { ToastProvider } from './components/ToastContext';
 import {
   LayoutDashboard,
@@ -30,9 +31,12 @@ import {
   ListOrdered,
   Wallet,
   FileCheck,
+  Sparkles,
   Menu,
   X,
   MoreHorizontal,
+  Printer,
+  Store,
 } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -96,6 +100,7 @@ const nav: Array<{
     module: 'inventory',
     permission: 'inventory.item.view',
     children: [
+      { label: 'Categories', href: '/inventory/categories', icon: Layers, permission: 'inventory.item.view' },
       { label: 'Items', href: '/inventory/items', icon: Boxes, permission: 'inventory.item.view' },
       { label: 'Warehouses', href: '/inventory/warehouses', icon: Warehouse, permission: 'inventory.item.view' },
       { label: 'Stock', href: '/inventory/stock', icon: Package, permission: 'inventory.stock.view' },
@@ -142,6 +147,7 @@ const nav: Array<{
       { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
       { label: 'Roles', href: '/organization/roles', icon: Layers, permission: 'org.role.manage' },
       { label: 'Departments', href: '/organization/departments', icon: Layers, permission: 'org.user.view' },
+      { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
     ],
   },
   {
@@ -214,9 +220,60 @@ const starIceNav: typeof nav = [
       { label: 'Companies', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
       { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
       { label: 'Roles', href: '/organization/roles', icon: Layers, permission: 'org.role.manage' },
+      { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
     ],
   },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+];
+
+const iceCrestNav: typeof nav = [
+  { label: 'Dashboard', href: '/ice-crest/dashboard', icon: LayoutDashboard, module: 'dashboard', permission: 'reports.view' },
+  { label: 'Getting started', href: '/ice-crest/tutorial', icon: Sparkles, module: 'dashboard', permission: 'reports.view' },
+  { label: 'Staff guide', href: '/ice-crest/guide', icon: BookOpen, module: 'dashboard', permission: 'reports.view' },
+  { label: 'WhatsApp setup', href: '/ice-crest/whatsapp', icon: Megaphone, module: 'crm', permission: 'crm.lead.view' },
+  { label: 'CRM', icon: Users, module: 'crm', permission: 'crm.lead.view', children: [
+    { label: 'Leads & enquiries', href: '/crm/leads', icon: UserPlus, permission: 'crm.lead.view' },
+    { label: 'Customers', href: '/crm/customers', icon: Users, permission: 'crm.customer.view' },
+    { label: 'Sales pipeline', href: '/crm/pipeline', icon: LayoutDashboard, permission: 'crm.lead.view' },
+    { label: 'Follow-up board', href: '/crm/follow-up-board', icon: Users, permission: 'crm.lead.view' },
+    { label: 'Campaigns', href: '/crm/campaigns', icon: Megaphone, permission: 'crm.lead.view' },
+  ]},
+  { label: 'Sales & Billing', icon: FileText, module: 'sales', permission: 'sales.invoice.view', children: [
+    { label: 'Quotations', href: '/sales/quotations', icon: FileText, permission: 'sales.quotation.view' },
+    { label: 'Orders', href: '/sales/orders', icon: ShoppingCart, permission: 'sales.order.view' },
+    { label: 'Invoices & receipts', href: '/sales/invoices', icon: Receipt, permission: 'sales.invoice.view' },
+    { label: 'Payment tracking', href: '/sales/invoices/pending', icon: Wallet, permission: 'sales.invoice.view' },
+    { label: 'Delivery', href: '/sales/delivery-challans', icon: Truck, permission: 'sales.invoice.view' },
+  ]},
+  { label: 'Stock Management', icon: Package, module: 'inventory', permission: 'inventory.stock.view', children: [
+    { label: 'Stock position', href: '/inventory/stock', icon: Package, permission: 'inventory.stock.view' },
+    { label: 'Stock inward / outward', href: '/ice-crest/stock-movements', icon: Warehouse, permission: 'inventory.stock.view' },
+    { label: 'Production plan', href: '/ice-crest/production-plan', icon: ListOrdered, permission: 'inventory.stock.view' },
+    { label: 'Ice SKUs', href: '/inventory/items', icon: Boxes, permission: 'inventory.item.view' },
+  ]},
+  { label: 'Expenses', href: '/ice-crest/expenses', icon: BookMarked, module: 'reports', permission: 'reports.view' },
+  { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
+    { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
+    { label: 'Users & roles', href: '/organization/users', icon: Users, permission: 'org.user.view' },
+    { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
+  ]},
+];
+
+const posNav: typeof nav = [
+  { label: 'Billing counter', href: '/pos', icon: Store, module: 'sales', permission: 'sales.invoice.create' },
+  { label: 'Manage shop', href: '/pos/manage', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Bills', href: '/sales/invoices', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Categories', href: '/inventory/categories', icon: Layers, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Menu & items', href: '/inventory/items', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Stock', href: '/inventory/stock', icon: Package, module: 'inventory', permission: 'inventory.stock.view' },
+  { label: 'Customers', href: '/crm/customers', icon: Users, module: 'crm', permission: 'crm.customer.view' },
+  { label: 'Printers', href: '/organization/printers', icon: Printer, module: 'organization', permission: 'org.company.view' },
+  { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
+    { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
+    { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
+  ]},
 ];
 
 function getCategoryForPath(path: string, items: typeof nav): string | null {
@@ -261,15 +318,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     name?: string;
     permissions?: string[];
     allowed_modules?: string[];
+    email_verified?: boolean;
+    isSuperAdmin?: boolean;
+    tenantId?: string | null;
   } | null>(null);
   const [tenant, setTenant] = useState<{ slug?: string; settings?: Record<string, unknown> } | null>(null);
   const [ready, setReady] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showIceCrestTutorial, setShowIceCrestTutorial] = useState(false);
   const isDemoUser = typeof user?.email === 'string' && user.email.toLowerCase().endsWith(DEMO_EMAIL_SUFFIX);
   const isStarIce = tenant?.slug === 'star-ice';
-  const baseNav = isStarIce ? starIceNav : nav;
-  const visibleNav = filterNavByAccess(baseNav, user?.permissions ?? [], user?.allowed_modules, isDemoUser);
+  const isIceCrest = tenant?.slug === 'ice-crest' || tenant?.settings?.business_type === 'ice_crest';
+  const posTypes = ['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop'];
+  const isPosTenant = posTypes.includes(String(tenant?.settings?.business_type ?? ''));
+  const baseNav = isIceCrest ? iceCrestNav : isStarIce ? starIceNav : isPosTenant ? posNav : nav;
+  let visibleNav = filterNavByAccess(baseNav, user?.permissions ?? [], user?.allowed_modules, isDemoUser);
+  if (user?.isSuperAdmin && !visibleNav.some((i) => i.label === 'Admin')) {
+    const adminItem = nav.find((i) => i.label === 'Admin');
+    if (adminItem) visibleNav = [...visibleNav, adminItem];
+  }
 
   useEffect(() => {
     const cat = getCategoryForPath(pathname, baseNav);
@@ -309,9 +377,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           return;
         }
         const u = d?.user ?? d;
+        if (u && u.email_verified === false && !u.isSuperAdmin) {
+          const em = encodeURIComponent(u.email || '');
+          const slug = encodeURIComponent(d?.tenant?.slug || '');
+          router.replace(`/verify-email?email=${em}&slug=${slug}`);
+          return;
+        }
         setUser(u ? { ...u, permissions: u.permissions ?? [], allowed_modules: u.allowed_modules } : null);
         setTenant(d?.tenant ?? null);
         setReady(true);
+        if (d?.tenant?.slug === 'ice-crest' || d?.tenant?.settings?.business_type === 'ice_crest') {
+          fetch(`${API_URL}/api/v1/onboarding/checklist`, { headers: { Authorization: `Bearer ${token}` } })
+            .then((r) => r.json())
+            .then((ob) => {
+              if (ob?.showOnboarding && !window.location.pathname.startsWith('/ice-crest/tutorial')) {
+                setShowIceCrestTutorial(true);
+              }
+            })
+            .catch(() => {});
+        }
       })
       .catch(() => setReady(true));
   }, [router]);
@@ -330,6 +414,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <p className="text-slate-600">Loading…</p>
       </div>
     );
+  }
+
+  if (pathname.includes('/print')) {
+    return <ToastProvider>{children}</ToastProvider>;
   }
 
   const closeDrawer = () => setMobileMenuOpen(false);
@@ -397,16 +485,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     </>
   );
 
-  const isSalesActive = pathname.startsWith('/sales');
+  const isSalesActive = pathname.startsWith('/sales') || pathname.startsWith('/pos');
   const isCrmActive = pathname.startsWith('/crm');
+  const homeHref = isIceCrest ? '/ice-crest/dashboard' : isPosTenant ? '/pos' : '/dashboard';
+  const isHomeActive = pathname === homeHref;
 
   return (
     <ToastProvider>
+    {isIceCrest && showIceCrestTutorial && (
+      <IceCrestTutorial mode="modal" onDismiss={() => setShowIceCrestTutorial(false)} onComplete={() => setShowIceCrestTutorial(false)} />
+    )}
     <div className="min-h-screen flex bg-slate-50 safe-top">
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex w-56 border-r border-slate-200 bg-white flex-col shrink-0">
         <div className="p-4 border-b border-slate-200">
-          <Link href="/dashboard" className="text-lg font-bold text-brand-700">SMEBUZZ</Link>
+          <Link href={homeHref} className="text-lg font-bold text-brand-700">{isIceCrest ? 'ICE CREST CRM' : 'SMEBUZZ'}</Link>
         </div>
         <nav className="p-2 flex-1 overflow-y-auto">{renderNavContent(false)}</nav>
       </aside>
@@ -427,7 +520,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         style={{ paddingTop: 'var(--safe-area-top)' }}
       >
         <div className="flex items-center justify-between p-4 border-b border-slate-200">
-          <Link href="/dashboard" onClick={closeDrawer} className="text-lg font-bold text-brand-700">SMEBUZZ</Link>
+          <Link href={homeHref} onClick={closeDrawer} className="text-lg font-bold text-brand-700">{isIceCrest ? 'ICE CREST CRM' : 'SMEBUZZ'}</Link>
           <button type="button" onClick={closeDrawer} className="p-2 -m-2 rounded-lg text-slate-600 hover:bg-slate-100 min-touch" aria-label="Close menu">
             <X className="h-6 w-6" />
           </button>
@@ -451,7 +544,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             >
               <Menu className="h-6 w-6" />
             </button>
-            <Link href="/dashboard" className="lg:hidden text-base font-bold text-brand-700 truncate">SMEBUZZ</Link>
+            <Link href={homeHref} className="lg:hidden text-base font-bold text-brand-700 truncate">{isIceCrest ? 'ICE CREST' : 'SMEBUZZ'}</Link>
             <button
               type="button"
               onClick={() => typeof window !== 'undefined' && window.dispatchEvent(new CustomEvent('smebuzz-open-search'))}
@@ -486,13 +579,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       >
         <div className="grid grid-cols-4 gap-1 px-2 py-2">
           <Link
-            href="/dashboard"
+            href={homeHref}
             className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
-              pathname === '/dashboard' ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+              isHomeActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
             }`}
           >
             <LayoutDashboard className="h-6 w-6 shrink-0" />
-            <span className="text-xs mt-0.5 font-medium">Home</span>
+            <span className="text-xs mt-0.5 font-medium">{isPosTenant ? 'POS' : 'Home'}</span>
           </Link>
           <Link
             href="/sales/invoices"
@@ -516,7 +609,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             type="button"
             onClick={() => setMobileMenuOpen(true)}
             className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
-              !isSalesActive && !isCrmActive && pathname !== '/dashboard' ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+              !isSalesActive && !isCrmActive && !isHomeActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
             }`}
           >
             <MoreHorizontal className="h-6 w-6 shrink-0" />

@@ -34,8 +34,13 @@ export class SignupDto {
   @IsString()
   paymentId?: string;
 
-  /** Optional: start as trial (no payment); subscription_ends_at = now + trialDays */
+  /** Optional: start as trial (no payment); subscription_ends_at = now + 7 days */
   @IsOptional()
   @IsString()
   trial?: string; // 'true' to start trial
+
+  /** How the shop will use SMEBUZZ — shapes POS vs ERP workspace. */
+  @IsOptional()
+  @IsIn(['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop', 'trading', 'services', 'standard'])
+  businessType?: string;
 }

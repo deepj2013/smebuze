@@ -5,7 +5,7 @@ const fs = require('fs');
 const migrationsDir = __dirname;
 const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
 
-const dbUrl = process.env.DATABASE_URL || `postgres://${process.env.DB_USER || 'postgres'}:${process.env.DB_PASSWORD || 'postgres'}@${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}/${process.env.DB_NAME || 'smebuzz'}`;
+const dbUrl = process.env.DATABASE_URL || `postgres://${process.env.DB_USER || 'postgres'}:${process.env.DB_PASSWORD || 'postgres'}@${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}/${process.env.DB_NAME || 'smebuze'}`;
 
 for (const file of files) {
   console.log('Running', file);

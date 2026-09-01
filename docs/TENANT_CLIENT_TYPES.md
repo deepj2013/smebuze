@@ -38,6 +38,12 @@ Keep this as the single list of supported custom types. Add a new row when we on
 
 | `business_type` value | Description | Doc / seed |
 |-----------------------|------------|------------|
+| `dine_restaurant` | Dine-in restaurant POS: menu, walk-in billing, cash/UPI | Signup choice; `/pos` |
+| `sweet_shop` | Sweet shop counter POS + stock on sale | Signup choice; `/pos` |
+| `garment_shop` | Single-store garment billing POS + stock | Signup choice; `/pos` |
+| `retail_shop` | Kirana / single store POS | Signup choice; `/pos` |
+| `trading` | Standard ERP (quotations, GST, purchase, stock) | Signup default for traders |
+| `services` | Standard ERP for service firms | Signup choice |
 | `restaurant_wholesale` | Truck → warehouse; restaurant/retail orders; delivery challan with signature; per-customer price; consolidated monthly invoice | [TENANT_RESTAURANT_WHOLESALE.md](./TENANT_RESTAURANT_WHOLESALE.md), `scripts/seed-tenant-restaurant-wholesale.js` |
 | *(first client)* | **Star ICE** – ice wholesale; delivery challan + consolidated monthly bill format; same flow as above | [TENANT_STAR_ICE.md](./TENANT_STAR_ICE.md), `scripts/seed-tenant-star-ice.js` |
 | *(future)* | e.g. `manufacturing`, `retail_chain` | Add doc + seed when needed |

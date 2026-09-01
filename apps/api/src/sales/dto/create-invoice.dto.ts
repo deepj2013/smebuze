@@ -1,4 +1,4 @@
-import { IsArray, IsDateString, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateInvoiceLineDto {
@@ -39,6 +39,7 @@ export class CreateInvoiceLineDto {
 }
 
 export class CreateInvoiceDto {
+  @IsOptional() @IsUUID() sales_order_id?: string;
   @IsUUID()
   company_id: string;
 
@@ -65,6 +66,11 @@ export class CreateInvoiceDto {
   @IsOptional()
   @IsString()
   number?: string;
+
+  @IsOptional() @IsBoolean() gst_applicable?: boolean;
+  @IsOptional() @IsNumber() @Min(0) shipping_charges?: number;
+  @IsOptional() @IsNumber() @Min(0) other_charges?: number;
+  @IsOptional() @IsNumber() @Min(0) discount_amount?: number;
 
   @IsArray()
   @ValidateNested({ each: true })

@@ -1,6 +1,12 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 const API_PREFIX = '/api/v1';
 
+export function getStaticUrl(path: string): string {
+  const base = API_BASE.replace(/\/$/, '');
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${p}`;
+}
+
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
   return window.localStorage.getItem('smebuzz_token');

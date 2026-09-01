@@ -1,6 +1,6 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { SalesInvoice } from './entities/sales-invoice.entity';
 import { SalesInvoiceLine } from './entities/sales-invoice-line.entity';
 import { InvoicePayment } from './entities/invoice-payment.entity';
@@ -18,10 +18,15 @@ import { Vendor } from '../purchase/entities/vendor.entity';
 import { Company } from '../tenant/entities/company.entity';
 import { Tenant } from '../tenant/entities/tenant.entity';
 import { InventoryService } from '../inventory/inventory.service';
+import { isPosBusinessType, isStockTrackedPos } from '../common/tenant-client-types';
 import { TenantContext } from '../common/tenant-context';
 import { CreateInvoiceDto, CreateInvoiceLineDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto, UpdateInvoiceLineDto } from './dto/update-invoice.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
+import { StockMovement } from '../ice-crest/entities/stock-movement.entity';
+import { StockReservation } from '../inventory/entities/stock-reservation.entity';
+import { Stock } from '../inventory/entities/stock.entity';
+import { Warehouse } from '../inventory/entities/warehouse.entity';
 
 @Injectable()
 export class SalesService {
@@ -58,7 +63,10 @@ export class SalesService {
     private readonly companyRepo: Repository<Company>,
     @InjectRepository(Tenant)
     private readonly tenantRepo: Repository<Tenant>,
+    @InjectRepository(StockMovement)
+    private readonly stockMovementRepo: Repository<StockMovement>,
     private readonly inventoryService: InventoryService,
+    private readonly dataSource: DataSource,
   ) {}
 
   private assertTenantId(ctx: TenantContext): string {
@@ -68,6 +76,9 @@ export class SalesService {
 
   async createInvoice(dto: CreateInvoiceDto, ctx: TenantContext): Promise<SalesInvoice> {
     const tenantId = this.assertTenantId(ctx);
+    const invoiceTenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    const isIceCrest = !!invoiceTenant && (invoiceTenant.settings?.business_type === 'ice_crest' || invoiceTenant.features?.includes('ice_crest'));
+    if (isIceCrest) return this.createIceCrestInvoiceTransactional(dto, ctx);
     if (!dto.customer_id && !dto.vendor_id) {
       throw new ForbiddenException('Provide either customer_id or vendor_id (buyer).');
     }
@@ -77,6 +88,19 @@ export class SalesService {
 
     const company = await this.companyRepo.findOne({ where: { id: dto.company_id, tenant_id: tenantId } });
     if (!company) throw new NotFoundException('Company not found');
+
+    let iceCrestWarehouseId: string | null = null;
+    if (isIceCrest) {
+      iceCrestWarehouseId = await this.inventoryService.getDefaultWarehouse(ctx);
+      if (!iceCrestWarehouseId) throw new ForbiddenException('Create a warehouse before issuing an Ice Crest invoice');
+      const stockRows = await this.inventoryService.findStock(ctx, iceCrestWarehouseId);
+      const required = new Map<string, number>();
+      for (const line of dto.lines) if (line.item_id) required.set(line.item_id, (required.get(line.item_id) ?? 0) + line.qty);
+      for (const [itemId, qty] of required) {
+        const available = stockRows.filter(row => row.item_id === itemId).reduce((sum, row) => sum + Number(row.quantity), 0);
+        if (available < qty) throw new ForbiddenException(`Insufficient stock for invoice item: have ${available}, need ${qty}`);
+      }
+    }
 
     let customerId: string | null = null;
     let vendorId: string | null = null;
@@ -121,6 +145,11 @@ export class SalesService {
       tax_amount: '0',
       total: '0',
       paid_amount: '0',
+      shipping_charges: String(dto.shipping_charges ?? 0),
+      other_charges: String(dto.other_charges ?? 0),
+      discount_amount: String(dto.discount_amount ?? 0),
+      gst_applicable: dto.gst_applicable !== false,
+      stock_deducted_at: null,
       created_by: ctx.userId,
     });
     const savedInvoice = await this.invoiceRepo.save(invoice);
@@ -130,9 +159,9 @@ export class SalesService {
     for (let i = 0; i < dto.lines.length; i++) {
       const lineDto = dto.lines[i];
       const taxableValue = lineDto.qty * lineDto.rate;
-      const cgstRate = lineDto.cgst_rate ?? 0;
-      const sgstRate = lineDto.sgst_rate ?? 0;
-      const igstRate = lineDto.igst_rate ?? 0;
+      const cgstRate = dto.gst_applicable === false ? 0 : lineDto.cgst_rate ?? 0;
+      const sgstRate = dto.gst_applicable === false ? 0 : lineDto.sgst_rate ?? 0;
+      const igstRate = dto.gst_applicable === false ? 0 : lineDto.igst_rate ?? 0;
       const cgstAmount = (taxableValue * cgstRate) / 100;
       const sgstAmount = (taxableValue * sgstRate) / 100;
       const igstAmount = (taxableValue * igstRate) / 100;
@@ -159,17 +188,112 @@ export class SalesService {
       await this.lineRepo.save(line);
     }
 
-    const total = subtotal + taxAmount;
+    const total = Math.max(0, subtotal + taxAmount + (dto.shipping_charges ?? 0) + (dto.other_charges ?? 0) - (dto.discount_amount ?? 0));
     await this.invoiceRepo.update(savedInvoice.id, {
       subtotal: subtotal.toFixed(2),
       tax_amount: taxAmount.toFixed(2),
       total: total.toFixed(2),
     });
 
+    // Ice Crest invoices are inventory outward documents. Deduct exactly once and write an audit movement.
+    if (isIceCrest && iceCrestWarehouseId) {
+      const warehouseId = iceCrestWarehouseId;
+      for (const line of dto.lines) {
+        if (!line.item_id || line.qty <= 0) continue;
+        await this.inventoryService.deductStock(ctx, warehouseId, line.item_id, line.qty);
+        await this.stockMovementRepo.save(this.stockMovementRepo.create({ tenant_id: tenantId, warehouse_id: warehouseId,
+          item_id: line.item_id, movement_type: 'outward', quantity: String(line.qty), movement_date: new Date(dto.invoice_date),
+          reference_type: 'sales_invoice', reference_id: savedInvoice.id, reference_number: number, notes: 'Automatic deduction on invoice', created_by: ctx.userId }));
+      }
+      await this.invoiceRepo.update(savedInvoice.id, { stock_deducted_at: new Date() });
+    }
+
+    const businessType = invoiceTenant?.settings?.business_type;
+    if (!isIceCrest && isPosBusinessType(businessType)) {
+      const warehouseId = await this.inventoryService.getDefaultWarehouse(ctx);
+      if (warehouseId) {
+        const strict = isStockTrackedPos(businessType);
+        for (const line of dto.lines) {
+          if (!line.item_id || line.qty <= 0) continue;
+          try {
+            await this.inventoryService.deductStock(ctx, warehouseId, line.item_id, line.qty);
+          } catch (err) {
+            if (strict) throw err;
+          }
+        }
+        await this.invoiceRepo.update(savedInvoice.id, { stock_deducted_at: new Date() });
+      }
+    }
+
     return this.invoiceRepo.findOne({
       where: { id: savedInvoice.id },
       relations: ['customer', 'vendor', 'company', 'lines'],
     }) as Promise<SalesInvoice>;
+  }
+
+  /** All Ice Crest invoice, stock and reservation writes commit or roll back together. */
+  private async createIceCrestInvoiceTransactional(dto: CreateInvoiceDto, ctx: TenantContext): Promise<SalesInvoice> {
+    const tenantId = this.assertTenantId(ctx);
+    if ((!dto.customer_id && !dto.vendor_id) || (dto.customer_id && dto.vendor_id)) throw new ForbiddenException('Provide exactly one bill-to customer or vendor.');
+    if (!dto.lines?.length) throw new ForbiddenException('Invoice requires at least one line');
+    return this.dataSource.transaction('SERIALIZABLE', async (manager: EntityManager) => {
+      const company = await manager.findOne(Company, { where: { id: dto.company_id, tenant_id: tenantId } });
+      if (!company) throw new NotFoundException('Company not found');
+      if (dto.customer_id && !(await manager.findOne(Customer,{where:{id:dto.customer_id,tenant_id:tenantId}}))) throw new NotFoundException('Customer not found');
+      if (dto.vendor_id && !(await manager.findOne(Vendor,{where:{id:dto.vendor_id,tenant_id:tenantId}}))) throw new NotFoundException('Vendor not found');
+      const warehouse = await manager.findOne(Warehouse,{where:{tenant_id:tenantId,is_default:true}}) ?? await manager.findOne(Warehouse,{where:{tenant_id:tenantId},order:{created_at:'ASC'}});
+      if (!warehouse) throw new ForbiddenException('Create a warehouse before issuing an Ice Crest invoice');
+      let order: SalesOrder | null = null;
+      if (dto.sales_order_id) {
+        order = await manager.findOne(SalesOrder,{where:{id:dto.sales_order_id,tenant_id:tenantId}});
+        if (!order) throw new NotFoundException('Sales order not found');
+        if (['cancelled','closed'].includes(order.status)) throw new ForbiddenException('Cannot invoice a cancelled or closed sales order');
+      }
+      const required = new Map<string,number>();
+      for (const line of dto.lines) {
+        if (!Number.isFinite(line.qty) || line.qty <= 0) throw new ForbiddenException('Every invoice quantity must be greater than zero');
+        if (line.item_id) required.set(line.item_id,(required.get(line.item_id)??0)+line.qty);
+      }
+      const lockedStocks = new Map<string,Stock>();
+      const reservations = new Map<string,StockReservation>();
+      for (const [itemId,qty] of required) {
+        const stock = await manager.getRepository(Stock).createQueryBuilder('s').setLock('pessimistic_write')
+          .where('s.tenant_id=:tenantId AND s.warehouse_id=:warehouseId AND s.item_id=:itemId',{tenantId,warehouseId:warehouse.id,itemId}).getOne();
+        if (!stock) throw new ForbiddenException(`No stock record exists for invoice item ${itemId}`);
+        if (order) {
+          const reservation = await manager.findOne(StockReservation,{where:{sales_order_id:order.id,item_id:itemId,status:'active'}});
+          const remaining = reservation ? Number(reservation.quantity)-Number(reservation.consumed_quantity) : 0;
+          if (!reservation || remaining < qty) throw new ForbiddenException(`Invoice quantity ${qty} exceeds reserved order quantity ${remaining} for item ${itemId}`);
+          reservations.set(itemId,reservation);
+        } else {
+          const available = Number(stock.quantity)-Number(stock.reserved);
+          if (available < qty) throw new ForbiddenException(`Insufficient unreserved stock: have ${available}, need ${qty}`);
+        }
+        lockedStocks.set(itemId,stock);
+      }
+      let subtotal=0,taxAmount=0;
+      const number=dto.number?.trim()||`INV-${Date.now()}`;
+      const invoice=await manager.save(SalesInvoice,manager.create(SalesInvoice,{tenant_id:tenantId,company_id:dto.company_id,branch_id:dto.branch_id??null,
+        customer_id:dto.customer_id??null,vendor_id:dto.vendor_id??null,sales_order_id:dto.sales_order_id??null,number,invoice_date:new Date(dto.invoice_date),
+        due_date:dto.due_date?new Date(dto.due_date):null,status:'issued',subtotal:'0',tax_amount:'0',total:'0',paid_amount:'0',shipping_charges:String(dto.shipping_charges??0),
+        other_charges:String(dto.other_charges??0),discount_amount:String(dto.discount_amount??0),gst_applicable:dto.gst_applicable!==false,stock_deducted_at:null,created_by:ctx.userId}));
+      for (let i=0;i<dto.lines.length;i++) {
+        const l=dto.lines[i], taxable=l.qty*l.rate, cgst=dto.gst_applicable===false?0:l.cgst_rate??0, sgst=dto.gst_applicable===false?0:l.sgst_rate??0, igst=dto.gst_applicable===false?0:l.igst_rate??0;
+        const ca=taxable*cgst/100,sa=taxable*sgst/100,ia=taxable*igst/100; subtotal+=taxable;taxAmount+=ca+sa+ia;
+        await manager.save(SalesInvoiceLine,manager.create(SalesInvoiceLine,{invoice_id:invoice.id,item_id:l.item_id??null,hsn_sac:l.hsn_sac,description:l.description,qty:String(l.qty),unit:l.unit??'pcs',rate:String(l.rate),taxable_value:taxable.toFixed(2),cgst_rate:String(cgst),cgst_amount:ca.toFixed(2),sgst_rate:String(sgst),sgst_amount:sa.toFixed(2),igst_rate:String(igst),igst_amount:ia.toFixed(2),sort_order:i}));
+      }
+      for (const [itemId,qty] of required) {
+        const stock=lockedStocks.get(itemId)!; stock.quantity=String(Number(stock.quantity)-qty);
+        const reservation=reservations.get(itemId);
+        if (reservation) { stock.reserved=String(Math.max(0,Number(stock.reserved)-qty)); reservation.consumed_quantity=String(Number(reservation.consumed_quantity)+qty); if(Number(reservation.consumed_quantity)>=Number(reservation.quantity))reservation.status='consumed'; await manager.save(reservation); }
+        await manager.save(stock);
+        await manager.save(StockMovement,manager.create(StockMovement,{tenant_id:tenantId,warehouse_id:warehouse.id,item_id:itemId,movement_type:'outward',quantity:String(qty),movement_date:new Date(dto.invoice_date),reference_type:'sales_invoice',reference_id:invoice.id,reference_number:number,notes:order?`Consumed reservation for ${order.number}`:'Automatic deduction on invoice',created_by:ctx.userId}));
+      }
+      const total=Math.max(0,subtotal+taxAmount+(dto.shipping_charges??0)+(dto.other_charges??0)-(dto.discount_amount??0));
+      invoice.subtotal=subtotal.toFixed(2);invoice.tax_amount=taxAmount.toFixed(2);invoice.total=total.toFixed(2);invoice.stock_deducted_at=new Date();await manager.save(invoice);
+      if(order){const active=await manager.count(StockReservation,{where:{sales_order_id:order.id,status:'active'}});if(active===0){order.status='invoiced';await manager.save(order);}}
+      return manager.findOneOrFail(SalesInvoice,{where:{id:invoice.id},relations:['customer','vendor','company','lines']});
+    });
   }
 
   async updateInvoice(id: string, dto: UpdateInvoiceDto, ctx: TenantContext): Promise<SalesInvoice> {
@@ -259,16 +383,21 @@ export class SalesService {
     return this.findOneInvoice(id, ctx);
   }
 
-  async findInvoices(ctx: TenantContext, status?: string, customerId?: string): Promise<SalesInvoice[]> {
+  async findInvoices(ctx: TenantContext, status?: string, customerId?: string, from?: string, limit?: number): Promise<SalesInvoice[]> {
     const tenantId = this.assertTenantId(ctx);
-    const where: { tenant_id: string; status?: string; customer_id?: string } = { tenant_id: tenantId };
-    if (status) where.status = status;
-    if (customerId) where.customer_id = customerId;
-    return this.invoiceRepo.find({
-      where,
-      relations: ['customer', 'vendor', 'company', 'lines'],
-      order: { invoice_date: 'DESC', created_at: 'DESC' },
-    });
+    const qb = this.invoiceRepo
+      .createQueryBuilder('inv')
+      .leftJoinAndSelect('inv.customer', 'customer')
+      .leftJoinAndSelect('inv.vendor', 'vendor')
+      .leftJoinAndSelect('inv.company', 'company')
+      .where('inv.tenant_id = :tenantId', { tenantId })
+      .orderBy('inv.created_at', 'DESC');
+    if (!limit) qb.leftJoinAndSelect('inv.lines', 'lines');
+    if (status) qb.andWhere('inv.status = :status', { status });
+    if (customerId) qb.andWhere('inv.customer_id = :customerId', { customerId });
+    if (from) qb.andWhere('inv.invoice_date >= :from', { from });
+    if (limit && limit > 0) qb.take(Math.min(limit, 200));
+    return qb.getMany();
   }
 
   async findOneInvoice(id: string, ctx: TenantContext): Promise<SalesInvoice> {
@@ -459,6 +588,8 @@ export class SalesService {
     ctx: TenantContext,
   ): Promise<SalesOrder> {
     const tenantId = this.assertTenantId(ctx);
+    const tenant = await this.tenantRepo.findOne({where:{id:tenantId}});
+    if (tenant && (tenant.settings?.business_type==='ice_crest'||tenant.features?.includes('ice_crest'))) return this.createIceCrestSalesOrderTransactional(dto,ctx);
     const company = await this.companyRepo.findOne({ where: { id: dto.company_id, tenant_id: tenantId } });
     if (!company) throw new NotFoundException('Company not found');
     const number = dto.number ?? `SO-${Date.now()}`;
@@ -504,6 +635,26 @@ export class SalesService {
     return this.findOneSalesOrder(saved.id, ctx);
   }
 
+  private async createIceCrestSalesOrderTransactional(dto: Parameters<SalesService['createSalesOrder']>[0],ctx:TenantContext):Promise<SalesOrder>{
+    const tenantId=this.assertTenantId(ctx);
+    if(!dto.lines?.length)throw new ForbiddenException('Ice Crest sales orders require at least one SKU line');
+    const lines=dto.lines;
+    return this.dataSource.transaction('SERIALIZABLE',async manager=>{
+      if(!(await manager.findOne(Company,{where:{id:dto.company_id,tenant_id:tenantId}})))throw new NotFoundException('Company not found');
+      if(dto.customer_id&&!(await manager.findOne(Customer,{where:{id:dto.customer_id,tenant_id:tenantId}})))throw new NotFoundException('Customer not found');
+      const warehouse=await manager.findOne(Warehouse,{where:{tenant_id:tenantId,is_default:true}})??await manager.findOne(Warehouse,{where:{tenant_id:tenantId},order:{created_at:'ASC'}});
+      if(!warehouse)throw new ForbiddenException('Create a warehouse before creating a sales order');
+      const required=new Map<string,number>();let total=0;
+      for(const l of lines){if(!l.item_id)throw new ForbiddenException('Every Ice Crest order line must select an SKU');if(!Number.isFinite(l.qty)||l.qty<=0)throw new ForbiddenException('Every order quantity must be greater than zero');required.set(l.item_id,(required.get(l.item_id)??0)+l.qty);total+=l.qty*l.rate;}
+      const locked=new Map<string,Stock>();
+      for(const [itemId,qty] of required){const stock=await manager.getRepository(Stock).createQueryBuilder('s').setLock('pessimistic_write').where('s.tenant_id=:tenantId AND s.warehouse_id=:warehouseId AND s.item_id=:itemId',{tenantId,warehouseId:warehouse.id,itemId}).getOne();if(!stock)throw new ForbiddenException(`No stock record for item ${itemId}`);const available=Number(stock.quantity)-Number(stock.reserved);if(available<qty)throw new ForbiddenException(`Insufficient available stock: have ${available}, need ${qty}`);locked.set(itemId,stock);}
+      const order=await manager.save(SalesOrder,manager.create(SalesOrder,{tenant_id:tenantId,company_id:dto.company_id,branch_id:dto.branch_id??null,customer_id:dto.customer_id??null,quotation_id:dto.quotation_id??null,number:dto.number?.trim()||`SO-${Date.now()}`,order_date:new Date(dto.order_date),status:'confirmed',total:total.toFixed(2),tax_amount:'0',created_by:ctx.userId,requirement_given_by:dto.requirement_given_by??null,requirement_channel:dto.requirement_channel??null,requirement_proof_ref:dto.requirement_proof_ref??null,stock_reserved_at:new Date(),reservation_released_at:null}));
+      for(let i=0;i<lines.length;i++){const l=lines[i];await manager.save(SalesOrderLine,manager.create(SalesOrderLine,{sales_order_id:order.id,item_id:l.item_id!,description:l.description??null,quantity:String(l.qty),unit:l.unit??'pcs',rate:String(l.rate),mrp:l.mrp!=null?String(l.mrp):null,discount_percent:l.discount_percent!=null?String(l.discount_percent):null,gst_treatment:l.gst_treatment==='inclusive'?'inclusive':'extra',sort_order:i}));}
+      for(const[itemId,qty]of required){const stock=locked.get(itemId)!;stock.reserved=String(Number(stock.reserved)+qty);await manager.save(stock);await manager.save(StockReservation,manager.create(StockReservation,{tenant_id:tenantId,sales_order_id:order.id,warehouse_id:warehouse.id,item_id:itemId,quantity:String(qty),consumed_quantity:'0',status:'active'}));}
+      return manager.findOneOrFail(SalesOrder,{where:{id:order.id},relations:['customer','company','quotation','lines','lines.item']});
+    });
+  }
+
   async updateSalesOrder(
     id: string,
     dto: {
@@ -515,6 +666,11 @@ export class SalesService {
     const tenantId = this.assertTenantId(ctx);
     const order = await this.salesOrderRepo.findOne({ where: { id, tenant_id: tenantId } });
     if (!order) throw new NotFoundException('Sales order not found');
+    const activeReservations=await this.dataSource.getRepository(StockReservation).find({where:{sales_order_id:id,status:'active'}});
+    if(dto.lines&&activeReservations.length)throw new ForbiddenException('Release/cancel the existing reservation before editing Ice Crest order lines');
+    if(dto.status&&['cancelled','rejected'].includes(dto.status)&&activeReservations.length){
+      await this.dataSource.transaction(async manager=>{for(const r of activeReservations){const stock=await manager.getRepository(Stock).createQueryBuilder('s').setLock('pessimistic_write').where('s.tenant_id=:tenantId AND s.warehouse_id=:warehouseId AND s.item_id=:itemId',{tenantId,warehouseId:r.warehouse_id,itemId:r.item_id}).getOne();if(stock){stock.reserved=String(Math.max(0,Number(stock.reserved)-(Number(r.quantity)-Number(r.consumed_quantity))));await manager.save(stock);}r.status='released';await manager.save(r);}order.status=dto.status!;order.reservation_released_at=new Date();await manager.save(order);});return this.findOneSalesOrder(id,ctx);
+    }
     if (dto.status != null) order.status = dto.status;
     if (dto.lines && Array.isArray(dto.lines)) {
       await this.salesOrderLineRepo.delete({ sales_order_id: id });
@@ -909,11 +1065,23 @@ export class SalesService {
     return cn;
   }
 
+  async getQuotationPrintHtml(id: string, ctx: TenantContext): Promise<string> {
+    const q = await this.findOneQuotation(id, ctx);
+    const tenant = ctx.tenantId ? await this.tenantRepo.findOne({ where: { id: ctx.tenantId } }) : null;
+    if (tenant?.slug === 'ice-crest' || tenant?.settings?.business_type === 'ice_crest' || tenant?.features?.includes('ice_crest')) {
+      return this.buildIceCrestQuotationHtml(q, tenant?.settings?.terms as string | undefined);
+    }
+    return this.buildIceCrestQuotationHtml(q, undefined);
+  }
+
   async getInvoicePrintHtml(id: string, ctx: TenantContext): Promise<string> {
     const inv = await this.findOneInvoice(id, ctx);
     const tenant = ctx.tenantId ? await this.tenantRepo.findOne({ where: { id: ctx.tenantId } }) : null;
     if (tenant?.slug === 'star-ice') {
       return this.buildStarIceInvoiceHtml(inv);
+    }
+    if (tenant?.slug === 'ice-crest' || tenant?.settings?.business_type === 'ice_crest' || tenant?.features?.includes('ice_crest')) {
+      return this.buildIceCrestInvoiceHtml(inv, tenant?.settings?.terms as string | undefined);
     }
 
     const company = inv.company as { name: string; legal_name?: string; gstin?: string; address?: Record<string, unknown> };
@@ -924,6 +1092,9 @@ export class SalesService {
     const lines = inv.lines ?? [];
     const subtotal = parseFloat(inv.subtotal ?? '0');
     const taxAmount = parseFloat(inv.tax_amount ?? '0');
+    const shipping = parseFloat(inv.shipping_charges ?? '0');
+    const otherCharges = parseFloat(inv.other_charges ?? '0');
+    const discount = parseFloat(inv.discount_amount ?? '0');
     const total = parseFloat(inv.total ?? '0');
     const paid = parseFloat(inv.paid_amount ?? '0');
     const due = total - paid;
@@ -948,7 +1119,7 @@ th{background:#eee;font-weight:bold}
 .totals td{border:none;padding:1px 0}
 .footer{text-align:center;margin-top:8px;font-size:9px}
 </style></head><body>
-<h1>Tax Invoice</h1>
+<h1>${inv.gst_applicable ? 'Tax Invoice' : 'Invoice / Receipt'}</h1>
 <div class="section"><strong>${escapeHtml(company.name)}</strong><br>${company.legal_name ? escapeHtml(company.legal_name) + '<br>' : ''}GSTIN: ${escapeHtml(company.gstin ?? 'N/A')}<br>${escapeHtml(addr(company.address))}</div>
 <div class="section"><strong>Bill To:</strong><br>${escapeHtml(billTo.name)}<br>${billTo.gstin ? 'GSTIN: ' + escapeHtml(billTo.gstin) + '<br>' : ''}${escapeHtml(addr(billTo.address))}</div>
 <div class="section">Inv No: <strong>${escapeHtml(inv.number)}</strong> | Date: ${inv.invoice_date}${inv.due_date ? ' | Due: ' + inv.due_date : ''}</div>
@@ -959,6 +1130,9 @@ th{background:#eee;font-weight:bold}
 <div class="totals">
 <table><tr><td>Subtotal</td><td class="right">₹${subtotal.toFixed(2)}</td></tr>
 <tr><td>Tax (GST)</td><td class="right">₹${taxAmount.toFixed(2)}</td></tr>
+${shipping ? `<tr><td>Shipping charges</td><td class="right">₹${shipping.toFixed(2)}</td></tr>` : ''}
+${otherCharges ? `<tr><td>Other charges</td><td class="right">₹${otherCharges.toFixed(2)}</td></tr>` : ''}
+${discount ? `<tr><td>Discount</td><td class="right">-₹${discount.toFixed(2)}</td></tr>` : ''}
 <tr><td>Total</td><td class="right">₹${total.toFixed(2)}</td></tr>
 <tr><td>Paid</td><td class="right">₹${paid.toFixed(2)}</td></tr>
 <tr><td>Amount Due</td><td class="right">₹${due.toFixed(2)}</td></tr></table>
@@ -1171,6 +1345,138 @@ ${bankName || bankAccount ? `<div class="star-ice-bank">
       }
     }
     return { created, errors };
+  }
+
+  /** Ice Crest branded A4 letterhead for tax invoices and receipts. */
+  private buildIceCrestInvoiceHtml(inv: SalesInvoice, terms?: string): string {
+    const company = inv.company as {
+      name: string; legal_name?: string; gstin?: string; logo_url?: string | null;
+      address?: Record<string, unknown> & { email?: string; phone?: string };
+      bank_details?: Record<string, unknown> & { bank_name?: string; branch?: string; account_no?: string; ifsc?: string };
+    };
+    const billTo = (inv.customer as { name: string; gstin?: string; address?: Record<string, unknown> } | null)
+      ?? (inv.vendor as { name: string; gstin?: string; address?: Record<string, unknown> } | null)
+      ?? { name: 'N/A', gstin: '', address: undefined };
+    const addr = (v: Record<string, unknown> | undefined) =>
+      v && typeof v === 'object' && v.line1
+        ? [v.line1, v.line2, v.city, v.state, v.pincode].filter(Boolean).join(', ')
+        : '';
+    const lines = inv.lines ?? [];
+    const invDate = new Date(inv.invoice_date as Date | string).toISOString().slice(0, 10);
+    const subtotal = parseFloat(inv.subtotal ?? '0');
+    const taxAmount = parseFloat(inv.tax_amount ?? '0');
+    const shipping = parseFloat(inv.shipping_charges ?? '0');
+    const otherCharges = parseFloat(inv.other_charges ?? '0');
+    const discount = parseFloat(inv.discount_amount ?? '0');
+    const total = parseFloat(inv.total ?? '0');
+    const paid = parseFloat(inv.paid_amount ?? '0');
+    const bank = company.bank_details ?? {};
+    const lineRows = lines.map((l, i) =>
+      `<tr><td>${i + 1}</td><td>${escapeHtml(String(l.description))}</td><td>${escapeHtml(l.hsn_sac)}</td><td class="right">${l.qty}</td><td class="right">${l.rate}</td><td class="right">${parseFloat(l.taxable_value).toFixed(2)}</td><td class="right">${l.cgst_rate}%</td><td class="right">${parseFloat(l.cgst_amount).toFixed(2)}</td><td class="right">${l.sgst_rate}%</td><td class="right">${parseFloat(l.sgst_amount).toFixed(2)}</td></tr>`,
+    ).join('');
+    const docTitle = inv.gst_applicable ? 'Tax Invoice' : 'Bill / Receipt';
+    const defaultTerms = 'Payment due within 15 days. Quality must be checked at delivery. Subject to Mumbai jurisdiction.';
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${docTitle} ${escapeHtml(inv.number)}</title><style>
+${this.iceCrestPrintStyles()}
+</style></head><body>
+${this.iceCrestLetterhead(company, addr, docTitle)}
+<p><strong>${docTitle} No.:</strong> ${escapeHtml(inv.number)} &nbsp; <strong>Date:</strong> ${invDate}${inv.due_date ? ` &nbsp; <strong>Due:</strong> ${new Date(inv.due_date as Date | string).toISOString().slice(0, 10)}` : ''}</p>
+<div class="ic-section"><h3>Bill To</h3><p><strong>${escapeHtml(billTo.name)}</strong></p>${billTo.gstin ? `<p>GSTIN: ${escapeHtml(billTo.gstin)}</p>` : ''}<p>${escapeHtml(addr(billTo.address))}</p></div>
+<table><thead><tr><th>#</th><th>Description / SKU</th><th>HSN</th><th>Qty</th><th>Rate</th><th>Taxable</th><th>CGST</th><th>Amt</th><th>SGST</th><th>Amt</th></tr></thead><tbody>${lineRows}</tbody></table>
+<div class="ic-totals"><table>
+<tr><td>Subtotal</td><td class="right">₹${subtotal.toFixed(2)}</td></tr>
+${inv.gst_applicable ? `<tr><td>GST</td><td class="right">₹${taxAmount.toFixed(2)}</td></tr>` : ''}
+${shipping ? `<tr><td>Shipping</td><td class="right">₹${shipping.toFixed(2)}</td></tr>` : ''}
+${otherCharges ? `<tr><td>Other charges</td><td class="right">₹${otherCharges.toFixed(2)}</td></tr>` : ''}
+${discount ? `<tr><td>Discount</td><td class="right">-₹${discount.toFixed(2)}</td></tr>` : ''}
+<tr><td><strong>Grand Total</strong></td><td class="right"><strong>₹${total.toFixed(2)}</strong></td></tr>
+<tr><td>Paid</td><td class="right">₹${paid.toFixed(2)}</td></tr>
+<tr><td>Balance Due</td><td class="right">₹${(total - paid).toFixed(2)}</td></tr>
+</table></div>
+${this.iceCrestBankBlock(bank)}
+<div class="ic-terms"><p><strong>Terms &amp; Conditions</strong></p><p>${escapeHtml(terms || defaultTerms)}</p></div>
+<div class="ic-sign"><p>Certified that the particulars above are true and correct.</p><p>For <strong>${escapeHtml(company.name)}</strong></p><p>Authorised Signatory</p></div>
+</body></html>`;
+  }
+
+  private buildIceCrestQuotationHtml(q: Quotation, terms?: string): string {
+    const company = q.company as {
+      name: string; legal_name?: string; gstin?: string; logo_url?: string | null;
+      address?: Record<string, unknown> & { email?: string; phone?: string };
+      bank_details?: Record<string, unknown>;
+    };
+    const party = (q.customer as { name: string; gstin?: string } | null) ?? (q.lead as { name: string } | null) ?? { name: '—' };
+    const addr = (v: Record<string, unknown> | undefined) =>
+      v && typeof v === 'object' && v.line1
+        ? [v.line1, v.line2, v.city, v.state, v.pincode].filter(Boolean).join(', ')
+        : '';
+    const issueDate = new Date(q.issue_date as Date | string).toISOString().slice(0, 10);
+    const validUntil = q.valid_until ? new Date(q.valid_until as Date | string).toISOString().slice(0, 10) : '—';
+    const items = q.items ?? [];
+    const lineRows = items.map((l, i) =>
+      `<tr><td>${i + 1}</td><td>${escapeHtml(String(l.description ?? 'Ice product'))}</td><td class="right">${l.qty}</td><td>${l.unit ?? 'pcs'}</td><td class="right">${l.rate}</td><td class="right">${l.amount}</td><td class="right">${l.tax_rate ?? '0'}%</td></tr>`,
+    ).join('');
+    const defaultTerms = 'Quotation valid for 7 days. Prices exclude delivery unless stated. GST as applicable.';
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Quotation ${escapeHtml(q.number)}</title><style>${this.iceCrestPrintStyles()}</style></head><body>
+${this.iceCrestLetterhead(company, addr, 'Quotation')}
+<p><strong>Quotation No.:</strong> ${escapeHtml(q.number)} &nbsp; <strong>Date:</strong> ${issueDate} &nbsp; <strong>Valid until:</strong> ${validUntil}</p>
+<div class="ic-section"><h3>Prepared For</h3><p><strong>${escapeHtml(party.name)}</strong></p></div>
+<table><thead><tr><th>#</th><th>Product / SKU</th><th>Qty</th><th>Unit</th><th>Rate (₹)</th><th>Amount (₹)</th><th>GST</th></tr></thead><tbody>${lineRows}</tbody>
+<tfoot><tr><td colspan="5" class="right"><strong>Total</strong></td><td class="right"><strong>₹${Number(q.total).toFixed(2)}</strong></td><td></td></tr></tfoot></table>
+<div class="ic-terms"><p><strong>Terms &amp; Conditions</strong></p><p>${escapeHtml(terms || defaultTerms)}</p></div>
+<div class="ic-sign"><p>For <strong>${escapeHtml(company?.name ?? 'Ice Crest')}</strong></p><p>Authorised Signatory</p></div>
+</body></html>`;
+  }
+
+  private iceCrestPrintStyles(): string {
+    return `*{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px;line-height:1.4;max-width:210mm;margin:0 auto;padding:14px;color:#0f172a}
+.ic-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0891b2;padding-bottom:10px;margin-bottom:12px}
+.ic-logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,#06b6d4,#164e63);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:22px}
+.ic-brand h1{margin:0;font-size:20px;color:#0e7490;text-transform:uppercase;letter-spacing:.04em}
+.ic-brand p{margin:2px 0;font-size:11px;color:#475569}
+.ic-doc-title{font-size:14px;font-weight:bold;color:#0891b2;text-transform:uppercase;text-align:right}
+.ic-section{margin:10px 0}.ic-section h3{margin:0 0 4px;font-size:11px;color:#0891b2;text-transform:uppercase}
+table{border-collapse:collapse;width:100%;font-size:10px;margin:8px 0}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:left}th{background:#ecfeff;color:#0e7490}
+.right{text-align:right}.ic-totals table{width:280px;margin-left:auto;border:none}.ic-totals td{border:none;padding:3px 0}
+.ic-bank{margin-top:12px;padding:8px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:6px;font-size:11px}
+.ic-terms{margin-top:14px;font-size:10px;color:#475569}.ic-sign{margin-top:20px;font-size:11px}`;
+  }
+
+  private resolveLogoUrl(logoUrl?: string | null): string | null {
+    if (!logoUrl?.trim()) return null;
+    if (logoUrl.startsWith('http://') || logoUrl.startsWith('https://')) return logoUrl;
+    const base = (process.env.API_PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
+    return `${base}${logoUrl.startsWith('/') ? '' : '/'}${logoUrl}`;
+  }
+
+  private iceCrestLetterhead(
+    company: { name: string; legal_name?: string; gstin?: string; logo_url?: string | null; address?: Record<string, unknown> & { email?: string; phone?: string } },
+    addr: (v: Record<string, unknown> | undefined) => string,
+    docTitle: string,
+  ): string {
+    const email = company.address?.email ? String(company.address.email) : '';
+    const phone = company.address?.phone ? String(company.address.phone) : '';
+    const logo = this.resolveLogoUrl(company.logo_url);
+    const logoBlock = logo
+      ? `<img src="${escapeHtml(logo)}" alt="Logo" style="width:56px;height:56px;object-fit:contain;border-radius:12px"/>`
+      : `<div class="ic-logo">IC</div>`;
+    return `<div class="ic-header"><div style="display:flex;gap:12px;align-items:center">${logoBlock}<div class="ic-brand"><h1>${escapeHtml(company.name)}</h1>
+${company.legal_name && company.legal_name !== company.name ? `<p>${escapeHtml(company.legal_name)}</p>` : ''}
+<p>${escapeHtml(addr(company.address))}</p>
+${email ? `<p>Email: ${escapeHtml(email)}</p>` : ''}${phone ? `<p>Phone: ${escapeHtml(phone)}</p>` : ''}
+<p><strong>GSTIN:</strong> ${escapeHtml(company.gstin ?? '—')}</p></div></div><div class="ic-doc-title">${escapeHtml(docTitle)}</div>`;
+  }
+
+  private iceCrestBankBlock(bank: Record<string, unknown>): string {
+    const name = bank.bank_name ? String(bank.bank_name) : '';
+    const account = bank.account_no ? String(bank.account_no) : '';
+    const ifsc = bank.ifsc ? String(bank.ifsc) : '';
+    const branch = bank.branch ? String(bank.branch) : '';
+    if (!name && !account) return '';
+    return `<div class="ic-bank"><p><strong>Bank details for payment</strong></p>
+${name ? `<p>Bank: ${escapeHtml(name)}${branch ? `, ${escapeHtml(branch)}` : ''}</p>` : ''}
+${account ? `<p>A/C No.: ${escapeHtml(account)}</p>` : ''}
+${ifsc ? `<p>IFSC: ${escapeHtml(ifsc)}</p>` : ''}</div>`;
   }
 }
 

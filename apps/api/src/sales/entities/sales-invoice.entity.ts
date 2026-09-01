@@ -55,6 +55,8 @@ export class SalesInvoice {
   @Column('uuid', { nullable: true })
   vendor_id: string | null;
 
+  @Column('uuid', { nullable: true }) sales_order_id: string | null;
+
   @ManyToOne(() => Vendor, { onDelete: 'RESTRICT', nullable: true })
   @JoinColumn({ name: 'vendor_id' })
   vendor: Vendor | null;
@@ -79,6 +81,12 @@ export class SalesInvoice {
 
   @Column('decimal', { precision: 18, scale: 2, default: 0 })
   paid_amount: string;
+
+  @Column('decimal', { precision: 18, scale: 2, default: 0 }) shipping_charges: string;
+  @Column('decimal', { precision: 18, scale: 2, default: 0 }) other_charges: string;
+  @Column('decimal', { precision: 18, scale: 2, default: 0 }) discount_amount: string;
+  @Column({ default: true }) gst_applicable: boolean;
+  @Column('timestamptz', { nullable: true }) stock_deducted_at: Date | null;
 
   @Column('uuid', { nullable: true })
   created_by: string | null;

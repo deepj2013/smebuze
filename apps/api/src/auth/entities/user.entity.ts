@@ -38,6 +38,9 @@ export class User {
   phone: string | null;
 
   @Column({ default: true })
+  email_verified: boolean;
+
+  @Column({ default: true })
   is_active: boolean;
 
   @Column({ default: false })

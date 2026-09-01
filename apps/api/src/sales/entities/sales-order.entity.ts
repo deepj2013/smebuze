@@ -66,6 +66,9 @@ export class SalesOrder {
   @Column('decimal', { precision: 18, scale: 2, default: 0 })
   tax_amount: string;
 
+  @Column('timestamptz', { nullable: true }) stock_reserved_at: Date | null;
+  @Column('timestamptz', { nullable: true }) reservation_released_at: Date | null;
+
   @Column('uuid', { nullable: true })
   created_by: string | null;
 

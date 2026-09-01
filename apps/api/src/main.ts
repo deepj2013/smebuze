@@ -7,6 +7,7 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
+    rawBody: true,
   });
   app.setGlobalPrefix('api/v1');
   const httpAdapter = app.getHttpAdapter();
@@ -20,9 +21,10 @@ async function bootstrap() {
     }),
   );
   app.enableCors({ origin: process.env.CORS_ORIGIN || '*', credentials: true });
-  const port = process.env.PORT || 3000;
-  await app.listen(port);
-  const msg = `SMEBUZE API running on http://localhost:${port}/api/v1`;
+  const port = parseInt(process.env.PORT || '3000', 10);
+  const host = process.env.HOST || (process.env.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0');
+  await app.listen(port, host);
+  const msg = `SMEBUZE API running on http://${host}:${port}/api/v1`;
   if (process.env.LOG_FORMAT === 'json') {
     console.log(JSON.stringify({ level: 'info', message: msg, timestamp: new Date().toISOString() }));
   } else {

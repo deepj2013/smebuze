@@ -146,7 +146,7 @@ function JoinForm() {
                   type="text"
                   value={tenantSlug}
                   onChange={(e) => setTenantSlug(e.target.value)}
-                  placeholder="e.g. acme or demo"
+                  placeholder="your-workspace"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                   required
                 />
@@ -198,7 +198,7 @@ function JoinForm() {
             <div className="mt-4 p-4 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>
           )}
           <p className="mt-6 text-center text-sm text-slate-500">
-            Don’t have an account? <Link href="/signup" className="text-brand-600 hover:underline">Create a workspace</Link>
+            Don’t have an account? <Link href="/signup" className="text-brand-600 hover:underline">Start a 7-day free trial</Link>
           </p>
         </div>
       </main>

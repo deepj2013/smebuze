@@ -72,8 +72,11 @@ export default function InvoicesPage() {
     <div>
       <PageHeader
         title="Invoices"
-        description={undefined}
+        description="Print to the USB, Wi-Fi, internet or Bluetooth printer set up on this device."
       >
+        <Link href="/organization/printers" className="rounded-lg border border-slate-300 px-3 sm:px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 min-h-[44px] inline-flex items-center justify-center">
+          Printers
+        </Link>
         <Link href="/sales/invoices/pending" className="rounded-lg border border-slate-300 px-3 sm:px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 min-h-[44px] inline-flex items-center justify-center">
           Pending
         </Link>

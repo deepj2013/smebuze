@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiGet } from '@/lib/api';
+import PosSwitcher from '../../components/PosSwitcher';
+import { posSellingRate } from '@/lib/business-types';
 
 interface Item {
   id: string;
@@ -11,6 +13,10 @@ interface Item {
   barcode?: string | null;
   unit?: string | null;
   category?: string | null;
+  cost_price?: string | number | null;
+  mrp?: string | number | null;
+  sale_price?: string | number | null;
+  discount_percent?: string | number | null;
   hsn_sac?: string | null;
   image_urls?: string[];
   current_stock?: number;
@@ -33,9 +39,13 @@ export default function ItemsPage() {
 
   return (
     <div>
+      <PosSwitcher />
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-slate-900">Items</h1>
-        <Link href="/inventory/items/new" className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700">Add item</Link>
+        <div className="flex gap-2">
+          <Link href="/inventory/categories" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Categories</Link>
+          <Link href="/inventory/items/new" className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700">Add item</Link>
+        </div>
       </div>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
       {loading && <p className="text-slate-600">Loading…</p>}
@@ -50,6 +60,9 @@ export default function ItemsPage() {
                 <th className="text-left p-3 font-medium text-slate-700">Barcode</th>
                 <th className="text-left p-3 font-medium text-slate-700">Unit</th>
                 <th className="text-left p-3 font-medium text-slate-700">Category</th>
+                <th className="text-right p-3 font-medium text-slate-700">Cost</th>
+                <th className="text-right p-3 font-medium text-slate-700">MRP</th>
+                <th className="text-right p-3 font-medium text-slate-700">Counter</th>
                 <th className="text-right p-3 font-medium text-slate-700">Stock</th>
                 <th className="text-left p-3 font-medium text-slate-700">HSN/SAC</th>
                 <th className="text-left p-3 font-medium text-slate-700">Actions</th>
@@ -57,7 +70,7 @@ export default function ItemsPage() {
             </thead>
             <tbody>
               {list.length === 0 ? (
-                <tr><td colSpan={9} className="p-4 text-slate-500">No items yet.</td></tr>
+                <tr><td colSpan={12} className="p-4 text-slate-500">No items yet.</td></tr>
               ) : (
                 list.map((item) => (
                   <tr key={item.id} className="border-b border-slate-100 last:border-0">
@@ -73,6 +86,9 @@ export default function ItemsPage() {
                     <td className="p-3 font-mono text-xs">{item.barcode ?? '—'}</td>
                     <td className="p-3">{item.unit ?? '—'}</td>
                     <td className="p-3">{item.category ?? '—'}</td>
+                    <td className="p-3 text-right tabular-nums">{item.cost_price != null && item.cost_price !== '' ? Number(item.cost_price).toFixed(2) : '—'}</td>
+                    <td className="p-3 text-right tabular-nums">{item.mrp != null && item.mrp !== '' ? Number(item.mrp).toFixed(2) : '—'}</td>
+                    <td className="p-3 text-right font-medium tabular-nums">₹{posSellingRate(item).toFixed(2)}{item.discount_percent ? ` (−${Number(item.discount_percent)}%)` : ''}</td>
                     <td className="p-3 text-right font-medium tabular-nums">
                       {item.current_stock != null ? Number(item.current_stock).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : '0'}
                     </td>

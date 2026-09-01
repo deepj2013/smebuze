@@ -56,9 +56,19 @@ export class Item {
   @Column('decimal', { precision: 18, scale: 4, default: 0 })
   reorder_level: string;
 
-  /** MRP / default selling price when no client-specific rate is set. */
+  /** MRP printed on the pack. */
   @Column('decimal', { precision: 18, scale: 2, nullable: true })
   mrp: string | null;
+
+  @Column('decimal', { precision: 18, scale: 2, nullable: true })
+  cost_price: string | null;
+
+  /** Counter selling price before optional discount. */
+  @Column('decimal', { precision: 18, scale: 2, nullable: true })
+  sale_price: string | null;
+
+  @Column('decimal', { precision: 5, scale: 2, nullable: true })
+  discount_percent: string | null;
 
   /** Tax rate % applied on this item (e.g. 0, 5, 12, 18, 28 for GST). Used for tax calculation. */
   @Column('decimal', { precision: 5, scale: 2, default: 0 })

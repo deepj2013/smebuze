@@ -3,14 +3,15 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
+import { SIGNUP_BUSINESS_TYPES, type SignupBusinessTypeId } from '@/lib/business-types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
 const PLANS = [
-  { id: 'basic', name: 'Basic', price: '₹999/mo' },
-  { id: 'advanced', name: 'Advanced', price: '₹2,499/mo' },
-  { id: 'enterprise', name: 'Enterprise', price: '₹4,999/mo' },
-  { id: 'ai_pro', name: 'AI Pro', price: '₹7,499/mo' },
+  { id: 'basic', name: 'Starter', price: '₹999/mo · 1 user' },
+  { id: 'advanced', name: 'Growth', price: '₹2,499/mo' },
+  { id: 'enterprise', name: 'Business', price: '₹4,999/mo' },
+  { id: 'ai_pro', name: 'Custom', price: 'Let’s talk' },
 ];
 
 const INTERVALS = [
@@ -35,6 +36,7 @@ function SignupForm() {
   const [plan, setPlan] = useState(planFromUrl);
   const [interval, setInterval] = useState('monthly');
   const [trial, setTrial] = useState(true);
+  const [businessType, setBusinessType] = useState<SignupBusinessTypeId | ''>('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -53,6 +55,10 @@ function SignupForm() {
   const handleSubmitStep1 = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!businessType) {
+      setError('Tell us how you will use SMEBUZZ — restaurant, shop, or trading.');
+      return;
+    }
     if (!orgName.trim()) {
       setError('Organisation name is required');
       return;
@@ -98,6 +104,7 @@ function SignupForm() {
         plan: plan || 'basic',
         interval: interval || 'monthly',
         trial: trial ? 'true' : undefined,
+        businessType: businessType || 'trading',
       };
       const res = await fetch(`${API_URL}/api/v1/auth/signup`, {
         method: 'POST',
@@ -111,10 +118,10 @@ function SignupForm() {
       }
       if (data.access_token) {
         if (typeof window !== 'undefined') {
-          window.localStorage.setItem('smebuzz_token', data.access_token);
-          window.localStorage.setItem('smebuzz_user', JSON.stringify(data.user ?? {}));
+          window.localStorage.setItem('smebuzz_user', JSON.stringify({ ...(data.user ?? {}), email_verified: false }));
         }
-        router.push('/dashboard');
+        const slug = data.tenant?.slug || body.slug;
+        router.push(`/verify-email?email=${encodeURIComponent(email.trim())}&slug=${encodeURIComponent(slug)}`);
         return;
       }
       setError('Unexpected response from server.');
@@ -134,12 +141,12 @@ function SignupForm() {
         </div>
       </header>
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-slate-200 p-5 sm:p-8">
+        <div className="w-full max-w-lg bg-white rounded-2xl shadow-lg border border-slate-200 p-5 sm:p-8">
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Create your workspace</h1>
           <p className="text-slate-600 text-sm mb-6">
-            {step === 1 && 'Set up your organisation and workspace URL.'}
-            {step === 2 && 'Create your account.'}
-            {step === 3 && 'Choose your plan. You can start with a free trial.'}
+            {step === 1 && 'How will you use SMEBUZZ? We open a restaurant counter, a shop POS, or a full trading desk from this choice.'}
+            {step === 2 && 'Create the login you will use every day.'}
+            {step === 3 && 'Pick a plan. 7-day free trial is on. After you sign in, add the menu and connect a printer.'}
           </p>
 
           <div className="flex gap-2 mb-6">
@@ -153,6 +160,23 @@ function SignupForm() {
 
           {step === 1 && (
             <form onSubmit={handleSubmitStep1} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">I am running a</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {SIGNUP_BUSINESS_TYPES.map((t) => (
+                    <label
+                      key={t.id}
+                      className={`rounded-xl border-2 p-3 cursor-pointer ${
+                        businessType === t.id ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <input type="radio" name="businessType" className="sr-only" checked={businessType === t.id} onChange={() => setBusinessType(t.id)} />
+                      <span className="block font-semibold text-slate-900 text-sm">{t.title}</span>
+                      <span className="block text-xs text-slate-600 mt-0.5 leading-relaxed">{t.blurb}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Organisation name</label>
                 <input
@@ -175,6 +199,7 @@ function SignupForm() {
                 />
                 <p className="mt-1 text-xs text-slate-500">Your workspace URL: app.smebuzz.com/{slug || deriveSlug(orgName) || '...'}</p>
               </div>
+              {error && <div className="p-3 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>}
               <button type="submit" className="w-full rounded-lg bg-brand-600 text-white py-3 sm:py-2.5 font-semibold hover:bg-brand-700 min-h-[48px] text-base">
                 Continue
               </button>
@@ -283,9 +308,12 @@ function SignupForm() {
                   ))}
                 </div>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={trial} onChange={(e) => setTrial(e.target.checked)} className="rounded border-slate-300 text-brand-600" />
-                <span className="text-sm text-slate-700">Start 14-day free trial (no payment now)</span>
+              <label className="flex items-start gap-2 cursor-pointer rounded-xl border border-brand-200 bg-brand-50 p-3">
+                <input type="checkbox" checked={trial} onChange={(e) => setTrial(e.target.checked)} className="mt-0.5 rounded border-slate-300 text-brand-600" />
+                <span className="text-sm text-slate-700">
+                  <strong className="text-slate-900">Start 7-day free trial</strong>
+                  <span className="block text-slate-600 mt-0.5">No payment today. Full access to the plan you pick. After 7 days, continue on that plan or write to us to customise.</span>
+                </span>
               </label>
               {error && (
                 <div className="p-3 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>
@@ -295,7 +323,7 @@ function SignupForm() {
                   Back
                 </button>
                 <button type="submit" disabled={loading} className="flex-1 rounded-lg bg-brand-600 text-white py-3 sm:py-2.5 font-semibold hover:bg-brand-700 disabled:opacity-50 min-h-[48px]">
-                  {loading ? 'Creating…' : 'Create workspace'}
+                  {loading ? 'Creating…' : trial ? 'Start 7-day free trial' : 'Create workspace'}
                 </button>
               </div>
             </form>

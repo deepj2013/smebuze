@@ -1,0 +1,35 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [production]
+  workflow_dispatch:
+
+concurrency:
+  group: smebuze-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH to Hostinger VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Run scripts/deploy.sh on the VPS
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+            export APP_DIR=/var/www/smebuze
+            export DEPLOY_BRANCH=production
+            if [ ! -f "$APP_DIR/scripts/deploy.sh" ]; then
+              echo "Clone the production branch to $APP_DIR first (docs/DEPLOY.md Part B)."
+              exit 1
+            fi
+            bash "$APP_DIR/scripts/deploy.sh"

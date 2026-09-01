@@ -28,6 +28,36 @@ export class TenantController {
     return this.tenantService.findAll(ctx);
   }
 
+  @Get(':id/users')
+  @UseGuards(TenantGuard)
+  @RequirePermissions('admin.tenant.view')
+  async listUsers(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
+    return this.tenantService.listUsers(id, ctx);
+  }
+
+  @Patch(':id/users/:userId')
+  @UseGuards(TenantGuard)
+  @RequirePermissions('admin.tenant.create')
+  async updateUser(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Body() body: { email?: string; name?: string; is_active?: boolean; email_verified?: boolean },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.tenantService.updateUser(id, userId, body, ctx);
+  }
+
+  @Post(':id/users/:userId/send-reset')
+  @UseGuards(TenantGuard)
+  @RequirePermissions('admin.tenant.create')
+  async sendReset(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.tenantService.sendUserPasswordReset(id, userId, ctx);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
     return this.tenantService.findOne(id, ctx);
@@ -38,7 +68,15 @@ export class TenantController {
   @RequirePermissions('admin.tenant.create')
   async update(
     @Param('id') id: string,
-    @Body() body: { license_key?: string | null; features?: string[]; subscription_ends_at?: string | null; plan?: string },
+    @Body() body: {
+      name?: string;
+      license_key?: string | null;
+      features?: string[];
+      subscription_ends_at?: string | null;
+      plan?: string;
+      is_active?: boolean;
+      settings?: Record<string, unknown>;
+    },
     @CurrentTenant() ctx: TenantContext,
   ) {
     return this.tenantService.update(id, body, ctx);

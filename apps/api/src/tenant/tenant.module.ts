@@ -7,10 +7,13 @@ import { Branch } from './entities/branch.entity';
 import { TenantService } from './tenant.service';
 import { TenantController } from './tenant.controller';
 import { FeatureGuard } from './feature.guard';
+import { AuthModule } from '../auth/auth.module';
+import { User } from '../auth/entities/user.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([PlatformOrg, Tenant, Company, Branch]),
+    TypeOrmModule.forFeature([PlatformOrg, Tenant, Company, Branch, User]),
+    AuthModule,
   ],
   controllers: [TenantController],
   providers: [TenantService, FeatureGuard],

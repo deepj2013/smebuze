@@ -66,6 +66,10 @@ export default function QuotationDetailPage() {
           <p className="text-slate-600 mt-1">Company: {q.company?.name ?? '—'}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Link href={`/sales/quotations/${id}/print`} target="_blank" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Print / PDF</Link>
+          {(q.status === 'accepted' || q.status === 'sent') && (
+            <Link href={`/sales/orders/new?quotation_id=${id}`} className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700">Convert to order</Link>
+          )}
           {q.status === 'draft' && (
             <button type="button" onClick={() => updateStatus('sent')} disabled={updating} className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50">Mark as sent</button>
           )}

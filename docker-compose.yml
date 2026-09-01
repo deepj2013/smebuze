@@ -9,13 +9,21 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - HOST=0.0.0.0
       - PORT=3000
       - JWT_SECRET=${JWT_SECRET:-change-me-in-prod}
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=postgres
       - DB_PASSWORD=postgres
-      - DB_NAME=smebuzz
+      - DB_NAME=smebuze
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3001}
+      - MAIL_HOST=${MAIL_HOST:-smtp.hostinger.com}
+      - MAIL_PORT=${MAIL_PORT:-465}
+      - MAIL_SECURE=${MAIL_SECURE:-true}
+      - MAIL_USER=${MAIL_USER}
+      - MAIL_PASS=${MAIL_PASS}
+      - "MAIL_FROM=${MAIL_FROM:-SMEBUZE <support@smebuze.com>}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -25,7 +33,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: smebuzz
+      POSTGRES_DB: smebuze
     ports:
       - "5432:5432"
     volumes:
