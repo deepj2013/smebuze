@@ -93,7 +93,7 @@ function JoinForm() {
     <div className="min-h-dvh bg-slate-50 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <header className="border-b border-slate-200 bg-white">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="text-xl font-bold text-brand-700">SMEBUZZ</Link>
+          <Link href="/" className="text-xl font-bold text-brand-700">SMEBUZE</Link>
           <Link href="/login" className="text-sm text-slate-600 hover:text-brand-600">Sign in</Link>
         </div>
       </header>
@@ -104,7 +104,7 @@ function JoinForm() {
           </h1>
           <p className="text-slate-600 text-sm mb-6">
             {isInviteFlow
-              ? 'Set your password to join your team on SMEBUZZ.'
+              ? 'Set your password to join your team on SMEBUZE.'
               : 'Your team invited you. Enter your workspace slug and create your account.'}
           </p>
           {isInviteFlow ? (

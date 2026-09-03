@@ -370,7 +370,7 @@ export function buildReceiptEscPos(payload: ReceiptPayload, paper: PaperSize): U
 export function buildTestEscPos(printerName: string, paper: PaperSize): Uint8Array {
   return buildReceiptEscPos(
     {
-      company: 'SMEBUZZ',
+      company: 'SMEBUZE',
       title: 'PRINTER TEST',
       number: 'TEST',
       date: new Date().toLocaleString('en-IN'),

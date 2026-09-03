@@ -58,7 +58,7 @@ function SignupForm() {
     e.preventDefault();
     setError(null);
     if (!businessType) {
-      setError('Tell us how you will use SMEBUZZ — restaurant, shop, or trading.');
+      setError('Tell us how you will use SMEBUZE — restaurant, shop, or trading.');
       return;
     }
     if (!orgName.trim()) {
@@ -138,7 +138,7 @@ function SignupForm() {
     <div className="min-h-screen bg-slate-50 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <header className="border-b border-slate-200 bg-white">
         <div className="max-w-6xl mx-auto px-4 py-3 sm:py-4 flex items-center justify-between min-h-[44px]">
-          <Link href="/" className="text-lg sm:text-xl font-bold text-brand-700 min-h-[44px] flex items-center">SMEBUZZ</Link>
+          <Link href="/" className="text-lg sm:text-xl font-bold text-brand-700 min-h-[44px] flex items-center">SMEBUZE</Link>
           <Link href="/login" className="text-sm text-slate-600 hover:text-brand-600 py-2 px-1 min-h-[44px] inline-flex items-center">Already have an account? Log in</Link>
         </div>
       </header>
@@ -146,7 +146,7 @@ function SignupForm() {
         <div className="w-full max-w-lg bg-white rounded-2xl shadow-lg border border-slate-200 p-5 sm:p-8">
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Create your workspace</h1>
           <p className="text-slate-600 text-sm mb-6">
-            {step === 1 && 'How will you use SMEBUZZ? We open a restaurant counter, a shop POS, or a full trading desk from this choice.'}
+            {step === 1 && 'How will you use SMEBUZE? We open a restaurant counter, a shop POS, or a full trading desk from this choice.'}
             {step === 2 && 'Create the login you will use every day.'}
             {step === 3 && 'Pick a plan. 7-day free trial is on. After you sign in, add the menu and connect a printer.'}
           </p>
@@ -199,7 +199,7 @@ function SignupForm() {
                   placeholder="e.g. acme"
                   className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
                 />
-                <p className="mt-1 text-xs text-slate-500">Your workspace URL: app.smebuzz.com/{slug || deriveSlug(orgName) || '...'}</p>
+                <p className="mt-1 text-xs text-slate-500">Your workspace URL: smebuze.com/{slug || deriveSlug(orgName) || '...'}</p>
               </div>
               {error && <div className="p-3 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>}
               <button type="submit" className="w-full rounded-lg bg-brand-600 text-white py-3 sm:py-2.5 font-semibold hover:bg-brand-700 min-h-[48px] text-base">

@@ -1,13 +1,14 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import SiteFooter from './SiteFooter';
+import { SITE_NAME } from '@/lib/site';
 
 export default function LegalPage({ title, updated, children }: { title: string; updated: string; children: ReactNode }) {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4">
-          <Link href="/" className="font-display font-bold text-brand-700">SMEBUZZ</Link>
+          <Link href="/" className="font-display font-bold text-brand-700">{SITE_NAME}</Link>
           <Link href="/signup" className="text-sm font-semibold text-brand-700">Start trial</Link>
         </div>
       </header>

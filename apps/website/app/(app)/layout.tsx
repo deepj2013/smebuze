@@ -393,7 +393,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isPublicIceCrestSite = pathname === '/ice-crest';
   const branding = parseTenantBranding(tenant?.settings);
   const shopTheme = useMemo(() => resolveWorkspaceTheme(tenant?.settings ?? null), [tenant?.settings]);
-  const brandName = branding.display_name || (isIceCrest ? 'ICE CREST CRM' : 'SMEBUZZ');
+  const brandName = branding.display_name || (isIceCrest ? 'ICE CREST CRM' : 'SMEBUZE');
   const logoSrc = branding.logo_url
     ? `${getStaticUrl(branding.logo_url)}${branding.updated_at ? `?t=${encodeURIComponent(branding.updated_at)}` : ''}`
     : null;

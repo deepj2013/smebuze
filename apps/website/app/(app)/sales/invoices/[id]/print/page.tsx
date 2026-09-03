@@ -29,7 +29,7 @@ export default function InvoicePrintPage() {
       const total = Number(data.total ?? 0);
       const paid = Number(data.paid_amount ?? 0);
       setReceipt({
-        company: data.company?.name || 'SMEBUZZ',
+        company: data.company?.name || 'SMEBUZE',
         gstin: data.company?.gstin,
         title: data.gst_applicable ? 'TAX INVOICE' : 'INVOICE',
         number: data.number || id,
@@ -43,7 +43,7 @@ export default function InvoicePrintPage() {
         total: total.toFixed(2),
         paid: paid.toFixed(2),
         due: (total - paid).toFixed(2),
-        footer: 'Thank you | SMEBUZZ',
+        footer: 'Thank you | SMEBUZE',
       });
     });
   }, [id]);

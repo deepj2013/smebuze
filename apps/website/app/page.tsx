@@ -79,7 +79,7 @@ export default function Home() {
               <span className="block text-brand-600">Print the bill on the printer you already own.</span>
             </h1>
             <p className="mt-4 sm:mt-5 text-base sm:text-lg md:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-              SMEBUZZ is the GST-ready workspace for Indian MSMEs — dine-in restaurants, sweet shops, garment stores, and trading desks. Start as one person. Try it free for seven days. At signup we ask how you sell, then open a POS counter or a full ERP.
+              SMEBUZE is the GST-ready workspace for Indian MSMEs — dine-in restaurants, sweet shops, garment stores, and trading desks. Start as one person. Try it free for seven days. At signup we ask how you sell, then open a POS counter or a full ERP.
             </p>
             <div className="mt-8 sm:mt-10 flex flex-col sm:flex-row flex-wrap justify-center gap-3 sm:gap-4">
               <Link
@@ -191,7 +191,7 @@ export default function Home() {
             <p className="text-center text-xs font-semibold uppercase tracking-widest text-brand-600">Any printer. Any size. Phone or desk.</p>
             <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 text-center mt-2">Set up the printer you already have</h2>
             <p className="mt-2 text-slate-600 text-center max-w-2xl mx-auto text-sm sm:text-base">
-              A GST bill is only useful if it comes out of the machine at the counter. SMEBUZZ does not lock you to one brand. During the 7-day trial — and after — you add printers in Organization → Printers. Paper size is remembered on that device, so the office laser and the pocket Bluetooth printer can live side by side.
+              A GST bill is only useful if it comes out of the machine at the counter. SMEBUZE does not lock you to one brand. During the 7-day trial — and after — you add printers in Organization → Printers. Paper size is remembered on that device, so the office laser and the pocket Bluetooth printer can live side by side.
             </p>
 
             <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
@@ -199,7 +199,7 @@ export default function Home() {
                 { icon: Usb, title: 'Local / USB', desc: 'Plugged into the computer with a cable, or already installed in Windows, macOS or Linux. Works for small inkjets and large office lasers alike.' },
                 { icon: Wifi, title: 'Wi-Fi / LAN', desc: 'On the same shop network. Add the printer once in phone or computer settings, then pick it when you print an invoice or quotation.' },
                 { icon: Globe, title: 'Internet / AirPrint', desc: 'A printer on another floor, another branch, or reachable over IPP / AirPrint. Accounts can print A4 while the godown prints a challan.' },
-                { icon: Bluetooth, title: 'Bluetooth on mobile', desc: 'Open SMEBUZZ on the phone, pair a thermal bill printer, and cut an 58 mm or 80 mm slip at the counter — no extra app for Chrome on Android.' },
+                { icon: Bluetooth, title: 'Bluetooth on mobile', desc: 'Open SMEBUZE on the phone, pair a thermal bill printer, and cut an 58 mm or 80 mm slip at the counter — no extra app for Chrome on Android.' },
               ].map((item) => (
                 <div key={item.title} className="rounded-2xl border border-slate-200 bg-white p-5 hover:border-brand-200 hover:shadow-md transition-all">
                   <span className="inline-flex rounded-xl bg-brand-100 p-2.5 text-brand-700">
@@ -214,7 +214,7 @@ export default function Home() {
             <div className="mt-10 sm:mt-14 rounded-2xl border border-slate-200 bg-white p-5 sm:p-8">
               <h3 className="font-display text-lg sm:text-xl font-bold text-slate-900 text-center">Inkjet, laser, thermal — big machine or pocket printer</h3>
               <p className="mt-2 text-sm text-slate-600 text-center max-w-2xl mx-auto">
-                Choose the kind of printer and the paper it uses. SMEBUZZ then sends A4 / A5 invoices to office printers, and 58 mm or 80 mm bills to thermal machines.
+                Choose the kind of printer and the paper it uses. SMEBUZE then sends A4 / A5 invoices to office printers, and 58 mm or 80 mm bills to thermal machines.
               </p>
               <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
@@ -244,7 +244,7 @@ export default function Home() {
             <p className="text-center text-xs font-semibold uppercase tracking-widest text-brand-600">AI inside the ERP</p>
             <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 text-center mt-2">A second brain for the person running the shop</h2>
             <p className="mt-2 text-slate-600 text-center max-w-2xl mx-auto text-sm sm:text-base">
-              SMEBUZZ AI does not guess from the internet. It reads <em>your</em> invoices, collections and pending money — then tells you what to do before the day gets away.
+              SMEBUZE AI does not guess from the internet. It reads <em>your</em> invoices, collections and pending money — then tells you what to do before the day gets away.
             </p>
 
             <div className="mt-10 sm:mt-14">
@@ -290,7 +290,7 @@ export default function Home() {
             </div>
 
             <p className="mt-8 text-center text-sm text-slate-500 max-w-xl mx-auto">
-              AI sits on Custom / AI-enabled plans. Your data stays in your workspace. Agents only see what you already booked in SMEBUZZ.
+              AI sits on Custom / AI-enabled plans. Your data stays in your workspace. Agents only see what you already booked in SMEBUZE.
             </p>
             <div className="mt-6 flex justify-center">
               <Link
@@ -457,7 +457,7 @@ export default function Home() {
               </div>
               <p className="mt-5 text-center text-sm text-slate-500">
                 Need a number for extra users or a custom pack?{' '}
-                <a href="mailto:hello@smebuzz.com" className="font-semibold text-brand-700 hover:underline">Talk to us</a>
+                <a href={`mailto:${SUPPORT_EMAIL}`} className="font-semibold text-brand-700 hover:underline">Talk to us</a>
                 {' · '}
                 <Link href="/signup" className="font-semibold text-brand-700 hover:underline">Start a 7-day free trial</Link>
               </p>
@@ -509,7 +509,7 @@ export default function Home() {
           <div className="relative max-w-6xl mx-auto px-4 sm:px-6 text-center">
             <h2 className="font-display text-2xl sm:text-3xl font-bold">Built for the person who wears every hat</h2>
             <p className="mt-3 sm:mt-4 text-brand-100 max-w-2xl mx-auto text-sm sm:text-base">
-              Sales on the phone. Stock in the godown. A GST bill off the printer before the truck leaves — USB, Wi-Fi or Bluetooth from the mobile site. SMEBUZZ keeps that in one login, free for seven days, then grows when you hire the second person.
+              Sales on the phone. Stock in the godown. A GST bill off the printer before the truck leaves — USB, Wi-Fi or Bluetooth from the mobile site. SMEBUZE keeps that in one login, free for seven days, then grows when you hire the second person.
             </p>
             <ul className="mt-8 sm:mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 text-left max-w-4xl mx-auto">
               {[
@@ -572,7 +572,7 @@ export default function Home() {
                 Start 7-day free trial
               </Link>
               <a
-                href={`mailto:${SUPPORT_EMAIL}?subject=Customise%20SMEBUZZ`}
+                href={`mailto:${SUPPORT_EMAIL}?subject=Customise%20SMEBUZE`}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 bg-white px-6 py-4 sm:py-3.5 text-base font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50/50 transition-colors min-h-[52px] sm:min-h-0"
               >
                 Customise with us

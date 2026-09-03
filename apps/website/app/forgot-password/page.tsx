@@ -89,7 +89,7 @@ export default function ForgotPasswordPage() {
       <div className="min-h-dvh bg-slate-50 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <header className="border-b border-slate-200 bg-white">
           <div className="max-w-6xl mx-auto px-4 py-4">
-            <Link href="/" className="text-xl font-bold text-brand-700">SMEBUZZ</Link>
+            <Link href="/" className="text-xl font-bold text-brand-700">SMEBUZE</Link>
           </div>
         </header>
         <main className="flex-1 flex items-center justify-center p-4">
@@ -162,7 +162,7 @@ export default function ForgotPasswordPage() {
     <div className="min-h-dvh bg-slate-50 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <header className="border-b border-slate-200 bg-white">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="text-xl font-bold text-brand-700">SMEBUZZ</Link>
+          <Link href="/" className="text-xl font-bold text-brand-700">SMEBUZE</Link>
           <Link href="/login" className="text-sm text-slate-600 hover:text-brand-600">Back to sign in</Link>
         </div>
       </header>

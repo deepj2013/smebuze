@@ -54,7 +54,7 @@ async function run() {
     await client.query(
       `INSERT INTO platform_org (id, name, slug, settings) VALUES ($1, $2, $3, $4)
        ON CONFLICT (slug) DO NOTHING`,
-      [PLATFORM_ORG_ID, 'SMEBUZZ', 'smebuzz', '{}']
+      [PLATFORM_ORG_ID, 'SMEBUZE', 'smebuzz', '{}']
     );
 
     let tenantRow = await client.query('SELECT id FROM tenants WHERE slug = $1 LIMIT 1', [TENANT_SLUG]);

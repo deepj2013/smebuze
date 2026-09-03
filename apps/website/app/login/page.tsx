@@ -26,7 +26,7 @@ const ERRORS: Record<string, string> = {
   google_denied: 'Google sign-in was cancelled.',
   google_off: 'Google sign-in is not configured yet.',
   google_failed: 'Google sign-in failed. Try email and password, or try again.',
-  no_account: 'No SMEBUZZ workspace uses this Google account. Start a 7-day trial, or sign in with email.',
+  no_account: 'No SMEBUZE workspace uses this Google account. Start a 7-day trial, or sign in with email.',
 };
 
 function GoogleMark() {
@@ -192,7 +192,7 @@ function LoginForm() {
           <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,.08)_1px,transparent_1px)] bg-[size:28px_28px] opacity-40" />
           <div className="relative">
             <Link href="/" className="font-display text-2xl font-bold tracking-tight">
-              SMEBUZZ
+              SMEBUZE
             </Link>
             <h1 className="mt-16 font-display text-4xl font-bold leading-tight max-w-md">
               GST bills, stock and accounts from one login.
@@ -220,7 +220,7 @@ function LoginForm() {
 
         <main id="main" className="flex flex-col bg-slate-50" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
           <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200">
-            <Link href="/" className="text-lg font-bold text-brand-700 font-display">SMEBUZZ</Link>
+            <Link href="/" className="text-lg font-bold text-brand-700 font-display">SMEBUZE</Link>
             <Link href="/" className="text-sm text-slate-600 hover:text-brand-600 py-2">Home</Link>
           </header>
           <div className="flex-1 flex items-center justify-center p-4 sm:p-8">
@@ -264,7 +264,7 @@ function LoginForm() {
                   </>
                 ) : (
                   <>
-                    <p className="text-xs font-semibold uppercase tracking-widest text-brand-600">SMEBUZZ</p>
+                    <p className="text-xs font-semibold uppercase tracking-widest text-brand-600">SMEBUZE</p>
                     <h1 className="mt-1 text-2xl font-bold text-slate-900 font-display">Sign in</h1>
                     <p className="text-slate-600 text-sm mt-2 mb-6">
                       Open the workspace that matches your email. Google works if that inbox already has a login.

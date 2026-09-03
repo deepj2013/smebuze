@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { Menu, X } from 'lucide-react';
+import { SITE_NAME } from '@/lib/site';
 
 const NAV_LINKS = [
   { href: '#how-it-works', label: 'How it works' },
@@ -23,7 +24,7 @@ export default function MarketingChrome({ children }: { children: React.ReactNod
       <header className="border-b border-slate-200/80 bg-white/95 backdrop-blur-md sticky top-0 z-50 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between min-h-[56px]">
           <Link href="/" className="text-lg sm:text-xl font-bold text-brand-600 font-display tracking-tight shrink-0">
-            SMEBUZZ
+            {SITE_NAME}
           </Link>
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600" aria-label="Primary">
             {NAV_LINKS.map((link) => (

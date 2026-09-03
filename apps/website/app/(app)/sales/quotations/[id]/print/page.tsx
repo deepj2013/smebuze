@@ -26,7 +26,7 @@ export default function QuotationPrintPage() {
     apiGet<QuotationPrintSource>(`sales/quotations/${id}`).then(({ data }) => {
       if (!data) return;
       setReceipt({
-        company: data.company?.name || 'SMEBUZZ',
+        company: data.company?.name || 'SMEBUZE',
         gstin: data.company?.gstin,
         title: 'QUOTATION',
         number: data.number || id,
@@ -38,7 +38,7 @@ export default function QuotationPrintPage() {
           amount: l.taxable_value ?? l.amount ?? 0,
         })),
         total: Number(data.total ?? 0).toFixed(2),
-        footer: 'Thank you | SMEBUZZ',
+        footer: 'Thank you | SMEBUZE',
       });
     });
   }, [id]);

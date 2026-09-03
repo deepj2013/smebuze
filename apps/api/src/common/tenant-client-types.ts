@@ -1,5 +1,5 @@
 /**
- * Tenant business types. Signup asks how the shop will use SMEBUZZ,
+ * Tenant business types. Signup asks how the shop will use SMEBUZE,
  * then the workspace is shaped around that (POS counter vs full ERP).
  */
 export const TENANT_CLIENT_TYPES = {

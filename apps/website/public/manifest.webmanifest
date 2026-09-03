@@ -1,6 +1,6 @@
 {
-  "name": "SMEBUZZ",
-  "short_name": "SMEBUZZ",
+  "name": "SMEBUZE",
+  "short_name": "SMEBUZE",
   "description": "GST ERP for MSMEs — sales, stock, billing and Ice Crest CRM",
   "start_url": "/login",
   "scope": "/",

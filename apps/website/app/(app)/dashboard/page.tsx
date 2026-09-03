@@ -106,7 +106,7 @@ export default function DashboardPage() {
 
       {showOnboardingCard && (
         <div className="mb-6 rounded-xl border border-brand-200 bg-brand-50/50 p-4">
-          <h2 className="font-semibold text-slate-900 mb-2">Welcome to SMEBUZZ</h2>
+          <h2 className="font-semibold text-slate-900 mb-2">Welcome to SMEBUZE</h2>
           <p className="text-sm text-slate-600 mb-4">Set up your workspace in a few steps:</p>
           <ul className="space-y-2 mb-4">
             {onboarding!.steps.map((step) => (

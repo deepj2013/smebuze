@@ -160,7 +160,7 @@ export default function PrintersPage() {
         success('Test slip sent over USB.');
       } else {
         const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Test print</title></head><body style="font-family:sans-serif;padding:16px">
-          <h1 style="margin:0 0 8px">SMEBUZZ printer test</h1>
+          <h1 style="margin:0 0 8px">SMEBUZE printer test</h1>
           <p>${p.name}</p>
           <p>${connectionLabel(p.connection)} · ${kindLabel(p.kind)} · ${paperLabel(p.paper)}</p>
           <p>If this page prints, this printer is ready for invoices and quotations.</p>
@@ -424,7 +424,7 @@ export default function PrintersPage() {
                   className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-slate-900 min-h-[44px]"
                 />
                 <p className="mt-1 text-xs text-slate-500">
-                  Add this printer in your computer or phone settings first. SMEBUZZ will then send the right paper size when you print.
+                  Add this printer in your computer or phone settings first. SMEBUZE will then send the right paper size when you print.
                 </p>
               </div>
             )}

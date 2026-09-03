@@ -39,7 +39,7 @@ export class SignupDto {
   @IsString()
   trial?: string; // 'true' to start trial
 
-  /** How the shop will use SMEBUZZ — shapes POS vs ERP workspace. */
+  /** How the shop will use SMEBUZE — shapes POS vs ERP workspace. */
   @IsOptional()
   @IsIn(['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop', 'department_store', 'trading', 'services', 'standard'])
   businessType?: string;
