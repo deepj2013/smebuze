@@ -13,6 +13,7 @@
     "website:start": "npm run start --workspace=apps/website",
     "db:migrate": "node packages/db-migrations/run.js",
     "seed:demo": "cd apps/api && node ../../scripts/seed-demo-users.js",
+    "seed:variants": "cd apps/api && node ../../scripts/seed-business-variants.js",
     "seed:ameera": "cd apps/api && node ../../scripts/seed-ameera-data.js",
     "seed:ice-crest": "cd apps/api && node ../../scripts/seed-tenant-ice-crest.js",
     "deploy:production": "bash scripts/deploy.sh",

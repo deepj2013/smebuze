@@ -6,6 +6,7 @@ import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useToast } from '../../components/ToastContext';
 import PosSwitcher from '../../components/PosSwitcher';
 import { posSellingRate } from '@/lib/business-types';
+import BarcodeCapture from '../../components/BarcodeCapture';
 
 interface Category {
   id: string;
@@ -16,6 +17,7 @@ interface ShopItem {
   id: string;
   name: string;
   sku?: string | null;
+  barcode?: string | null;
   category?: string | null;
   unit?: string | null;
   cost_price?: string | number | null;
@@ -46,6 +48,7 @@ interface TodayBill {
 
 const emptyItem = {
   name: '',
+  barcode: '',
   category: '',
   unit: 'pcs',
   cost_price: '',
@@ -135,6 +138,7 @@ export default function PosManagePage() {
     setSavingItem(true);
     const body: Record<string, unknown> = {
       name: form.name.trim(),
+      barcode: form.barcode.trim() || undefined,
       category: form.category || (selected !== 'all' && selected !== 'uncat' ? selected : undefined),
       unit: form.unit || 'pcs',
     };
@@ -220,6 +224,18 @@ export default function PosManagePage() {
                 Name
                 <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
               </label>
+              <label className="text-xs font-medium text-slate-600 sm:col-span-2">
+                Barcode
+                <span className="mt-1 flex gap-2">
+                  <input
+                    value={form.barcode}
+                    onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+                    placeholder="Scan or type"
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]"
+                  />
+                  <BarcodeCapture onDetected={(code) => setForm((f) => ({ ...f, barcode: code }))} label="Scan" />
+                </span>
+              </label>
               <label className="text-xs font-medium text-slate-600">
                 Category
                 <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]">
@@ -275,6 +291,7 @@ export default function PosManagePage() {
                 <thead className="bg-slate-50 text-slate-600">
                   <tr>
                     <th className="text-left p-3 font-medium">Item</th>
+                    <th className="text-left p-3 font-medium">Barcode</th>
                     <th className="text-left p-3 font-medium">Category</th>
                     <th className="text-right p-3 font-medium">Cost</th>
                     <th className="text-right p-3 font-medium">MRP</th>
@@ -287,7 +304,7 @@ export default function PosManagePage() {
                 </thead>
                 <tbody>
                   {visible.length === 0 ? (
-                    <tr><td colSpan={9} className="p-6 text-center text-slate-500">No items in this category yet.</td></tr>
+                    <tr><td colSpan={10} className="p-6 text-center text-slate-500">No items in this category yet.</td></tr>
                   ) : (
                     visible.map((i) => {
                       const rate = posSellingRate(i);
@@ -297,6 +314,7 @@ export default function PosManagePage() {
                       return (
                         <tr key={i.id} className={`border-t border-slate-100 ${isShort ? 'bg-amber-50/60' : ''}`}>
                           <td className="p-3 font-medium text-slate-900">{i.name}</td>
+                          <td className="p-3 font-mono text-xs text-slate-600">{i.barcode || '—'}</td>
                           <td className="p-3 text-slate-600">{i.category || '—'}</td>
                           <td className="p-3 text-right tabular-nums">{i.cost_price != null && i.cost_price !== '' ? Number(i.cost_price).toFixed(2) : '—'}</td>
                           <td className="p-3 text-right tabular-nums">{i.mrp != null && i.mrp !== '' ? Number(i.mrp).toFixed(2) : '—'}</td>

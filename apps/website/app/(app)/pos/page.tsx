@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
 import { useToast } from '../components/ToastContext';
 import { businessTypeMeta, isPosBusinessType, posSellingRate } from '@/lib/business-types';
 import { Minus, Plus, Search, Trash2, Banknote, Smartphone, CreditCard } from 'lucide-react';
 import PosSwitcher from '../components/PosSwitcher';
+import BarcodeCapture from '../components/BarcodeCapture';
+import { useHidBarcode } from '@/lib/use-hid-barcode';
+import { playScanBeep } from '@/lib/pos-beep';
 
 interface PosItem {
   id: string;
@@ -65,8 +68,11 @@ export default function PosPage() {
   const [lastBill, setLastBill] = useState<{ id: string; number: string; total: number } | null>(null);
   const [short, setShort] = useState<{ item_id: string; name: string; current_stock: number }[]>([]);
   const [todayBills, setTodayBills] = useState<{ id: string; number: string; total?: string | number }[]>([]);
+  const [scanHint, setScanHint] = useState<string | null>(null);
+  const itemsRef = useRef<PosItem[]>([]);
 
   const meta = businessTypeMeta(businessType);
+  itemsRef.current = items;
 
   const loadCatalog = async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -133,7 +139,7 @@ export default function PosPage() {
     });
   }, [items, category, query]);
 
-  const addItem = (item: PosItem) => {
+  const addItem = useCallback((item: PosItem) => {
     const rate = posSellingRate(item);
     const tax = Number(item.tax_rate ?? 0);
     setCart((prev) => {
@@ -152,7 +158,44 @@ export default function PosPage() {
         },
       ];
     });
-  };
+  }, []);
+
+  const applyCode = useCallback(
+    async (raw: string) => {
+      const q = raw.trim();
+      if (!q) return;
+      const list = itemsRef.current;
+      const exact = list.find(
+        (i) => (i.barcode || '').toLowerCase() === q.toLowerCase() || (i.sku || '').toLowerCase() === q.toLowerCase(),
+      );
+      if (exact) {
+        addItem(exact);
+        setQuery('');
+        setScanHint(exact.name);
+        playScanBeep(true);
+        success(`${exact.name} added`);
+        return;
+      }
+      const { data } = await apiGet<PosItem[] | { data: PosItem[] }>(
+        `inventory/items?barcode=${encodeURIComponent(q)}&with_stock=1`,
+      );
+      const found = Array.isArray(data) ? data[0] : data?.data?.[0];
+      if (found?.id) {
+        addItem(found);
+        setItems((prev) => (prev.some((i) => i.id === found.id) ? prev : [found, ...prev]));
+        setQuery('');
+        setScanHint(found.name);
+        playScanBeep(true);
+        success(`${found.name} added`);
+        return;
+      }
+      playScanBeep(false);
+      showError(`No item for barcode ${q}. Add it under Manage shop.`);
+    },
+    [addItem, success, showError],
+  );
+
+  useHidBarcode(applyCode, true);
 
   const setQty = (itemId: string, qty: number) => {
     setCart((prev) => {
@@ -242,43 +285,72 @@ export default function PosPage() {
 
   const onSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return;
-    const q = query.trim().toLowerCase();
+    e.preventDefault();
+    const q = query.trim();
     if (!q) return;
-    const exact = items.find((i) => (i.barcode || '').toLowerCase() === q || (i.sku || '').toLowerCase() === q);
-    if (exact) {
-      addItem(exact);
-      setQuery('');
-    }
+    void applyCode(q);
   };
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 min-h-[calc(100vh-8rem)]">
       <div className="flex-1 min-w-0">
         <PosSwitcher />
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Counter</p>
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">{meta.counterLabel}</h1>
-            <p className="text-sm text-slate-600">Tap {meta.itemLabel}s to add. Cash, UPI or card — more payment options later.</p>
+        <div
+          className="rounded-2xl p-4 sm:p-5 mb-4 text-white"
+          style={{ background: 'linear-gradient(135deg, var(--tenant-hero-from, #075985), var(--tenant-hero-to, #0284c7))' }}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-white/80">Counter</p>
+              <h1 className="text-xl sm:text-2xl font-bold">{meta.counterLabel}</h1>
+              <p className="text-sm text-white/90">
+                Scan with a USB/Bluetooth reader, use the phone camera, or tap {meta.itemLabel}s. Cash, UPI or card.
+              </p>
+              {scanHint && <p className="mt-1 text-xs font-medium text-emerald-100">Last scan: {scanHint}</p>}
+            </div>
+            <Link
+              href="/pos/manage"
+              className="rounded-xl bg-white/95 px-4 py-2.5 text-sm font-semibold hover:bg-white min-h-[44px] inline-flex items-center justify-center"
+              style={{ color: 'var(--tenant-accent)' }}
+            >
+              Manage shop
+            </Link>
           </div>
-          <Link
-            href="/pos/manage"
-            className="rounded-lg bg-slate-900 text-white px-4 py-2.5 text-sm font-semibold hover:bg-slate-800 min-h-[44px] inline-flex items-center justify-center"
-          >
-            Manage shop
-          </Link>
         </div>
 
-        <div className="relative mb-3">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onSearchKey}
-            placeholder={`Search ${meta.itemsLabel.toLowerCase()} or scan barcode`}
-            className="w-full rounded-xl border border-slate-300 pl-10 pr-3 py-3 text-base min-h-[48px]"
-          />
+        <div className="flex gap-2 mb-3">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onSearchKey}
+              autoComplete="off"
+              autoFocus
+              placeholder={`Search or scan barcode / SKU`}
+              className="w-full rounded-xl border border-slate-300 pl-10 pr-3 py-3 text-base min-h-[48px]"
+            />
+          </div>
+          <BarcodeCapture onDetected={applyCode} label="Scan" />
         </div>
+        <p className="text-xs text-slate-500 -mt-2 mb-3">
+          Hardware reader: click the search box and scan. Phone: tap Scan and point the camera at the barcode.
+        </p>
+
+        {items.some((i) => i.barcode) && (
+          <details className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <summary className="cursor-pointer font-semibold text-slate-800">Try these barcodes (type + Enter, or camera)</summary>
+            <ul className="mt-2 space-y-1 font-mono">
+              {items.filter((i) => i.barcode).slice(0, 8).map((i) => (
+                <li key={i.id}>
+                  <button type="button" className="text-left hover:text-brand-700" onClick={() => void applyCode(i.barcode || '')}>
+                    {i.barcode} — {i.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
 
         <div className="flex gap-2 overflow-x-auto pb-2 mb-3">
           {categories.map((c) => (
@@ -314,6 +386,7 @@ export default function PosPage() {
               >
                 <p className="font-semibold text-slate-900 line-clamp-2">{item.name}</p>
                 {item.category && <p className="text-xs text-slate-500 mt-0.5">{item.category}</p>}
+                {item.barcode && <p className="mt-0.5 font-mono text-[10px] text-slate-400">{item.barcode}</p>}
                 <p className="mt-2 font-bold text-brand-700">₹{posSellingRate(item).toFixed(2)}</p>
                 {Number(item.discount_percent ?? 0) > 0 && Number(item.mrp ?? item.sale_price ?? 0) > posSellingRate(item) && (
                   <p className="text-xs text-slate-400 line-through">MRP ₹{Number(item.mrp ?? item.sale_price ?? 0).toFixed(2)}</p>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   Bluetooth,
   Check,
@@ -10,6 +11,7 @@ import {
   Wifi,
   Globe,
   Smartphone,
+  CircleHelp,
 } from 'lucide-react';
 import { PageHeader } from '../../components/PageHeader';
 import { useToast } from '../../components/ToastContext';
@@ -199,6 +201,37 @@ export default function PrintersPage() {
         </div>
       )}
 
+      {list.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 text-center mb-6">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50">
+            <PrinterIcon className="h-7 w-7 text-brand-600" />
+          </div>
+          <p className="mt-4 text-lg font-semibold text-slate-900">Printer is optional</p>
+          <p className="mt-2 text-sm text-slate-600 max-w-lg mx-auto leading-relaxed">
+            You can print bills today from the browser dialog. Add a printer here only if you want this device to remember paper size, USB, Wi-Fi or a pocket Bluetooth machine.
+          </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => startAdd()}
+              className="rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 min-h-[44px]"
+            >
+              Add a printer
+            </button>
+            <Link
+              href="/help?guide=1"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 min-h-[44px]"
+            >
+              <CircleHelp className="h-4 w-4" />
+              How printing works
+            </Link>
+          </div>
+        </div>
+      ) : null}
+
+      <p className="text-sm font-semibold text-slate-800 mb-2">
+        {list.length === 0 ? 'If you want one, pick how it connects' : 'Add another connection'}
+      </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
         {CONNECTION_OPTIONS.map((c) => {
           const Icon = connectionIcon(c.id);
@@ -219,15 +252,7 @@ export default function PrintersPage() {
         })}
       </div>
 
-      {list.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
-          <PrinterIcon className="mx-auto h-10 w-10 text-slate-300" />
-          <p className="mt-3 font-semibold text-slate-900">No printer on this device yet</p>
-          <p className="mt-1 text-sm text-slate-600 max-w-md mx-auto">
-            Add one in a minute. You can still print today from the browser dialog — this page remembers paper size and Bluetooth pairing so bills come out right every time.
-          </p>
-        </div>
-      ) : (
+      {list.length === 0 ? null : (
         <ul className="space-y-3">
           {list.map((p) => {
             const Icon = connectionIcon(p.connection);

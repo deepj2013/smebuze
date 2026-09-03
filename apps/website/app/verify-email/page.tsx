@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useMemo, useState } from 'react';
-import { isPosBusinessType } from '@/lib/business-types';
+import { postLoginPath } from '@/lib/workspace-setup';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -52,11 +52,7 @@ function VerifyEmailForm() {
       if (data.access_token) {
         window.localStorage.setItem('smebuzz_token', data.access_token);
         window.localStorage.setItem('smebuzz_user', JSON.stringify(data.user ?? {}));
-        const businessType = data.tenant?.settings?.business_type;
-        if (data.user?.isSuperAdmin && !data.user?.tenantId) router.push('/admin/tenants');
-        else if (data.tenant?.subscription_expired) router.push('/billing');
-        else if (isPosBusinessType(businessType)) router.push('/pos');
-        else router.push('/dashboard');
+        router.push(postLoginPath(data));
         return;
       }
       setError('Unexpected response from server.');

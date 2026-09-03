@@ -21,16 +21,16 @@ module.exports = {
       },
       colors: {
         brand: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          200: '#bae6fd',
-          300: '#7dd3fc',
-          400: '#38bdf8',
+          50: 'var(--tenant-tint-50, #f0f9ff)',
+          100: 'var(--tenant-tint-100, #e0f2fe)',
+          200: 'var(--tenant-tint-200, #bae6fd)',
+          300: 'var(--tenant-tint-200, #7dd3fc)',
+          400: 'var(--tenant-primary, #38bdf8)',
           500: 'var(--tenant-primary, #0ea5e9)',
           600: 'var(--tenant-primary, #0284c7)',
           700: 'var(--tenant-accent, #0369a1)',
           800: 'var(--tenant-accent, #075985)',
-          900: '#0c4a6e',
+          900: 'var(--tenant-accent, #0c4a6e)',
         },
         accent: {
           emerald: '#059669',

@@ -157,9 +157,9 @@ export default function Home() {
         <section id="who" className="py-12 sm:py-20 bg-white">
           <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <p className="text-center text-xs font-semibold uppercase tracking-widest text-brand-600">Who it is for</p>
-            <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 text-center mt-2">Restaurant, sweet shop, garment store — or the full trading desk</h2>
+            <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 text-center mt-2">Restaurant, shop, department store — or the full trading desk</h2>
             <p className="mt-2 text-slate-600 text-center max-w-2xl mx-auto text-sm sm:text-base">
-              At signup we ask how you work. A dine-in restaurant gets a menu and a cash counter. A single shop gets POS billing. A trader gets quotations, GST invoices and godown stock. Same product — opened the way you sell.
+              At signup we ask how you work. A dine-in restaurant gets a menu and a cash counter. A department store gets barcode POS and stock by aisle. A trader gets quotations, GST invoices and godown stock. Same product — opened the way you sell.
             </p>
             <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {[
@@ -167,6 +167,7 @@ export default function Home() {
                 { title: 'Sweet shop', desc: 'Bill mithai and boxes as they go. Cash drawer style entry, stock down on each sale, printer at the counter.' },
                 { title: 'Garment shop', desc: 'One store, one counter. Tap or scan garments, settle in cash or UPI, keep stock honest without an accountant on the floor.' },
                 { title: 'Kirana / single store', desc: 'Fast billing for a neighbourhood shop. Barcode search, cash received and change, day bills in one list.' },
+                { title: 'Department store / supermarket', desc: 'USB or Bluetooth barcode reader at the till. On a phone, open the camera and scan. Inventory by department, receive stock, sell like a normal store.' },
                 { title: 'Trading / wholesale', desc: 'The full ERP: quotation to invoice, purchase, warehouses and books — for people who sell to other businesses.' },
                 { title: 'Services / general', desc: 'CRM and GST invoices when you are not a shop counter — consultants, workshops, mixed firms.' },
               ].map((b) => (

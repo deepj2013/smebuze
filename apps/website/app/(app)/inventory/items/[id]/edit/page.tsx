@@ -7,6 +7,7 @@ import { apiGet, apiPatch } from '@/lib/api';
 import { Barcode, ImagePlus, X } from 'lucide-react';
 import CategoryPicker from '../../../../components/CategoryPicker';
 import PosSwitcher from '../../../../components/PosSwitcher';
+import BarcodeCapture from '../../../../components/BarcodeCapture';
 
 function validateHsnSac(v: string): string | null {
   if (!v.trim()) return null;
@@ -176,9 +177,17 @@ export default function EditItemPage() {
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Barcode</label>
             <div className="flex items-center gap-2">
-              <Barcode className="h-4 w-4 text-slate-400" />
-              <input type="text" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="Optional barcode" className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+              <Barcode className="h-4 w-4 text-slate-400 shrink-0" />
+              <input
+                type="text"
+                value={barcode}
+                onChange={(e) => setBarcode(e.target.value)}
+                placeholder="Scan with a reader, camera, or type"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              />
+              <BarcodeCapture onDetected={(code) => setBarcode(code)} label="Scan" />
             </div>
+            <p className="text-xs text-slate-500 mt-1">USB/Bluetooth reader: click the field and scan. Phone: tap Scan.</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Pictures (up to 10)</label>

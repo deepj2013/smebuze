@@ -9,6 +9,24 @@
 
 const { Client } = require('pg');
 const bcrypt = require('bcrypt');
+const fs = require('fs');
+const path = require('path');
+
+(function loadEnv() {
+  const p = path.join(__dirname, '..', '.env');
+  if (!fs.existsSync(p)) return;
+  for (const line of fs.readFileSync(p, 'utf8').split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const i = t.indexOf('=');
+    if (i < 1) continue;
+    const key = t.slice(0, i).trim();
+    if (process.env[key]) continue;
+    let v = t.slice(i + 1).trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    process.env[key] = v;
+  }
+})();
 
 const PLATFORM_ORG_ID = 'a0000000-0000-0000-0000-000000000001';
 const DEMO_PASSWORD = 'Password123';
@@ -33,7 +51,7 @@ async function run() {
     port: parseInt(process.env.DB_PORT || '5432', 10),
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || 'postgres',
-    database: process.env.DB_NAME || 'smebuzz',
+    database: process.env.DB_NAME || 'smebuze',
   });
   await client.connect();
 
@@ -56,6 +74,10 @@ async function run() {
       tenantRow = await client.query('SELECT id FROM tenants WHERE slug = $1', ['demo']);
     }
     const tenantId = tenantRow.rows[0].id;
+    await client.query(
+      `UPDATE tenants SET settings = COALESCE(settings, '{}'::jsonb) || $2::jsonb WHERE id = $1`,
+      [tenantId, JSON.stringify({ business_type: 'trading', branding: { primary_color: '#0284c7', accent_color: '#0369a1' } })],
+    );
 
     await client.query(
       `INSERT INTO companies (tenant_id, name, is_default) SELECT $1::uuid, $2::varchar(255), true WHERE NOT EXISTS (SELECT 1 FROM companies WHERE tenant_id = $1::uuid AND name = $2::varchar(255))`,

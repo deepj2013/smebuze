@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import GlobalSearch from './components/GlobalSearch';
 import IceCrestTutorial from './components/IceCrestTutorial';
 import { ToastProvider } from './components/ToastContext';
@@ -39,13 +39,17 @@ import {
   Store,
   Palette,
   CreditCard,
+  CircleHelp,
 } from 'lucide-react';
 import { parseTenantBranding } from '@/lib/branding';
 import { getStaticUrl } from '@/lib/api';
+import { isPosBusinessType } from '@/lib/business-types';
+import { needsWorkspaceSetup, resolveEnabledModules } from '@/lib/workspace-setup';
+import { applyWorkspaceThemeVars, resolveWorkspaceTheme } from '@/lib/variant-theme';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-const MODULES = ['dashboard', 'onboarding', 'crm', 'sales', 'purchase', 'inventory', 'accounting', 'hr', 'service', 'organization', 'reports', 'bulk_upload'] as const;
+const MODULES = ['dashboard', 'onboarding', 'help', 'crm', 'sales', 'purchase', 'inventory', 'accounting', 'hr', 'service', 'organization', 'reports', 'bulk_upload'] as const;
 
 const nav: Array<{
   label: string;
@@ -57,6 +61,7 @@ const nav: Array<{
 }> = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard', permission: 'reports.view' },
   { label: 'Setup', href: '/onboarding', icon: Settings, module: 'onboarding' },
+  { label: 'Help', href: '/help', icon: CircleHelp, module: 'help' },
   {
     label: 'CRM',
     icon: Users,
@@ -287,6 +292,8 @@ const posNav: typeof nav = [
   { label: 'Customers', href: '/crm/customers', icon: Users, module: 'crm', permission: 'crm.customer.view' },
   { label: 'Printers', href: '/organization/printers', icon: Printer, module: 'organization', permission: 'org.company.view' },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'Setup', href: '/onboarding', icon: Settings, module: 'onboarding' },
+  { label: 'Help', href: '/help', icon: CircleHelp, module: 'help' },
   { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
     { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
     { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
@@ -329,17 +336,16 @@ function BrandMark({
   );
 }
 
-const DEMO_EMAIL_SUFFIX = '@demo.com';
-
 function filterNavByAccess(
   items: typeof nav,
   permissions: string[] = [],
   allowedModules: string[] | undefined,
-  isDemoUser = false
 ): typeof nav {
-  const hasAll = isDemoUser || (permissions.length === 0 && !allowedModules?.length);
-  const hasPerm = (p?: string) => !p || hasAll || permissions.includes('*') || permissions.includes(p);
-  const allowedModule = (m?: (typeof MODULES)[number]) => !m || !allowedModules || allowedModules.length === 0 || allowedModules.includes(m);
+  const hasAll = permissions.includes('*') || permissions.length === 0;
+  const hasPerm = (p?: string) => !p || hasAll || permissions.includes(p);
+  const alwaysOn = new Set(['organization', 'onboarding', 'help', 'dashboard']);
+  const allowedModule = (m?: (typeof MODULES)[number]) =>
+    !m || alwaysOn.has(m) || !allowedModules || allowedModules.length === 0 || allowedModules.includes(m);
   return items
     .map((item) => {
       if (item.children) {
@@ -367,6 +373,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     email_verified?: boolean;
     isSuperAdmin?: boolean;
     tenantId?: string | null;
+    onboarding_completed_at?: string | null;
   } | null>(null);
   const [tenant, setTenant] = useState<{
     slug?: string;
@@ -380,19 +387,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showIceCrestTutorial, setShowIceCrestTutorial] = useState(false);
-  const isDemoUser = typeof user?.email === 'string' && user.email.toLowerCase().endsWith(DEMO_EMAIL_SUFFIX);
   const isStarIce = tenant?.slug === 'star-ice';
   const isIceCrest = tenant?.slug === 'ice-crest' || tenant?.settings?.business_type === 'ice_crest';
-  const posTypes = ['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop'];
-  const isPosTenant = posTypes.includes(String(tenant?.settings?.business_type ?? ''));
+  const isPosTenant = isPosBusinessType(tenant?.settings?.business_type);
   const isPublicIceCrestSite = pathname === '/ice-crest';
   const branding = parseTenantBranding(tenant?.settings);
+  const shopTheme = useMemo(() => resolveWorkspaceTheme(tenant?.settings ?? null), [tenant?.settings]);
   const brandName = branding.display_name || (isIceCrest ? 'ICE CREST CRM' : 'SMEBUZZ');
   const logoSrc = branding.logo_url
     ? `${getStaticUrl(branding.logo_url)}${branding.updated_at ? `?t=${encodeURIComponent(branding.updated_at)}` : ''}`
     : null;
+  const enabledModules = resolveEnabledModules(tenant?.settings ?? null, user?.allowed_modules);
   const baseNav = isIceCrest ? iceCrestNav : isStarIce ? starIceNav : isPosTenant ? posNav : nav;
-  let visibleNav = filterNavByAccess(baseNav, user?.permissions ?? [], user?.allowed_modules, isDemoUser);
+  let visibleNav = filterNavByAccess(baseNav, user?.permissions ?? [], enabledModules);
   if (user?.isSuperAdmin && !visibleNav.some((i) => i.label === 'Admin')) {
     const adminItem = nav.find((i) => i.label === 'Admin');
     if (adminItem) visibleNav = [...visibleNav, adminItem];
@@ -454,6 +461,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           router.replace('/billing');
           return;
         }
+        const settings = (d?.tenant?.settings ?? {}) as Record<string, unknown>;
+        const canConfigure = Boolean(
+          u?.isSuperAdmin || (u?.permissions ?? []).includes('*') || (u?.permissions ?? []).includes('org.company.update'),
+        );
+        const onSetupPath =
+          pathname.startsWith('/onboarding') || pathname.startsWith('/help') || pathname === '/billing';
+        if (
+          d?.tenant &&
+          !u?.isSuperAdmin &&
+          canConfigure &&
+          needsWorkspaceSetup(settings) &&
+          !onSetupPath &&
+          d?.tenant?.slug !== 'ice-crest' &&
+          settings.business_type !== 'ice_crest'
+        ) {
+          router.replace('/onboarding');
+          return;
+        }
         if (!d?.tenant?.subscription_expired && (d?.tenant?.slug === 'ice-crest' || d?.tenant?.settings?.business_type === 'ice_crest')) {
           fetch(`${API_URL}/api/v1/onboarding/checklist`, { headers: { Authorization: `Bearer ${token}` } })
             .then((r) => r.json())
@@ -469,9 +494,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [router, pathname]);
 
   useEffect(() => {
-    document.documentElement.style.setProperty('--tenant-primary', branding.primary_color);
-    document.documentElement.style.setProperty('--tenant-accent', branding.accent_color);
-  }, [branding.primary_color, branding.accent_color]);
+    applyWorkspaceThemeVars(shopTheme);
+  }, [shopTheme]);
 
   useEffect(() => {
     const onUpdated = (event: Event) => {
@@ -506,8 +530,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (pathname.includes('/print')) {
+  // Invoice/quotation print views only — not /organization/printers (that path contains "/print").
+  const isPrintDocument = pathname === '/print' || pathname.endsWith('/print') || pathname.includes('/print/');
+  if (isPrintDocument) {
     return <ToastProvider>{children}</ToastProvider>;
+  }
+
+  if (pathname.startsWith('/onboarding')) {
+    return (
+      <ToastProvider>
+        <div className="min-h-dvh bg-slate-50 flex flex-col">
+          <header className="border-b border-slate-200 bg-white/90 backdrop-blur" style={{ paddingTop: 'var(--safe-area-top)' }}>
+            <div className="h-14 flex items-center justify-between px-4 max-w-4xl mx-auto w-full">
+              <span className="font-bold text-brand-700 truncate">{brandName}</span>
+              <div className="flex items-center gap-4">
+                <Link href="/help" className="text-sm font-medium text-slate-600 hover:text-brand-600">Help</Link>
+                <button type="button" onClick={logout} className="text-sm text-slate-600 hover:text-brand-600">
+                  Logout
+                </button>
+              </div>
+            </div>
+          </header>
+          <main id="main" className="flex-1">{children}</main>
+        </div>
+      </ToastProvider>
+    );
   }
 
   const paywalled = Boolean(tenant?.subscription_expired) && !user?.isSuperAdmin;
@@ -615,9 +662,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     {isIceCrest && showIceCrestTutorial && (
       <IceCrestTutorial mode="modal" onDismiss={() => setShowIceCrestTutorial(false)} onComplete={() => setShowIceCrestTutorial(false)} />
     )}
-    <div className="min-h-dvh flex bg-slate-50">
+    <div className="min-h-dvh flex" style={{ background: 'var(--tenant-canvas, #f8fafc)' }}>
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-56 border-r border-slate-200 bg-white flex-col shrink-0">
+      <aside className="hidden lg:flex w-56 border-r border-slate-200 flex-col shrink-0" style={{ background: 'var(--tenant-sidebar, #ffffff)' }}>
         <div className="p-4 border-b border-slate-200">
           <BrandMark href={homeHref} name={brandName} logoSrc={logoSrc} />
         </div>
@@ -634,10 +681,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       )}
       {/* Mobile drawer panel */}
       <aside
-        className={`fixed top-0 left-0 z-50 h-full w-[min(320px,85vw)] max-w-full bg-white border-r border-slate-200 shadow-xl transform transition-transform duration-200 ease-out lg:hidden ${
+        className={`fixed top-0 left-0 z-50 h-full w-[min(320px,85vw)] max-w-full border-r border-slate-200 shadow-xl transform transition-transform duration-200 ease-out lg:hidden ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
-        style={{ paddingTop: 'var(--safe-area-top)' }}
+        style={{ paddingTop: 'var(--safe-area-top)', background: 'var(--tenant-sidebar, #ffffff)' }}
       >
         <div className="flex items-center justify-between p-4 border-b border-slate-200">
           <BrandMark href={homeHref} name={brandName} logoSrc={logoSrc} onClick={closeDrawer} />

@@ -7,6 +7,13 @@
   --background: #ffffff;
   --tenant-primary: #0284c7;
   --tenant-accent: #0369a1;
+  --tenant-canvas: #f8fafc;
+  --tenant-sidebar: #ffffff;
+  --tenant-tint-50: #f0f9ff;
+  --tenant-tint-100: #e0f2fe;
+  --tenant-tint-200: #bae6fd;
+  --tenant-hero-from: #075985;
+  --tenant-hero-to: #0284c7;
   /* Safe area for notched phones / PWA standalone */
   --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-right: env(safe-area-inset-right, 0px);

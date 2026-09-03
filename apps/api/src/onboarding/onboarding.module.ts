@@ -6,6 +6,7 @@ import { Company } from '../tenant/entities/company.entity';
 import { Branch } from '../tenant/entities/branch.entity';
 import { Customer } from '../crm/entities/customer.entity';
 import { SalesInvoice } from '../sales/entities/sales-invoice.entity';
+import { Warehouse } from '../inventory/entities/warehouse.entity';
 import { OnboardingEvent } from './entities/onboarding-event.entity';
 import { OnboardingSurvey } from './entities/onboarding-survey.entity';
 import { OnboardingService } from './onboarding.service';
@@ -13,7 +14,7 @@ import { OnboardingController } from './onboarding.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Tenant, Company, Branch, Customer, SalesInvoice, OnboardingEvent, OnboardingSurvey]),
+    TypeOrmModule.forFeature([User, Tenant, Company, Branch, Customer, SalesInvoice, Warehouse, OnboardingEvent, OnboardingSurvey]),
   ],
   controllers: [OnboardingController],
   providers: [OnboardingService],

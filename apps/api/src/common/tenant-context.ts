@@ -15,6 +15,7 @@ export interface TenantContext {
   /** When set, menu is filtered to these modules (e.g. crm, sales). If not set, use permissions. */
   allowed_modules?: string[];
   email_verified?: boolean;
+  onboarding_completed_at?: string | null;
 }
 
 export const CurrentTenant = createParamDecorator(

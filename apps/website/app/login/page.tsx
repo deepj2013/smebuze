@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { Check, Printer, Shield } from 'lucide-react';
-import { isPosBusinessType } from '@/lib/business-types';
+import { postLoginPath } from '@/lib/workspace-setup';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -52,23 +52,7 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
 
   function goAfterLogin(data: LoginPayload) {
-    if (data.user?.isSuperAdmin && !data.user?.tenantId) {
-      router.push('/admin/tenants');
-      return;
-    }
-    if (data.tenant?.subscription_expired) {
-      router.push('/billing');
-      return;
-    }
-    if (data.tenant?.slug === 'ice-crest' || data.tenant?.settings?.business_type === 'ice_crest') {
-      router.push('/ice-crest/dashboard');
-      return;
-    }
-    if (isPosBusinessType(data.tenant?.settings?.business_type)) {
-      router.push('/pos');
-      return;
-    }
-    router.push('/dashboard');
+    router.push(postLoginPath(data));
   }
 
   function storeSession(data: LoginPayload) {

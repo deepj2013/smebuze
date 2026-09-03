@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState, useEffect } from 'react';
+import { postLoginPath } from '@/lib/workspace-setup';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -43,7 +44,7 @@ function JoinForm() {
           window.localStorage.setItem('smebuzz_token', data.access_token);
           window.localStorage.setItem('smebuzz_user', JSON.stringify(data.user ?? {}));
         }
-        router.push('/dashboard');
+        router.push(postLoginPath(data));
       } else setError('Unexpected response.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error');
@@ -77,7 +78,7 @@ function JoinForm() {
           window.localStorage.setItem('smebuzz_token', data.access_token);
           window.localStorage.setItem('smebuzz_user', JSON.stringify(data.user ?? {}));
         }
-        router.push('/dashboard');
+        router.push(postLoginPath(data));
       } else setError('Unexpected response.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error');

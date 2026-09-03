@@ -1,3 +1,5 @@
+import { themeForBusinessType } from './variant-theme';
+
 export type TenantBranding = {
   logo_url: string | null;
   primary_color: string;
@@ -23,10 +25,12 @@ export function sanitizeHex(value: unknown, fallback: string): string {
 
 export function parseTenantBranding(settings: Record<string, unknown> | null | undefined): TenantBranding {
   const raw = (settings?.branding ?? {}) as Partial<TenantBranding>;
+  const type = typeof settings?.business_type === 'string' ? settings.business_type : '';
+  const fallback = themeForBusinessType(type);
   return {
     logo_url: typeof raw.logo_url === 'string' && raw.logo_url.trim() ? raw.logo_url.trim() : null,
-    primary_color: sanitizeHex(raw.primary_color, DEFAULT_BRANDING.primary_color),
-    accent_color: sanitizeHex(raw.accent_color, DEFAULT_BRANDING.accent_color),
+    primary_color: sanitizeHex(raw.primary_color, fallback.primary),
+    accent_color: sanitizeHex(raw.accent_color, fallback.accent),
     display_name: typeof raw.display_name === 'string' && raw.display_name.trim() ? raw.display_name.trim() : null,
     updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : null,
   };

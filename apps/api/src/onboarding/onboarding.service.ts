@@ -9,7 +9,11 @@ import { Customer } from '../crm/entities/customer.entity';
 import { SalesInvoice } from '../sales/entities/sales-invoice.entity';
 import { OnboardingEvent } from './entities/onboarding-event.entity';
 import { OnboardingSurvey } from './entities/onboarding-survey.entity';
+import { Warehouse } from '../inventory/entities/warehouse.entity';
 import { TenantContext } from '../common/tenant-context';
+import { isPosBusinessType } from '../common/tenant-client-types';
+import { SaveWorkspaceDto } from './dto/save-workspace.dto';
+import { brandingForBusinessType } from '../common/variant-theme';
 
 export interface ChecklistStep {
   id: string;
@@ -23,6 +27,11 @@ export interface OnboardingChecklistResponse {
   onboardingCompletedAt: string | null;
   showOnboarding: boolean;
   tenantSlug?: string;
+  businessType?: string;
+  enabledModules?: string[];
+  workspaceConfigured?: boolean;
+  canConfigure?: boolean;
+  homeHref?: string;
 }
 
 @Injectable()
@@ -40,6 +49,8 @@ export class OnboardingService {
     private readonly customerRepo: Repository<Customer>,
     @InjectRepository(SalesInvoice)
     private readonly invoiceRepo: Repository<SalesInvoice>,
+    @InjectRepository(Warehouse)
+    private readonly warehouseRepo: Repository<Warehouse>,
     @InjectRepository(OnboardingEvent)
     private readonly eventRepo: Repository<OnboardingEvent>,
     @InjectRepository(OnboardingSurvey)
@@ -60,10 +71,30 @@ export class OnboardingService {
     });
     const tenantSlug = tenant?.slug ?? undefined;
     const settings = tenant?.settings as Record<string, unknown> | undefined;
+    const businessType = typeof settings?.business_type === 'string' ? settings.business_type : '';
     const user = await this.userRepo.findOne({
       where: { id: ctx.userId },
       select: ['id', 'onboarding_completed_at'],
     });
+    const canConfigure = ctx.isSuperAdmin || ctx.permissions.includes('*') || ctx.permissions.includes('org.company.update');
+    const enabledModules = Array.isArray(settings?.enabled_modules)
+      ? (settings.enabled_modules as string[]).filter((m) => typeof m === 'string')
+      : [];
+    const workspaceConfigured = settings?.workspace_configured === true;
+    const homeHref =
+      tenantSlug === 'ice-crest' || businessType === 'ice_crest'
+        ? '/ice-crest/dashboard'
+        : isPosBusinessType(businessType)
+          ? '/pos'
+          : '/dashboard';
+    const extra = {
+      tenantSlug,
+      businessType: businessType || undefined,
+      enabledModules,
+      workspaceConfigured,
+      canConfigure,
+      homeHref,
+    };
     const [companyCount, branchCount, customerCount, invoiceCount] = await Promise.all([
       this.companyRepo.count({ where: { tenant_id: ctx.tenantId } }),
       this.branchRepo
@@ -76,8 +107,7 @@ export class OnboardingService {
     ]);
 
     const isIceCrestTenant = tenantSlug === 'ice-crest' || settings?.business_type === 'ice_crest';
-    const businessType = typeof settings?.business_type === 'string' ? settings.business_type : '';
-    const isPosTenant = ['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop'].includes(businessType);
+    const isPosTenant = isPosBusinessType(businessType);
     const razorpay = (settings?.razorpay ?? {}) as { enabled?: boolean; key_id?: string; key_secret?: string };
     const paymentsReady = razorpay.enabled === true && typeof razorpay.key_id === 'string' && razorpay.key_id.startsWith('rzp_') && Boolean(razorpay.key_secret);
 
@@ -94,7 +124,7 @@ export class OnboardingService {
         steps,
         onboardingCompletedAt: user?.onboarding_completed_at?.toISOString() ?? null,
         showOnboarding: !user?.onboarding_completed_at,
-        tenantSlug,
+        ...extra,
       };
     }
 
@@ -113,7 +143,7 @@ export class OnboardingService {
         steps,
         onboardingCompletedAt: user?.onboarding_completed_at?.toISOString() ?? null,
         showOnboarding: !user?.onboarding_completed_at,
-        tenantSlug,
+        ...extra,
       };
     }
 
@@ -130,8 +160,79 @@ export class OnboardingService {
       steps,
       onboardingCompletedAt: user?.onboarding_completed_at?.toISOString() ?? null,
       showOnboarding: !user?.onboarding_completed_at,
-      tenantSlug,
+      ...extra,
     };
+  }
+
+  async saveWorkspace(ctx: TenantContext, dto: SaveWorkspaceDto) {
+    if (!ctx.tenantId) throw new ForbiddenException('Tenant required');
+    const canConfigure = ctx.isSuperAdmin || ctx.permissions.includes('*') || ctx.permissions.includes('org.company.update');
+    if (!canConfigure) throw new ForbiddenException('Ask a workspace admin to choose the shop type and modules.');
+
+    const tenant = await this.tenantRepo.findOne({ where: { id: ctx.tenantId } });
+    if (!tenant) throw new ForbiddenException('Workspace not found');
+
+    const allowed = new Set(['inventory', 'sales', 'crm', 'purchase', 'accounting', 'reports', 'hr', 'service']);
+    const picked = (dto.enabledModules || []).filter((m) => allowed.has(m));
+    const enabledModules = Array.from(new Set(['organization', 'onboarding', 'help', 'dashboard', ...(picked.length ? picked : ['sales', 'inventory', 'reports'])]));
+
+    tenant.settings = {
+      ...(tenant.settings ?? {}),
+      business_type: dto.businessType,
+      enabled_modules: enabledModules,
+      workspace_configured: true,
+      learn_mode: dto.learnMode || 'explore',
+      branding: brandingForBusinessType(dto.businessType, tenant.settings as Record<string, unknown>),
+    };
+    await this.tenantRepo.save(tenant);
+
+    if (isPosBusinessType(dto.businessType)) {
+      await this.ensurePosBasics(ctx.tenantId);
+    }
+
+    const done = await this.completeOnboarding(ctx);
+    const homeHref = isPosBusinessType(dto.businessType) ? '/pos' : '/dashboard';
+    return {
+      ...done,
+      homeHref,
+      learnMode: dto.learnMode || 'explore',
+      businessType: dto.businessType,
+      enabledModules,
+    };
+  }
+
+  private async ensurePosBasics(tenantId: string) {
+    const company = await this.companyRepo.findOne({ where: { tenant_id: tenantId }, order: { is_default: 'DESC' } });
+    if (!company) return;
+    const walk = await this.customerRepo
+      .createQueryBuilder('c')
+      .where('c.tenant_id = :tid', { tid: tenantId })
+      .andWhere(`(c.tags @> :tag OR c.name ILIKE '%walk%')`, { tag: JSON.stringify(['walk_in']) })
+      .getOne();
+    if (!walk) {
+      await this.customerRepo.save(
+        this.customerRepo.create({
+          tenant_id: tenantId,
+          company_id: company.id,
+          name: 'Walk-in / Counter',
+          entity_type: 'individual',
+          tags: ['walk_in'],
+          segment: 'counter',
+        }),
+      );
+    }
+    const warehouse = await this.warehouseRepo.findOne({ where: { tenant_id: tenantId } });
+    if (!warehouse) {
+      await this.warehouseRepo.save(
+        this.warehouseRepo.create({
+          tenant_id: tenantId,
+          company_id: company.id,
+          name: 'Shop counter',
+          code: 'COUNTER',
+          is_default: true,
+        }),
+      );
+    }
   }
 
   async completeOnboarding(ctx: TenantContext): Promise<{ onboardingCompletedAt: string }> {

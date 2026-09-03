@@ -73,9 +73,14 @@ export class InventoryController {
   @RequirePermissions('inventory.item.view')
   async getItems(
     @Query('with_stock') withStock: string | undefined,
+    @Query('barcode') barcode: string | undefined,
     @CurrentTenant() ctx: TenantContext,
   ) {
-    if (withStock === '1' || withStock === 'true') {
+    const wantStock = withStock === '1' || withStock === 'true';
+    if (barcode?.trim()) {
+      return this.inventoryService.findItemsByCode(barcode.trim(), ctx, wantStock);
+    }
+    if (wantStock) {
       return this.inventoryService.findItemsWithStock(ctx);
     }
     return this.inventoryService.findItems(ctx);

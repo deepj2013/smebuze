@@ -28,6 +28,7 @@ import { AuditService } from '../audit/audit.service';
 import { Customer } from '../crm/entities/customer.entity';
 import { Warehouse } from '../inventory/entities/warehouse.entity';
 import { isPosBusinessType } from '../common/tenant-client-types';
+import { brandingForBusinessType } from '../common/variant-theme';
 import { tenantSessionFrom, TenantSession } from '../common/tenant-session';
 
 export interface JwtPayload {
@@ -361,6 +362,7 @@ export class AuthService {
       features,
       settings: {
         business_type: businessType,
+        branding: brandingForBusinessType(businessType),
         billing: {
           interval: dto.interval || 'monthly',
           trial: dto.trial === 'true' || dto.trial === '1',
@@ -527,6 +529,7 @@ export class AuthService {
         name: user.name ?? ctx.email,
         allowed_modules,
         email_verified: user.email_verified !== false,
+        onboarding_completed_at: user.onboarding_completed_at ? user.onboarding_completed_at.toISOString() : null,
       },
       ...(tenant && { tenant }),
     };

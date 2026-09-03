@@ -41,6 +41,6 @@ export class SignupDto {
 
   /** How the shop will use SMEBUZZ — shapes POS vs ERP workspace. */
   @IsOptional()
-  @IsIn(['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop', 'trading', 'services', 'standard'])
+  @IsIn(['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop', 'department_store', 'trading', 'services', 'standard'])
   businessType?: string;
 }

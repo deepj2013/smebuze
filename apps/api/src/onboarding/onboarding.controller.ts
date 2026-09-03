@@ -3,6 +3,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { CurrentTenant } from '../common/tenant-context';
 import { TenantContext } from '../common/tenant-context';
+import { SaveWorkspaceDto } from './dto/save-workspace.dto';
 import { OnboardingService } from './onboarding.service';
 
 @Controller('onboarding')
@@ -18,6 +19,11 @@ export class OnboardingController {
   @Post('complete')
   async completeOnboarding(@CurrentTenant() ctx: TenantContext) {
     return this.onboardingService.completeOnboarding(ctx);
+  }
+
+  @Patch('workspace')
+  async saveWorkspace(@Body() body: SaveWorkspaceDto, @CurrentTenant() ctx: TenantContext) {
+    return this.onboardingService.saveWorkspace(ctx, body);
   }
 
   @Post('events')

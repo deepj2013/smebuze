@@ -1,6 +1,6 @@
 /** Mirrors API tenant business types for signup, nav and POS copy. */
 
-export const POS_BUSINESS_TYPES = ['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop'] as const;
+export const POS_BUSINESS_TYPES = ['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop', 'department_store'] as const;
 export type PosBusinessType = (typeof POS_BUSINESS_TYPES)[number];
 
 export const SIGNUP_BUSINESS_TYPES = [
@@ -35,6 +35,14 @@ export const SIGNUP_BUSINESS_TYPES = [
     itemLabel: 'product',
     itemsLabel: 'Products',
     counterLabel: 'Store POS',
+  },
+  {
+    id: 'department_store',
+    title: 'Department store / supermarket',
+    blurb: 'Scan at the counter with a USB/Bluetooth reader, or use the phone camera. Stock by department like a normal store.',
+    itemLabel: 'product',
+    itemsLabel: 'Departments',
+    counterLabel: 'Department store POS',
   },
   {
     id: 'trading',

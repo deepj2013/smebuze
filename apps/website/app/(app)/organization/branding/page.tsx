@@ -4,13 +4,16 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPatch, apiUploadFile, getStaticUrl } from '@/lib/api';
 import { DEFAULT_BRANDING, parseTenantBranding, type TenantBranding } from '@/lib/branding';
+import { VARIANT_THEMES } from '@/lib/variant-theme';
 
 const PRESETS = [
-  { name: 'Sky', primary: '#0284c7', accent: '#0369a1' },
-  { name: 'Ice', primary: '#0891b2', accent: '#0e7490' },
-  { name: 'Emerald', primary: '#059669', accent: '#047857' },
-  { name: 'Indigo', primary: '#4f46e5', accent: '#3730a3' },
-  { name: 'Rose', primary: '#e11d48', accent: '#be123c' },
+  { name: 'Restaurant', primary: VARIANT_THEMES.dine_restaurant.primary, accent: VARIANT_THEMES.dine_restaurant.accent },
+  { name: 'Sweets', primary: VARIANT_THEMES.sweet_shop.primary, accent: VARIANT_THEMES.sweet_shop.accent },
+  { name: 'Garments', primary: VARIANT_THEMES.garment_shop.primary, accent: VARIANT_THEMES.garment_shop.accent },
+  { name: 'Kirana', primary: VARIANT_THEMES.retail_shop.primary, accent: VARIANT_THEMES.retail_shop.accent },
+  { name: 'Department', primary: VARIANT_THEMES.department_store.primary, accent: VARIANT_THEMES.department_store.accent },
+  { name: 'Trading', primary: VARIANT_THEMES.trading.primary, accent: VARIANT_THEMES.trading.accent },
+  { name: 'Services', primary: VARIANT_THEMES.services.primary, accent: VARIANT_THEMES.services.accent },
 ];
 
 export default function BrandingPage() {

@@ -1,3 +1,5 @@
+import { themeForBusinessType } from './variant-theme';
+
 export type TenantBranding = {
   logo_url: string | null;
   primary_color: string;
@@ -16,14 +18,16 @@ export const DEFAULT_BRANDING: TenantBranding = {
 
 export function parseTenantBranding(settings: Record<string, unknown> | null | undefined): TenantBranding {
   const raw = (settings?.branding ?? {}) as Partial<TenantBranding>;
+  const type = typeof settings?.business_type === 'string' ? settings.business_type : '';
+  const fallback = themeForBusinessType(type);
   const hex = (v: unknown, fb: string) => {
     const s = String(v ?? '').trim();
     return /^#[0-9a-fA-F]{6}$/.test(s) ? s.toLowerCase() : fb;
   };
   return {
     logo_url: typeof raw.logo_url === 'string' && raw.logo_url.trim() ? raw.logo_url.trim() : null,
-    primary_color: hex(raw.primary_color, DEFAULT_BRANDING.primary_color),
-    accent_color: hex(raw.accent_color, DEFAULT_BRANDING.accent_color),
+    primary_color: hex(raw.primary_color, fallback.primary),
+    accent_color: hex(raw.accent_color, fallback.accent),
     display_name: typeof raw.display_name === 'string' && raw.display_name.trim() ? raw.display_name.trim() : null,
     updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : null,
   };

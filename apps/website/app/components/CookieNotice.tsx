@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 const KEY = 'smebuzz_privacy_ok';
 
 export default function CookieNotice() {
+  const pathname = usePathname();
   const [show, setShow] = useState(false);
 
   useEffect(() => {
@@ -16,7 +18,7 @@ export default function CookieNotice() {
     }
   }, []);
 
-  if (!show) return null;
+  if (!show || pathname?.startsWith('/onboarding')) return null;
 
   return (
     <div

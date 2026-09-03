@@ -18,6 +18,7 @@ cp .env.example .env
 createdb smebuze
 npm run db:migrate
 npm run seed:demo
+npm run seed:variants
 ```
 
 If the database already exists under another name, set `DB_NAME` in `.env` instead of renaming it.
@@ -68,10 +69,12 @@ NEXT_PUBLIC_API_URL=https://api.smebuze.com
 |------|--------|-------------|
 | Super Admin | `superadmin@smebuzz.com` | *(leave empty)* |
 | Tenant Admin | `admin@demo.com` | `demo` |
-| Sales Manager | `sales@demo.com` | `demo` |
-| Purchase Manager | `purchase@demo.com` | `demo` |
-| Staff | `staff@demo.com` | `demo` |
-| Viewer | `viewer@demo.com` | `demo` |
+| Restaurant POS | `restaurant@smebuze.local` | `pos-restaurant` |
+| Sweet shop POS | `sweets@smebuze.local` | `pos-sweets` |
+| Garment POS | `garment@smebuze.local` | `pos-garment` |
+| Kirana POS | `kirana@smebuze.local` | `pos-kirana` |
+| Department store POS | `dept@smebuze.local` | `pos-dept` |
+| Services ERP | `services@smebuze.local` | `demo-services` |
 | Ice Crest (after seed) | `info@icecrest.in` | `ice-crest` |
 
 New signups must verify email (OTP) before login.

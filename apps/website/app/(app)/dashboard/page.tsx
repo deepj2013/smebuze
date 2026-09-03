@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
+import { businessTypeMeta, isPosBusinessType } from '@/lib/business-types';
+import { themeForBusinessType } from '@/lib/variant-theme';
 
 interface DashboardData {
   summary: {
@@ -38,7 +40,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [onboarding, setOnboarding] = useState<OnboardingChecklist | null>(null);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
-  const [isPosTenant, setIsPosTenant] = useState(false);
+  const [shopType, setShopType] = useState<string>('trading');
 
   useEffect(() => {
     (async () => {
@@ -57,9 +59,7 @@ export default function DashboardPage() {
       .then((r) => r.json())
       .then((d) => {
         const t = d?.tenant?.settings?.business_type;
-        if (['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop'].includes(String(t))) {
-          setIsPosTenant(true);
-        }
+        if (typeof t === 'string' && t) setShopType(t);
       })
       .catch(() => undefined);
   }, []);
@@ -80,22 +80,29 @@ export default function DashboardPage() {
   };
 
   const showOnboardingCard = onboarding?.showOnboarding && !onboardingDismissed && onboarding.steps.length > 0;
+  const isPosTenant = isPosBusinessType(shopType);
+  const meta = businessTypeMeta(shopType);
+  const theme = themeForBusinessType(shopType);
 
   return (
     <div>
-      <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-4 sm:mb-6">Business overview</h1>
-
-      {isPosTenant && (
-        <div className="mb-6 rounded-xl border border-brand-200 bg-white p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <p className="font-semibold text-slate-900">Billing counter</p>
-            <p className="text-sm text-slate-600">Open POS to take cash, UPI or card — restaurant menu or shop items.</p>
-          </div>
-          <Link href="/pos" className="rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-semibold hover:bg-brand-700 min-h-[44px] inline-flex items-center justify-center">
-            Open POS
+      <section
+        className="mb-6 rounded-2xl p-5 sm:p-6 text-white overflow-hidden relative"
+        style={{ background: `linear-gradient(135deg, var(--tenant-hero-from, ${theme.heroFrom}), var(--tenant-hero-to, ${theme.heroTo}))` }}
+      >
+        <p className="text-xs font-semibold uppercase tracking-widest text-white/80">{theme.label}</p>
+        <h1 className="mt-1 text-2xl sm:text-3xl font-bold">{meta.title}</h1>
+        <p className="mt-1 text-sm text-white/90 max-w-xl">{theme.tagline}</p>
+        {isPosTenant && (
+          <Link
+            href="/pos"
+            className="mt-4 inline-flex items-center rounded-xl bg-white px-4 py-2.5 text-sm font-semibold min-h-[44px]"
+            style={{ color: theme.accent }}
+          >
+            Open billing counter
           </Link>
-        </div>
-      )}
+        )}
+      </section>
 
       {showOnboardingCard && (
         <div className="mb-6 rounded-xl border border-brand-200 bg-brand-50/50 p-4">
@@ -134,11 +141,11 @@ export default function DashboardPage() {
       {!loading && data && (
         <>
           <section className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6 sm:mb-8">
-            <div className="rounded-xl bg-white border border-slate-200 p-4 min-h-[88px]">
+            <div className="rounded-xl bg-white border border-slate-200 border-l-4 p-4 min-h-[88px]" style={{ borderLeftColor: 'var(--tenant-primary)' }}>
               <p className="text-xs font-medium text-slate-500 uppercase">Total invoiced</p>
               <p className="mt-2 text-2xl font-semibold text-slate-900">₹{data.summary.receivables.totalInvoiced.toFixed(2)}</p>
             </div>
-            <div className="rounded-xl bg-white border border-slate-200 p-4">
+            <div className="rounded-xl bg-white border border-slate-200 border-l-4 p-4" style={{ borderLeftColor: 'var(--tenant-accent)' }}>
               <p className="text-xs font-medium text-slate-500 uppercase">Receivables pending</p>
               <p className="mt-2 text-2xl font-semibold text-amber-700">₹{data.summary.receivables.totalPending.toFixed(2)}</p>
             </div>
