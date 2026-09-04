@@ -14,7 +14,7 @@ export default function BarcodeCapture({ onDetected, label = 'Camera', className
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const readerId = `bc-${useId().replace(/:/g, '')}`;
-  const scannerRef = useRef<{ stop: () => Promise<void>; clear: () => Promise<void> } | null>(null);
+  const scannerRef = useRef<{ stop: () => Promise<unknown>; clear: () => unknown } | null>(null);
   const taken = useRef(false);
 
   useEffect(() => {
