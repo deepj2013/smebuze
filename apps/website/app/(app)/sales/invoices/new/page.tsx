@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
 import { useToast } from '@/app/(app)/components/ToastContext';
+import NumberField from '@/app/(app)/components/NumberField';
+import { defaultItemRate, lookupCustomerRate, splitItemGst, type PricedItem } from '@/lib/item-pricing';
 
 interface Company { id: string; name: string }
 interface Branch { id: string; name: string }
@@ -14,15 +16,7 @@ interface Vendor { id: string; name: string }
 interface SalesOrderOption { id:string; number:string; customer_id?:string|null; status:string; lines?:Array<{item_id?:string|null;description?:string|null;quantity:string;unit:string;rate:string;item?:{name:string;sku?:string|null;hsn_sac?:string|null}}> }
 
 interface SearchItem { id: string; name: string; sku: string | null; category?: string | null }
-interface FullItem {
-  id: string;
-  name: string;
-  sku: string | null;
-  description?: string | null;
-  unit?: string;
-  hsn_sac?: string | null;
-  image_urls?: string[];
-}
+interface FullItem extends PricedItem {}
 
 type PaymentTermKey = 'due_on_receipt' | 'net_15' | 'net_30' | 'net_45' | 'custom';
 
@@ -52,16 +46,17 @@ interface LineRow {
   rate: number;
   cgst_rate: number;
   sgst_rate: number;
+  customer_rate?: boolean;
 }
 
-const emptyLine = (): LineRow => ({
+const emptyLine = (gst = { cgst: 9, sgst: 9 }): LineRow => ({
   hsn_sac: '9983',
   description: '',
   qty: 1,
   unit: 'pcs',
   rate: 0,
-  cgst_rate: 9,
-  sgst_rate: 9,
+  cgst_rate: gst.cgst,
+  sgst_rate: gst.sgst,
 });
 
 export default function NewInvoicePage() {
@@ -90,7 +85,17 @@ export default function NewInvoicePage() {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [salesOrders,setSalesOrders]=useState<SalesOrderOption[]>([]);
   const [salesOrderId,setSalesOrderId]=useState('');
-  useEffect(()=>{const id=searchParams?.get('sales_order_id');if(id&&salesOrders.some(x=>x.id===id)){const o=salesOrders.find(x=>x.id===id)!;setSalesOrderId(id);setCustomerId(o.customer_id||'');setVendorId('');setLines((o.lines||[]).map(l=>({item_id:l.item_id||undefined,item_sku:l.item?.sku,item_name:l.item?.name,hsn_sac:l.item?.hsn_sac||'22019010',description:l.description||l.item?.name||'Item',qty:Number(l.quantity),unit:l.unit||'pcs',rate:Number(l.rate),cgst_rate:9,sgst_rate:9}))) }},[searchParams,salesOrders]);
+  const [defaultGst, setDefaultGst] = useState({ cgst: 9, sgst: 9 });
+  useEffect(() => {
+    apiGet<{ tenant?: { slug?: string; settings?: { business_type?: string } } }>('auth/me').then(({ data }) => {
+      const t = data?.tenant;
+      if (t?.slug === 'ice-crest' || t?.settings?.business_type === 'ice_crest') {
+        setDefaultGst({ cgst: 2.5, sgst: 2.5 });
+        setLines((prev) => prev.map((l) => (l.item_id ? l : { ...l, cgst_rate: 2.5, sgst_rate: 2.5 })));
+      }
+    });
+  }, []);
+  useEffect(()=>{const id=searchParams?.get('sales_order_id');if(id&&salesOrders.some(x=>x.id===id)){const o=salesOrders.find(x=>x.id===id)!;setSalesOrderId(id);setCustomerId(o.customer_id||'');setVendorId('');setLines((o.lines||[]).map(l=>({item_id:l.item_id||undefined,item_sku:l.item?.sku,item_name:l.item?.name,hsn_sac:l.item?.hsn_sac||'22019010',description:l.description||l.item?.name||'Item',qty:Number(l.quantity),unit:l.unit||'pcs',rate:Number(l.rate),cgst_rate:defaultGst.cgst,sgst_rate:defaultGst.sgst}))) }},[searchParams,salesOrders,defaultGst]);
 
   // Derive due date from payment term and invoice date
   useEffect(() => {
@@ -105,6 +110,24 @@ export default function NewInvoicePage() {
     apiGet<{ credit_limit?: string }>(`crm/customers/${customerId}`).then(({ data }) => {
       setCustomerCreditLimit(data?.credit_limit != null ? parseFloat(data.credit_limit) : null);
     }).catch(() => setCustomerCreditLimit(null));
+  }, [customerId]);
+
+  useEffect(() => {
+    if (!customerId) return;
+    let cancelled = false;
+    apiGet<Array<{ item_id: string; rate: string }>>(`crm/customers/${customerId}/item-rates`).then(({ data }) => {
+      if (cancelled || !data?.length) return;
+      const map: Record<string, number> = {};
+      for (const r of data) map[r.item_id] = Number(r.rate);
+      setLines((prev) =>
+        prev.map((l) =>
+          l.item_id && map[l.item_id] != null && Number.isFinite(map[l.item_id])
+            ? { ...l, rate: map[l.item_id], customer_rate: true }
+            : l,
+        ),
+      );
+    });
+    return () => { cancelled = true; };
   }, [customerId]);
 
   useEffect(() => {
@@ -135,7 +158,7 @@ export default function NewInvoicePage() {
     });
   }, [companyId]);
 
-  const addLine = () => setLines((prev) => [...prev, emptyLine()]);
+  const addLine = () => setLines((prev) => [...prev, emptyLine(defaultGst)]);
 
   const updateLine = (i: number, field: keyof LineRow, value: string | number) => {
     setLines((prev) =>
@@ -143,7 +166,10 @@ export default function NewInvoicePage() {
     );
   };
 
-  const setLineFromItem = useCallback((lineIndex: number, item: FullItem) => {
+  const setLineFromItem = useCallback(async (lineIndex: number, item: FullItem) => {
+    const gst = splitItemGst(item);
+    const custom = await lookupCustomerRate(customerId, item.id);
+    const rate = custom ?? defaultItemRate(item);
     setLines((prev) =>
       prev.map((line, idx) =>
         idx === lineIndex
@@ -156,11 +182,15 @@ export default function NewInvoicePage() {
               hsn_sac: item.hsn_sac ?? line.hsn_sac,
               description: item.description ?? item.name ?? line.description,
               unit: item.unit ?? line.unit,
+              rate: Number.isFinite(rate) ? rate : line.rate,
+              cgst_rate: gst.cgst,
+              sgst_rate: gst.sgst,
+              customer_rate: custom != null,
             }
           : line
       )
     );
-  }, []);
+  }, [customerId]);
 
   const removeLine = (i: number) => {
     if (lines.length <= 1) return;
@@ -176,6 +206,21 @@ export default function NewInvoicePage() {
     if (customerId && vendorId) {
       setError('Select only one: Customer or Vendor.');
       return;
+    }
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (!Number.isFinite(l.qty) || l.qty <= 0) {
+        setError(`Line ${i + 1}: quantity must be greater than 0`);
+        return;
+      }
+      if (!Number.isFinite(l.rate) || l.rate < 0) {
+        setError(`Line ${i + 1}: rate must be a number 0 or greater`);
+        return;
+      }
+      if (!Number.isFinite(l.cgst_rate) || l.cgst_rate < 0 || l.cgst_rate > 100 || !Number.isFinite(l.sgst_rate) || l.sgst_rate < 0 || l.sgst_rate > 100) {
+        setError(`Line ${i + 1}: CGST and SGST must be between 0 and 100`);
+        return;
+      }
     }
     setError(null);
     setLoading(true);
@@ -226,7 +271,7 @@ export default function NewInvoicePage() {
       )}
       <form onSubmit={submit} className="space-y-6 max-w-5xl">
         <div className="rounded-xl border border-slate-200 bg-white p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="sm:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Invoice reserved sales order (recommended)</label><select value={salesOrderId} onChange={e=>{const id=e.target.value;setSalesOrderId(id);const o=salesOrders.find(x=>x.id===id);if(o){setCustomerId(o.customer_id||'');setVendorId('');setLines((o.lines||[]).map(l=>({item_id:l.item_id||undefined,item_sku:l.item?.sku,item_name:l.item?.name,hsn_sac:l.item?.hsn_sac||'22019010',description:l.description||l.item?.name||'Item',qty:Number(l.quantity),unit:l.unit||'pcs',rate:Number(l.rate),cgst_rate:9,sgst_rate:9})));}}} className="w-full rounded border border-slate-300 px-3 py-2 text-sm"><option value="">Direct invoice — use unreserved stock</option>{salesOrders.map(o=><option key={o.id} value={o.id}>{o.number} — {o.status}</option>)}</select><p className="mt-1 text-xs text-slate-500">Linked invoices consume the order reservation atomically and never deduct twice.</p></div>
+          <div className="sm:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Invoice reserved sales order (recommended)</label><select value={salesOrderId} onChange={e=>{const id=e.target.value;setSalesOrderId(id);const o=salesOrders.find(x=>x.id===id);if(o){setCustomerId(o.customer_id||'');setVendorId('');setLines((o.lines||[]).map(l=>({item_id:l.item_id||undefined,item_sku:l.item?.sku,item_name:l.item?.name,hsn_sac:l.item?.hsn_sac||'22019010',description:l.description||l.item?.name||'Item',qty:Number(l.quantity),unit:l.unit||'pcs',rate:Number(l.rate),cgst_rate:defaultGst.cgst,sgst_rate:defaultGst.sgst})));}}} className="w-full rounded border border-slate-300 px-3 py-2 text-sm"><option value="">Direct invoice — use unreserved stock</option>{salesOrders.map(o=><option key={o.id} value={o.id}>{o.number} — {o.status}</option>)}</select><p className="mt-1 text-xs text-slate-500">Linked invoices consume the order reservation atomically and never deduct twice.</p></div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Company *</label>
             <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm">
@@ -335,11 +380,14 @@ export default function NewInvoicePage() {
                     </td>
                     <td className="py-1 pr-2"><input type="text" value={line.hsn_sac} onChange={(e) => updateLine(i, 'hsn_sac', e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1 text-sm" /></td>
                     <td className="py-1 pr-2"><input type="text" value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} className="w-full min-w-[120px] rounded border border-slate-300 px-2 py-1 text-sm" placeholder="Description" /></td>
-                    <td className="py-1 pr-2"><input type="number" min={0} step={1} value={line.qty} onChange={(e) => updateLine(i, 'qty', parseFloat(e.target.value) || 0)} className="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right" /></td>
-                    <td className="py-1 pr-2"><input type="text" value={line.unit} onChange={(e) => updateLine(i, 'unit', e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1 text-sm" /></td>
-                    <td className="py-1 pr-2"><input type="number" min={0} step={0.01} value={line.rate} onChange={(e) => updateLine(i, 'rate', parseFloat(e.target.value) || 0)} className="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right" /></td>
-                    <td className="py-1 pr-2"><input type="number" min={0} step={0.01} value={line.cgst_rate} onChange={(e) => updateLine(i, 'cgst_rate', parseFloat(e.target.value) || 0)} className="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right" /></td>
-                    <td className="py-1 pr-2"><input type="number" min={0} step={0.01} value={line.sgst_rate} onChange={(e) => updateLine(i, 'sgst_rate', parseFloat(e.target.value) || 0)} className="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right" /></td>
+                    <td className="py-1 pr-2 min-w-[5.5rem]"><NumberField min={0} step="0.01" value={line.qty} onNumber={(n) => updateLine(i, 'qty', n)} aria-label={`Line ${i + 1} quantity`} /></td>
+                    <td className="py-1 pr-2"><input type="text" value={line.unit} onChange={(e) => updateLine(i, 'unit', e.target.value)} className="w-full rounded border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 min-h-[44px]" /></td>
+                    <td className="py-1 pr-2 min-w-[6rem]">
+                      <NumberField min={0} step="0.01" value={line.rate} onNumber={(n) => updateLine(i, 'rate', n)} aria-label={`Line ${i + 1} rate`} />
+                      {line.customer_rate && <p className="text-[10px] text-cyan-700 mt-0.5">Customer rate</p>}
+                    </td>
+                    <td className="py-1 pr-2 min-w-[5.5rem]"><NumberField min={0} max={100} step="0.01" value={line.cgst_rate} onNumber={(n) => updateLine(i, 'cgst_rate', n)} aria-label={`Line ${i + 1} CGST`} /></td>
+                    <td className="py-1 pr-2 min-w-[5.5rem]"><NumberField min={0} max={100} step="0.01" value={line.sgst_rate} onNumber={(n) => updateLine(i, 'sgst_rate', n)} aria-label={`Line ${i + 1} SGST`} /></td>
                     <td className="py-1"><button type="button" onClick={() => removeLine(i)} className="text-red-600 text-xs hover:underline">Remove</button></td>
                   </tr>
                 ))}
@@ -350,9 +398,9 @@ export default function NewInvoicePage() {
 
         <div className="rounded-xl border border-slate-200 bg-white p-5 grid gap-4 sm:grid-cols-4">
           <label className="text-sm font-medium text-slate-700 flex items-center gap-2"><input type="checkbox" checked={gstApplicable} onChange={(e) => setGstApplicable(e.target.checked)} /> GST customer</label>
-          <label className="text-sm text-slate-700">Shipping charges<input type="number" min="0" step="0.01" value={shippingCharges} onChange={(e)=>setShippingCharges(Number(e.target.value))} className="mt-1 w-full rounded border border-slate-300 px-3 py-2" /></label>
-          <label className="text-sm text-slate-700">Other charges<input type="number" min="0" step="0.01" value={otherCharges} onChange={(e)=>setOtherCharges(Number(e.target.value))} className="mt-1 w-full rounded border border-slate-300 px-3 py-2" /></label>
-          <label className="text-sm text-slate-700">Discount<input type="number" min="0" step="0.01" value={discountAmount} onChange={(e)=>setDiscountAmount(Number(e.target.value))} className="mt-1 w-full rounded border border-slate-300 px-3 py-2" /></label>
+          <label className="text-sm text-slate-700">Shipping charges<NumberField min={0} step="0.01" value={shippingCharges} onNumber={setShippingCharges} className="mt-1" /></label>
+          <label className="text-sm text-slate-700">Other charges<NumberField min={0} step="0.01" value={otherCharges} onNumber={setOtherCharges} className="mt-1" /></label>
+          <label className="text-sm text-slate-700">Discount<NumberField min={0} step="0.01" value={discountAmount} onNumber={setDiscountAmount} className="mt-1" /></label>
         </div>
         <div className="flex gap-2">
           <button type="submit" disabled={loading} className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50">Create invoice</button>
@@ -394,7 +442,7 @@ function ItemSearchCell({
 
   const loadSuggestedItems = useCallback(() => {
     setLoadingSuggested(true);
-    apiGet<SearchItem[] | { data: SearchItem[] }>('inventory/items')
+    apiGet<SearchItem[] | { data: SearchItem[] }>('inventory/items?purpose=sale')
       .then(({ data }) => {
         const raw = Array.isArray(data) ? data : (data as { data?: SearchItem[] })?.data ?? [];
         const list = raw.slice(0, 14).map((it: { id: string; name: string; sku?: string | null; category?: string | null }) => ({

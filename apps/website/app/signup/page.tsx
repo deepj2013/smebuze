@@ -4,15 +4,15 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { SIGNUP_BUSINESS_TYPES, type SignupBusinessTypeId } from '@/lib/business-types';
-import { quotePlan } from '@/lib/plans';
+import { quotePlan, formatInr, monthlyOffer } from '@/lib/plans';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
 const PLANS = [
-  { id: 'basic', name: 'Starter', price: '₹999/mo · 1 user' },
-  { id: 'advanced', name: 'Growth', price: '₹2,499/mo' },
-  { id: 'enterprise', name: 'Business', price: '₹4,999/mo' },
-  { id: 'ai_pro', name: 'Custom', price: 'Let’s talk' },
+  { id: 'basic', name: 'Starter' },
+  { id: 'advanced', name: 'Growth' },
+  { id: 'enterprise', name: 'Business' },
+  { id: 'ai_pro', name: 'Custom', custom: true },
 ];
 
 const INTERVALS = [
@@ -93,6 +93,10 @@ function SignupForm() {
 
   const handleSubmitStep3 = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (plan === 'ai_pro') {
+      router.push('/custom-plan');
+      return;
+    }
     setError(null);
     setLoading(true);
     try {
@@ -289,13 +293,28 @@ function SignupForm() {
                     >
                       <input type="radio" name="plan" value={p.id} checked={plan === p.id} onChange={() => setPlan(p.id)} className="sr-only" />
                       <span className="font-medium text-slate-900">{p.name}</span>
-                      <span className="text-xs text-slate-500">{p.price}</span>
+                      <span className="text-xs text-slate-500 text-right">
+                        {'custom' in p && p.custom
+                          ? 'Let’s talk'
+                          : monthlyOffer(p.id)
+                            ? (
+                              <>
+                                <span className="line-through text-slate-400 mr-1">{formatInr(monthlyOffer(p.id)!.list)}</span>
+                                {formatInr(monthlyOffer(p.id)!.sale)}/mo
+                              </>
+                            )
+                            : ''}
+                      </span>
                     </label>
                   ))}
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Billing interval</label>
+                {plan === 'ai_pro' ? (
+                  <p className="text-sm text-slate-500">Quoted after we hear what you need.</p>
+                ) : (
+                <>
                 <div className="flex gap-2">
                   {INTERVALS.map((i) => (
                     <label
@@ -315,7 +334,14 @@ function SignupForm() {
                     (save ₹{yearlyQuote.savings_rupees.toLocaleString('en-IN')}).
                   </p>
                 )}
+                </>
+                )}
               </div>
+              {plan === 'ai_pro' ? (
+                <p className="text-sm text-slate-600 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  Custom packs are quoted by us. Next you will send a short message to the SMEBUZE team.
+                </p>
+              ) : (
               <label className="flex items-start gap-2 cursor-pointer rounded-xl border border-brand-200 bg-brand-50 p-3">
                 <input type="checkbox" checked={trial} onChange={(e) => setTrial(e.target.checked)} className="mt-0.5 rounded border-slate-300 text-brand-600" />
                 <span className="text-sm text-slate-700">
@@ -323,6 +349,7 @@ function SignupForm() {
                   <span className="block text-slate-600 mt-0.5">No payment today. Full access to the plan you pick. After 7 days, continue on that plan or write to us to customise.</span>
                 </span>
               </label>
+              )}
               {error && (
                 <div className="p-3 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>
               )}
@@ -331,7 +358,7 @@ function SignupForm() {
                   Back
                 </button>
                 <button type="submit" disabled={loading} className="flex-1 rounded-lg bg-brand-600 text-white py-3 sm:py-2.5 font-semibold hover:bg-brand-700 disabled:opacity-50 min-h-[48px]">
-                  {loading ? 'Creating…' : trial ? 'Start 7-day free trial' : 'Create workspace'}
+                  {loading ? 'Creating…' : plan === 'ai_pro' ? 'Send a message' : trial ? 'Start 7-day free trial' : 'Create workspace'}
                 </button>
               </div>
             </form>

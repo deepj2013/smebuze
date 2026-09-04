@@ -31,7 +31,13 @@ export class MailService {
     return this.config.get('MAIL_FROM') || 'SMEBUZE <support@smebuze.com>';
   }
 
-  async sendHtml(to: string, subject: string, html: string, text?: string): Promise<{ sent: boolean }> {
+  async sendHtml(
+    to: string,
+    subject: string,
+    html: string,
+    text?: string,
+    extras?: { replyTo?: string },
+  ): Promise<{ sent: boolean }> {
     const transport = this.getTransporter();
     if (!transport) {
       this.log.warn(`SMTP not configured; skip mail to ${to}: ${subject}`);
@@ -44,6 +50,7 @@ export class MailService {
         subject,
         html,
         text: text || subject,
+        replyTo: extras?.replyTo,
       });
       this.log.log(`Sent "${subject}" to ${to}`);
       return { sent: true };

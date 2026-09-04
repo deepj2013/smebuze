@@ -5,6 +5,7 @@ import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import { apiGet, apiPost } from '@/lib/api';
 import { quotePlan, YEARLY_DISCOUNT_PERCENT } from '@/lib/plans';
+import CustomPlanEnquiry from '@/app/components/CustomPlanEnquiry';
 
 type BillingStatus = {
   tenant_name: string;
@@ -19,7 +20,7 @@ type BillingStatus = {
   ends_at: string | null;
   days_left: number | null;
   prices: Record<string, number>;
-  plans: Array<{ id: string; label: string; monthly_rupees: number }>;
+  plans: Array<{ id: string; label: string; monthly_rupees: number; list_rupees?: number }>;
   intervals: Array<{ id: string; label: string; months: number; discount_percent?: number }>;
   yearly_discount_percent?: number;
   gateways: { razorpay: boolean; phonepe: boolean };
@@ -219,7 +220,12 @@ export default function BillingPage() {
                     >
                       <input type="radio" className="sr-only" name="plan" checked={plan === p.id} onChange={() => setPlan(p.id)} />
                       <span className="font-semibold">{p.label}</span>
-                      <span className="block text-xs text-slate-500">{inr(p.monthly_rupees)}/mo</span>
+                      <span className="block text-xs text-slate-500">
+                        {p.list_rupees && p.list_rupees > p.monthly_rupees && (
+                          <span className="line-through text-slate-400 mr-1">{inr(p.list_rupees)}</span>
+                        )}
+                        {inr(p.monthly_rupees)}/mo
+                      </span>
                     </label>
                   ))}
                 </div>
@@ -248,10 +254,12 @@ export default function BillingPage() {
                   {quote ? inr(quote.amount_rupees) : '—'}
                   <span className="ml-2 text-sm font-normal text-slate-500">for {INTERVAL_HINT[interval] || interval}</span>
                 </p>
-                {quote && quote.discount_percent > 0 && (
+                {quote && quote.savings_rupees > 0 && (
                   <p className="mt-1 text-sm text-emerald-700">
                     <span className="line-through text-slate-400 mr-2">{inr(quote.list_rupees)}</span>
-                    {quote.discount_percent}% off yearly — you save {inr(quote.savings_rupees)}
+                    You save {inr(quote.savings_rupees)}
+                    {quote.discount_percent > 0 ? ` (${quote.discount_percent}% off)` : ''}
+                    {interval === 'yearly' ? ` including ${yearlyOff}% yearly` : ''}
                   </p>
                 )}
               </div>
@@ -281,10 +289,10 @@ export default function BillingPage() {
               )}
             </>
           ) : (
-            <p className="text-sm text-slate-700">
-              Custom plans are quoted by SMEBUZE. Write to{' '}
-              <a className="font-medium text-brand-700 underline" href={`mailto:${status.support_email}`}>{status.support_email}</a>.
-            </p>
+            <div className="space-y-3">
+              <p className="text-sm text-slate-700">Custom plans are quoted by SMEBUZE. Send a message and we will reply.</p>
+              <CustomPlanEnquiry compact />
+            </div>
           )}
         </div>
       )}

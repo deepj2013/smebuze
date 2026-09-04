@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { CrmService } from './crm.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentTenant } from '../common/tenant-context';
@@ -68,6 +68,42 @@ export class CrmController {
   @RequirePermissions('crm.customer.create')
   async updateCustomer(@Param('id') id: string, @Body() body: Record<string, unknown>, @CurrentTenant() ctx: TenantContext) {
     return this.crmService.updateCustomer(id, body as Parameters<CrmService['updateCustomer']>[1], ctx);
+  }
+
+  @Get('item-rates')
+  @RequirePermissions('crm.customer.view')
+  async getItemRate(
+    @Query('customer_id') customerId: string,
+    @Query('item_id') itemId: string,
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.crmService.findItemRate(customerId, itemId, ctx);
+  }
+
+  @Get('customers/:id/item-rates')
+  @RequirePermissions('crm.customer.view')
+  async listCustomerItemRates(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
+    return this.crmService.listCustomerItemRates(id, ctx);
+  }
+
+  @Put('customers/:id/item-rates')
+  @RequirePermissions('crm.customer.create')
+  async upsertCustomerItemRate(
+    @Param('id') id: string,
+    @Body() body: { item_id: string; rate: number },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.crmService.upsertCustomerItemRate(id, body, ctx);
+  }
+
+  @Delete('customers/:id/item-rates/:itemId')
+  @RequirePermissions('crm.customer.create')
+  async deleteCustomerItemRate(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.crmService.deleteCustomerItemRate(id, itemId, ctx);
   }
 
   @Post('follow-ups')

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { Public } from '../common/decorators/public';
 import { SkipSubscription } from '../common/decorators/skip-subscription';
@@ -8,6 +8,7 @@ import { TenantGuard } from '../common/guards/tenant.guard';
 import { CurrentTenant, TenantContext } from '../common/tenant-context';
 import { BillingService } from './billing.service';
 import { BillingPayDto, RazorpayConfirmDto } from './dto/billing-pay.dto';
+import { CustomPlanEnquiryDto } from './dto/custom-plan-enquiry.dto';
 
 @Controller('billing')
 @SkipSubscription()
@@ -42,6 +43,13 @@ export class BillingController {
   @UseGuards(JwtAuthGuard, TenantGuard)
   phonepeStatus(@CurrentTenant() ctx: TenantContext, @Query('txn') txn: string) {
     return this.billing.phonePeStatus(ctx, txn);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 6, ttl: 60000 } })
+  @Post('custom-enquiry')
+  customEnquiry(@Body() body: CustomPlanEnquiryDto) {
+    return this.billing.captureCustomEnquiry(body);
   }
 
   @Public()

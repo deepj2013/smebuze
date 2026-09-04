@@ -32,6 +32,8 @@ import {
 import MarketingChrome from './components/MarketingChrome';
 import SiteFooter from './components/SiteFooter';
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, SUPPORT_EMAIL } from '@/lib/site';
+import { formatInr, monthlyOffer } from '@/lib/plans';
+import CustomPlanEnquiry from './components/CustomPlanEnquiry';
 
 const jsonLd = {
   '@context': 'https://schema.org',
@@ -294,7 +296,7 @@ export default function Home() {
             </p>
             <div className="mt-6 flex justify-center">
               <Link
-                href="/signup?plan=ai_pro"
+                href="/custom-plan"
                 className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-brand-500/20 hover:bg-brand-700 min-h-[48px]"
               >
                 Try AI on Custom
@@ -309,14 +311,13 @@ export default function Home() {
             <p className="text-center text-xs font-semibold uppercase tracking-widest text-brand-600">Pricing that grows with you</p>
             <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 text-center mt-2">Start with 7 days free. Upgrade when it fits.</h2>
             <p className="mt-2 text-slate-600 text-center max-w-2xl mx-auto text-sm sm:text-base">
-              Every new workspace begins with a full 7-day trial — no card, no salesman. Starter is built for one person and one company. Pay yearly and save 15%. Add seats, companies and modules when you are ready, or tell us how you work and we will tailor it.
+              Every new workspace begins with a full 7-day trial — no card, no salesman. Starter, Growth and Business show the list price with the launch discount already applied. Pay yearly and save another 15%. Need a custom pack? Send us a message.
             </p>
             <div className="mt-10 sm:mt-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
               {[
                 {
                   id: 'basic',
                   name: 'Starter',
-                  price: '₹999',
                   period: '/month',
                   badge: 'For you',
                   desc: 'One user. One company. The full desk to run sales and stock.',
@@ -335,7 +336,6 @@ export default function Home() {
                 {
                   id: 'advanced',
                   name: 'Growth',
-                  price: '₹2,499',
                   period: '/month',
                   badge: 'Most chosen',
                   desc: 'When the team joins and the pipeline gets busy.',
@@ -353,7 +353,6 @@ export default function Home() {
                 {
                   id: 'enterprise',
                   name: 'Business',
-                  price: '₹4,999',
                   period: '/month',
                   badge: 'Scale',
                   desc: 'More companies, tighter books, roles that match the floor.',
@@ -403,11 +402,25 @@ export default function Home() {
                   <h3 className="mt-3 text-xl font-bold text-slate-900 font-display">{plan.name}</h3>
                   <p className="mt-1 text-slate-600 text-sm min-h-[2.5rem]">{plan.desc}</p>
                   <p className="mt-4 font-display font-bold text-slate-900">
-                    <span className={plan.custom ? 'text-2xl' : 'text-3xl'}>{plan.price}</span>
-                    {plan.period && <span className="text-base font-normal text-slate-500">{plan.period}</span>}
+                    {plan.custom ? (
+                      <span className="text-2xl">Let’s talk</span>
+                    ) : (
+                      <>
+                        <span className="text-3xl">{formatInr(monthlyOffer(plan.id)!.sale)}</span>
+                        {plan.period && <span className="text-base font-normal text-slate-500">{plan.period}</span>}
+                      </>
+                    )}
                   </p>
+                  {!plan.custom && monthlyOffer(plan.id) && (
+                    <p className="mt-1 text-sm">
+                      <span className="line-through text-slate-400">{formatInr(monthlyOffer(plan.id)!.list)}</span>
+                      <span className="ml-2 font-semibold text-emerald-700">
+                        Save {formatInr(monthlyOffer(plan.id)!.savings)} · {monthlyOffer(plan.id)!.discount_percent}% off
+                      </span>
+                    </p>
+                  )}
                   {!plan.custom && (
-                    <p className="mt-1 text-xs font-medium text-emerald-700">Save 15% when you pay yearly</p>
+                    <p className="mt-1 text-xs font-medium text-emerald-800">Save another 15% when you pay yearly</p>
                   )}
                   <ul className="mt-5 space-y-2 text-sm text-slate-600 flex-1">
                     {plan.features.map((f) => (
@@ -418,7 +431,7 @@ export default function Home() {
                     ))}
                   </ul>
                   <Link
-                    href={plan.custom ? '/signup?plan=ai_pro' : `/signup?plan=${plan.id}`}
+                    href={plan.custom ? '/custom-plan' : `/signup?plan=${plan.id}`}
                     className={`mt-6 block w-full rounded-xl py-3.5 sm:py-2.5 text-center font-semibold transition-colors min-h-[48px] flex items-center justify-center ${
                       plan.highlight ? 'bg-brand-600 text-white hover:bg-brand-700' : plan.custom ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
                     }`}
@@ -427,6 +440,14 @@ export default function Home() {
                   </Link>
                 </div>
               ))}
+            </div>
+
+            <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 sm:p-8">
+              <h3 className="font-display text-xl font-bold text-slate-900">Need a custom plan?</h3>
+              <p className="mt-1 text-sm text-slate-600">Send a message. It goes to the SMEBUZE team — we will quote seats, companies and modules.</p>
+              <div className="mt-5 max-w-xl">
+                <CustomPlanEnquiry compact />
+              </div>
             </div>
 
             <div className="mt-10 sm:mt-12 rounded-2xl border border-brand-200 bg-white p-5 sm:p-8 shadow-sm">
@@ -457,7 +478,7 @@ export default function Home() {
               </div>
               <p className="mt-5 text-center text-sm text-slate-500">
                 Need a number for extra users or a custom pack?{' '}
-                <a href={`mailto:${SUPPORT_EMAIL}`} className="font-semibold text-brand-700 hover:underline">Talk to us</a>
+                <Link href="/custom-plan" className="font-semibold text-brand-700 hover:underline">Send us a message</Link>
                 {' · '}
                 <Link href="/signup" className="font-semibold text-brand-700 hover:underline">Start a 7-day free trial</Link>
               </p>
@@ -571,12 +592,12 @@ export default function Home() {
               >
                 Start 7-day free trial
               </Link>
-              <a
-                href={`mailto:${SUPPORT_EMAIL}?subject=Customise%20SMEBUZE`}
+              <Link
+                href="/custom-plan"
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 bg-white px-6 py-4 sm:py-3.5 text-base font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50/50 transition-colors min-h-[52px] sm:min-h-0"
               >
                 Customise with us
-              </a>
+              </Link>
             </div>
           </div>
         </section>

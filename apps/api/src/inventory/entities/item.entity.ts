@@ -70,9 +70,23 @@ export class Item {
   @Column('decimal', { precision: 5, scale: 2, nullable: true })
   discount_percent: string | null;
 
-  /** Tax rate % applied on this item (e.g. 0, 5, 12, 18, 28 for GST). Used for tax calculation. */
+  /** Combined GST % (cgst_rate + sgst_rate). Used by POS and older clients. */
   @Column('decimal', { precision: 5, scale: 2, default: 0 })
   tax_rate: string;
+
+  @Column('decimal', { precision: 5, scale: 2, nullable: true })
+  cgst_rate: string | null;
+
+  @Column('decimal', { precision: 5, scale: 2, nullable: true })
+  sgst_rate: string | null;
+
+  /** When true, item appears on invoices, orders and quotations. */
+  @Column({ default: true })
+  for_sale: boolean;
+
+  /** When true, item can be consumed via stock movements / production. */
+  @Column({ default: true })
+  for_consume: boolean;
 
   @Column({ type: 'varchar', length: 20, default: 'fifo' })
   valuation_method: string;

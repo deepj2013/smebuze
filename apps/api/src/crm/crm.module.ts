@@ -5,6 +5,8 @@ import { Customer } from './entities/customer.entity';
 import { FollowUp } from './entities/follow-up.entity';
 import { ContactCategory } from './entities/contact-category.entity';
 import { MessageTemplate } from './entities/message-template.entity';
+import { CustomerItemRate } from './entities/customer-item-rate.entity';
+import { Item } from '../inventory/entities/item.entity';
 import { CrmService } from './crm.service';
 import { CrmController } from './crm.controller';
 import { CampaignService } from './campaign.service';
@@ -13,7 +15,7 @@ import { SalesModule } from '../sales/sales.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Lead, Customer, FollowUp, ContactCategory, MessageTemplate]),
+    TypeOrmModule.forFeature([Lead, Customer, FollowUp, ContactCategory, MessageTemplate, CustomerItemRate, Item]),
     SalesModule,
   ],
   controllers: [CrmController, CampaignController],

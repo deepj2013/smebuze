@@ -4,14 +4,16 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
+import NumberField from '@/app/(app)/components/NumberField';
+import { defaultItemRate, lookupCustomerRate, splitItemGst, type PricedItem } from '@/lib/item-pricing';
 
 interface Company { id: string; name: string }
 interface Branch { id: string; name: string }
 interface Customer { id: string; name: string }
 interface Lead { id: string; name: string }
-interface Item { id: string; name: string; sale_price?: string }
+interface Item extends PricedItem {}
 
-interface LineRow { item_id?: string; description: string; qty: number; unit: string; rate: number; tax_rate: number }
+interface LineRow { item_id?: string; description: string; qty: number; unit: string; rate: number; tax_rate: number; customer_rate?: boolean }
 
 export default function NewQuotationPage() {
   const router = useRouter();
@@ -36,7 +38,7 @@ export default function NewQuotationPage() {
         apiGet<Company[] | { data: Company[] }>('organization/companies'),
         apiGet<Customer[] | { data: Customer[] }>('crm/customers'),
         apiGet<Lead[] | { data: Lead[] }>('crm/leads'),
-        apiGet<Item[] | { data: Item[] }>('inventory/items'),
+        apiGet<Item[] | { data: Item[] }>('inventory/items?purpose=sale'),
       ]);
       const cList = Array.isArray(cRes.data) ? cRes.data : (cRes.data as { data?: Company[] })?.data ?? [];
       const custList = Array.isArray(custRes.data) ? custRes.data : (custRes.data as { data?: Customer[] })?.data ?? [];
@@ -58,6 +60,24 @@ export default function NewQuotationPage() {
       setBranchId(list[0]?.id ?? '');
     });
   }, [companyId]);
+
+  useEffect(() => {
+    if (!customerId) return;
+    let cancelled = false;
+    apiGet<Array<{ item_id: string; rate: string }>>(`crm/customers/${customerId}/item-rates`).then(({ data }) => {
+      if (cancelled || !data?.length) return;
+      const map: Record<string, number> = {};
+      for (const r of data) map[r.item_id] = Number(r.rate);
+      setLines((prev) =>
+        prev.map((l) =>
+          l.item_id && map[l.item_id] != null && Number.isFinite(map[l.item_id])
+            ? { ...l, rate: map[l.item_id], customer_rate: true }
+            : l,
+        ),
+      );
+    });
+    return () => { cancelled = true; };
+  }, [customerId]);
 
   const addLine = () => setLines((p) => [...p, { description: '', qty: 1, unit: 'pcs', rate: 0, tax_rate: 0 }]);
   const updateLine = (i: number, field: keyof LineRow, value: string | number) => {
@@ -155,7 +175,24 @@ export default function NewQuotationPage() {
               <div key={i} className="flex flex-wrap gap-2 items-end border-b border-slate-100 pb-2">
                 <div className="w-40">
                   <label className="block text-xs text-slate-500 mb-0.5">Item</label>
-                  <select value={line.item_id ?? ''} onChange={(e) => updateLine(i, 'item_id', e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm">
+                  <select
+                    value={line.item_id ?? ''}
+                    onChange={async (e) => {
+                      const item = items.find((it) => it.id === e.target.value);
+                      const gst = item ? splitItemGst(item) : { tax: line.tax_rate };
+                      const custom = item ? await lookupCustomerRate(customerId, item.id) : null;
+                      const rate = custom ?? (item ? defaultItemRate(item) : line.rate);
+                      setLines((p) => p.map((l, idx) => idx === i ? {
+                        ...l,
+                        item_id: e.target.value,
+                        description: l.description || item?.name || '',
+                        rate,
+                        tax_rate: gst.tax,
+                        customer_rate: custom != null,
+                      } : l));
+                    }}
+                    className="w-full rounded border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 min-h-[44px]"
+                  >
                     <option value="">—</option>
                     {items.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
                   </select>
@@ -164,21 +201,22 @@ export default function NewQuotationPage() {
                   <label className="block text-xs text-slate-500 mb-0.5">Description</label>
                   <input value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" placeholder="Description" />
                 </div>
-                <div className="w-16">
+                <div className="min-w-[5.5rem] flex-1">
                   <label className="block text-xs text-slate-500 mb-0.5">Qty</label>
-                  <input type="number" min={0} step={1} value={line.qty} onChange={(e) => updateLine(i, 'qty', e.target.valueAsNumber || 0)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+                  <NumberField min={0} step="0.01" value={line.qty} onNumber={(n) => updateLine(i, 'qty', n)} aria-label="Quantity" />
                 </div>
                 <div className="w-16">
                   <label className="block text-xs text-slate-500 mb-0.5">Unit</label>
-                  <input value={line.unit} onChange={(e) => updateLine(i, 'unit', e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+                  <input value={line.unit} onChange={(e) => updateLine(i, 'unit', e.target.value)} className="w-full rounded border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 min-h-[44px]" />
                 </div>
-                <div className="w-24">
+                <div className="min-w-[6rem] flex-1">
                   <label className="block text-xs text-slate-500 mb-0.5">Rate</label>
-                  <input type="number" min={0} step={0.01} value={line.rate} onChange={(e) => updateLine(i, 'rate', e.target.valueAsNumber || 0)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+                  <NumberField min={0} step="0.01" value={line.rate} onNumber={(n) => updateLine(i, 'rate', n)} aria-label="Rate" />
+                  {line.customer_rate && <p className="text-[10px] text-cyan-700 mt-0.5">Customer rate</p>}
                 </div>
-                <div className="w-16">
+                <div className="min-w-[5.5rem] flex-1">
                   <label className="block text-xs text-slate-500 mb-0.5">Tax %</label>
-                  <input type="number" min={0} step={0.01} value={line.tax_rate} onChange={(e) => updateLine(i, 'tax_rate', e.target.valueAsNumber || 0)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+                  <NumberField min={0} max={100} step="0.01" value={line.tax_rate} onNumber={(n) => updateLine(i, 'tax_rate', n)} aria-label="Tax percent" />
                 </div>
                 <button type="button" onClick={() => removeLine(i)} className="text-red-600 text-sm hover:underline">Remove</button>
               </div>

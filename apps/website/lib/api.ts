@@ -70,6 +70,14 @@ export async function apiPatch<T = unknown>(path: string, body: unknown) {
   return api<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
+export async function apiPut<T = unknown>(path: string, body: unknown) {
+  return api<T>(path, { method: 'PUT', body: JSON.stringify(body) });
+}
+
+export async function apiDelete<T = unknown>(path: string) {
+  return api<T>(path, { method: 'DELETE' });
+}
+
 /** Upload a file (e.g. image) via multipart/form-data. Returns { data?: T; error?: string }. */
 export async function apiUploadFile<T = { url: string }>(
   path: string,

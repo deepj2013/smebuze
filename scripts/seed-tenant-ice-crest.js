@@ -65,8 +65,8 @@ async function run() {
     const warehouseId = w.rows[0].id;
     for (const [sku,name,unit] of products) {
       let item = await db.query(`SELECT id FROM items WHERE tenant_id=$1 AND sku=$2 LIMIT 1`, [tenantId,sku]);
-      if (!item.rows.length) item = await db.query(`INSERT INTO items(tenant_id,company_id,sku,name,description,unit,category,hsn_sac,reorder_level,is_active) VALUES($1,$2,$3,$4,$5,$6,'Premium Ice','22019010',50,true) RETURNING id`, [tenantId,companyId,sku,name,name,unit]);
-      else await db.query(`UPDATE items SET name=$3::text,description=$4::text,unit=$5::varchar WHERE tenant_id=$1 AND sku=$2`, [tenantId,sku,name,name,unit]);
+      if (!item.rows.length) item = await db.query(`INSERT INTO items(tenant_id,company_id,sku,name,description,unit,category,hsn_sac,reorder_level,tax_rate,cgst_rate,sgst_rate,for_sale,for_consume,is_active) VALUES($1,$2,$3,$4,$5,$6,'Premium Ice','22019010',50,5,2.5,2.5,true,true,true) RETURNING id`, [tenantId,companyId,sku,name,name,unit]);
+      else await db.query(`UPDATE items SET name=$3::text,description=$4::text,unit=$5::varchar,tax_rate=5,cgst_rate=2.5,sgst_rate=2.5,for_sale=true,for_consume=true WHERE tenant_id=$1 AND sku=$2`, [tenantId,sku,name,name,unit]);
       await db.query(`INSERT INTO stock(tenant_id,warehouse_id,item_id,quantity,reserved) SELECT $1,$2,$3,0,0 WHERE NOT EXISTS(SELECT 1 FROM stock WHERE tenant_id=$1 AND warehouse_id=$2 AND item_id=$3)`, [tenantId,warehouseId,item.rows[0].id]);
     }
     let role = await db.query(`SELECT id FROM roles WHERE tenant_id=$1 AND slug='tenant_admin'`, [tenantId]);

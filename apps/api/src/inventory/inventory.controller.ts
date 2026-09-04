@@ -74,16 +74,18 @@ export class InventoryController {
   async getItems(
     @Query('with_stock') withStock: string | undefined,
     @Query('barcode') barcode: string | undefined,
+    @Query('purpose') purpose: string | undefined,
     @CurrentTenant() ctx: TenantContext,
   ) {
     const wantStock = withStock === '1' || withStock === 'true';
+    const use = purpose === 'sale' || purpose === 'consume' ? purpose : undefined;
     if (barcode?.trim()) {
       return this.inventoryService.findItemsByCode(barcode.trim(), ctx, wantStock);
     }
     if (wantStock) {
-      return this.inventoryService.findItemsWithStock(ctx);
+      return this.inventoryService.findItemsWithStock(ctx, use);
     }
-    return this.inventoryService.findItems(ctx);
+    return this.inventoryService.findItems(ctx, use);
   }
 
   @Get('items/:id')

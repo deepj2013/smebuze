@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Warehouse } from './entities/warehouse.entity';
@@ -159,6 +159,58 @@ export class InventoryService {
     return `${skuPrefix}${String(maxNum + 1).padStart(5, '0')}`;
   }
 
+  private async iceCrestGstDefaults(tenantId: string): Promise<{ cgst: number; sgst: number } | null> {
+    const rows = (await this.itemRepo.manager.query(
+      `SELECT slug, settings FROM tenants WHERE id = $1 LIMIT 1`,
+      [tenantId],
+    )) as Array<{ slug?: string; settings?: Record<string, unknown> | string }>;
+    const t = rows?.[0];
+    if (!t) return null;
+    const settings = typeof t.settings === 'string' ? (JSON.parse(t.settings) as Record<string, unknown>) : t.settings;
+    if (t.slug === 'ice-crest' || settings?.business_type === 'ice_crest') return { cgst: 2.5, sgst: 2.5 };
+    return null;
+  }
+
+  private async resolveItemGst(
+    dto: { tax_rate?: number; cgst_rate?: number; sgst_rate?: number },
+    tenantId: string,
+    existing?: { tax_rate: string; cgst_rate: string | null; sgst_rate: string | null },
+  ): Promise<{ tax_rate: string; cgst_rate: string; sgst_rate: string }> {
+    const hasSplit = dto.cgst_rate !== undefined || dto.sgst_rate !== undefined;
+    if (hasSplit) {
+      const cgst = dto.cgst_rate !== undefined ? Number(dto.cgst_rate) : Number(existing?.cgst_rate ?? 0);
+      const sgst = dto.sgst_rate !== undefined ? Number(dto.sgst_rate) : Number(existing?.sgst_rate ?? 0);
+      if (!Number.isFinite(cgst) || cgst < 0 || cgst > 100 || !Number.isFinite(sgst) || sgst < 0 || sgst > 100) {
+        throw new BadRequestException('CGST and SGST must be between 0 and 100');
+      }
+      return { cgst_rate: String(cgst), sgst_rate: String(sgst), tax_rate: String(cgst + sgst) };
+    }
+    if (dto.tax_rate !== undefined) {
+      const tax = Number(dto.tax_rate);
+      if (!Number.isFinite(tax) || tax < 0 || tax > 100) {
+        throw new BadRequestException('Tax rate must be between 0 and 100');
+      }
+      return { tax_rate: String(tax), cgst_rate: String(tax / 2), sgst_rate: String(tax / 2) };
+    }
+    if (existing) {
+      const tax = Number(existing.tax_rate ?? 0);
+      return {
+        tax_rate: existing.tax_rate,
+        cgst_rate: existing.cgst_rate ?? String(tax / 2),
+        sgst_rate: existing.sgst_rate ?? String(tax / 2),
+      };
+    }
+    const ice = await this.iceCrestGstDefaults(tenantId);
+    if (ice) return { cgst_rate: String(ice.cgst), sgst_rate: String(ice.sgst), tax_rate: String(ice.cgst + ice.sgst) };
+    return { tax_rate: '0', cgst_rate: '0', sgst_rate: '0' };
+  }
+
+  private assertSaleOrConsume(forSale: boolean, forConsume: boolean) {
+    if (!forSale && !forConsume) {
+      throw new BadRequestException('Item must be marked for sale, for consume, or both');
+    }
+  }
+
   async createItem(
     dto: Partial<{
       name: string;
@@ -176,6 +228,10 @@ export class InventoryService {
       sale_price: number;
       discount_percent: number;
       tax_rate: number;
+      cgst_rate: number;
+      sgst_rate: number;
+      for_sale: boolean;
+      for_consume: boolean;
       opening_qty: number;
     }>,
     ctx: TenantContext,
@@ -183,6 +239,10 @@ export class InventoryService {
     const tenantId = this.assertTenantId(ctx);
     let sku = dto.sku?.trim() || null;
     if (!sku) sku = await this.generateNextSku(ctx);
+    const gst = await this.resolveItemGst(dto, tenantId);
+    const forSale = dto.for_sale !== undefined ? Boolean(dto.for_sale) : true;
+    const forConsume = dto.for_consume !== undefined ? Boolean(dto.for_consume) : true;
+    this.assertSaleOrConsume(forSale, forConsume);
     const item = this.itemRepo.create({
       tenant_id: tenantId,
       company_id: dto.company_id ?? null,
@@ -199,7 +259,11 @@ export class InventoryService {
       cost_price: dto.cost_price != null ? String(dto.cost_price) : null,
       sale_price: dto.sale_price != null ? String(dto.sale_price) : dto.mrp != null ? String(dto.mrp) : null,
       discount_percent: dto.discount_percent != null ? String(dto.discount_percent) : null,
-      tax_rate: dto.tax_rate != null ? String(dto.tax_rate) : '0',
+      tax_rate: gst.tax_rate,
+      cgst_rate: gst.cgst_rate,
+      sgst_rate: gst.sgst_rate,
+      for_sale: forSale,
+      for_consume: forConsume,
     });
     const saved = await this.itemRepo.save(item);
     if (dto.category?.trim()) await this.ensureCategory(dto.category, ctx);
@@ -210,9 +274,12 @@ export class InventoryService {
     return saved;
   }
 
-  async findItems(ctx: TenantContext) {
+  async findItems(ctx: TenantContext, purpose?: 'sale' | 'consume') {
     const tenantId = this.assertTenantId(ctx);
-    return this.itemRepo.find({ where: { tenant_id: tenantId }, order: { created_at: 'DESC' } });
+    const where: { tenant_id: string; for_sale?: boolean; for_consume?: boolean } = { tenant_id: tenantId };
+    if (purpose === 'sale') where.for_sale = true;
+    if (purpose === 'consume') where.for_consume = true;
+    return this.itemRepo.find({ where, order: { created_at: 'DESC' } });
   }
 
   /** Lookup by barcode or SKU (USB scanner / camera). */
@@ -236,9 +303,9 @@ export class InventoryService {
   }
 
   /** Items with current stock (sum of quantity across warehouses) for list/table. */
-  async findItemsWithStock(ctx: TenantContext): Promise<(Item & { current_stock: number })[]> {
+  async findItemsWithStock(ctx: TenantContext, purpose?: 'sale' | 'consume'): Promise<(Item & { current_stock: number })[]> {
     const tenantId = this.assertTenantId(ctx);
-    const items = await this.itemRepo.find({ where: { tenant_id: tenantId }, order: { created_at: 'DESC' } });
+    const items = await this.findItems(ctx, purpose);
     const stockList = await this.stockRepo.find({ where: { tenant_id: tenantId }, select: ['item_id', 'quantity'] });
     const byItem: Record<string, number> = {};
     for (const s of stockList) {
@@ -271,6 +338,10 @@ export class InventoryService {
       sale_price: number;
       discount_percent: number;
       tax_rate: number;
+      cgst_rate: number;
+      sgst_rate: number;
+      for_sale: boolean;
+      for_consume: boolean;
     }>,
     ctx: TenantContext,
   ) {
@@ -291,7 +362,19 @@ export class InventoryService {
     if (dto.cost_price !== undefined) item.cost_price = dto.cost_price != null ? String(dto.cost_price) : null;
     if (dto.sale_price !== undefined) item.sale_price = dto.sale_price != null ? String(dto.sale_price) : null;
     if (dto.discount_percent !== undefined) item.discount_percent = dto.discount_percent != null ? String(dto.discount_percent) : null;
-    if (dto.tax_rate !== undefined) item.tax_rate = dto.tax_rate != null ? String(dto.tax_rate) : '0';
+    if (dto.cgst_rate !== undefined || dto.sgst_rate !== undefined || dto.tax_rate !== undefined) {
+      const gst = await this.resolveItemGst(dto, item.tenant_id, item);
+      item.tax_rate = gst.tax_rate;
+      item.cgst_rate = gst.cgst_rate;
+      item.sgst_rate = gst.sgst_rate;
+    }
+    if (dto.for_sale !== undefined || dto.for_consume !== undefined) {
+      const forSale = dto.for_sale !== undefined ? Boolean(dto.for_sale) : item.for_sale;
+      const forConsume = dto.for_consume !== undefined ? Boolean(dto.for_consume) : item.for_consume;
+      this.assertSaleOrConsume(forSale, forConsume);
+      item.for_sale = forSale;
+      item.for_consume = forConsume;
+    }
     return this.itemRepo.save(item);
   }
 

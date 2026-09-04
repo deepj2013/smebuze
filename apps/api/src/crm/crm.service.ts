@@ -1,9 +1,11 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Lead } from './entities/lead.entity';
 import { Customer } from './entities/customer.entity';
 import { FollowUp } from './entities/follow-up.entity';
+import { CustomerItemRate } from './entities/customer-item-rate.entity';
+import { Item } from '../inventory/entities/item.entity';
 import { TenantContext } from '../common/tenant-context';
 import { SalesService } from '../sales/sales.service';
 
@@ -16,6 +18,10 @@ export class CrmService {
     private readonly customerRepo: Repository<Customer>,
     @InjectRepository(FollowUp)
     private readonly followUpRepo: Repository<FollowUp>,
+    @InjectRepository(CustomerItemRate)
+    private readonly itemRateRepo: Repository<CustomerItemRate>,
+    @InjectRepository(Item)
+    private readonly itemRepo: Repository<Item>,
     private readonly salesService: SalesService,
   ) {}
 
@@ -285,5 +291,76 @@ export class CrmService {
         status: f.status,
       })),
     };
+  }
+
+  async listCustomerItemRates(customerId: string, ctx: TenantContext) {
+    const tenantId = this.assertTenantId(ctx);
+    await this.findOneCustomer(customerId, ctx);
+    const rows = await this.itemRateRepo.find({
+      where: { tenant_id: tenantId, customer_id: customerId },
+      relations: ['item'],
+      order: { updated_at: 'DESC' },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      customer_id: r.customer_id,
+      item_id: r.item_id,
+      rate: r.rate,
+      item_name: r.item?.name ?? null,
+      item_sku: r.item?.sku ?? null,
+      updated_at: r.updated_at,
+    }));
+  }
+
+  async findItemRate(customerId: string, itemId: string, ctx: TenantContext) {
+    if (!customerId || !itemId) throw new BadRequestException('customer_id and item_id are required');
+    const tenantId = this.assertTenantId(ctx);
+    const row = await this.itemRateRepo.findOne({
+      where: { tenant_id: tenantId, customer_id: customerId, item_id: itemId },
+    });
+    return { customer_id: customerId, item_id: itemId, rate: row?.rate ?? null };
+  }
+
+  async upsertCustomerItemRate(customerId: string, dto: { item_id: string; rate: number }, ctx: TenantContext) {
+    const tenantId = this.assertTenantId(ctx);
+    await this.findOneCustomer(customerId, ctx);
+    if (!dto.item_id) throw new BadRequestException('item_id is required');
+    const rate = Number(dto.rate);
+    if (!Number.isFinite(rate) || rate < 0) throw new BadRequestException('Rate must be a number 0 or greater');
+    const item = await this.itemRepo.findOne({ where: { id: dto.item_id, tenant_id: tenantId } });
+    if (!item) throw new NotFoundException('Item not found');
+    let row = await this.itemRateRepo.findOne({
+      where: { tenant_id: tenantId, customer_id: customerId, item_id: dto.item_id },
+    });
+    if (row) {
+      row.rate = String(rate);
+    } else {
+      row = this.itemRateRepo.create({
+        tenant_id: tenantId,
+        customer_id: customerId,
+        item_id: dto.item_id,
+        rate: String(rate),
+      });
+    }
+    const saved = await this.itemRateRepo.save(row);
+    return {
+      id: saved.id,
+      customer_id: saved.customer_id,
+      item_id: saved.item_id,
+      rate: saved.rate,
+      item_name: item.name,
+      item_sku: item.sku,
+    };
+  }
+
+  async deleteCustomerItemRate(customerId: string, itemId: string, ctx: TenantContext) {
+    const tenantId = this.assertTenantId(ctx);
+    await this.findOneCustomer(customerId, ctx);
+    const row = await this.itemRateRepo.findOne({
+      where: { tenant_id: tenantId, customer_id: customerId, item_id: itemId },
+    });
+    if (!row) throw new NotFoundException('Customer item rate not found');
+    await this.itemRateRepo.delete(row.id);
+    return { ok: true };
   }
 }

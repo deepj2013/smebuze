@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet } from '@/lib/api';
+import CustomerItemRates from '../CustomerItemRates';
 
 interface ContactPerson {
   name?: string;
@@ -88,6 +89,8 @@ export default function Customer360Page() {
           </div>
         )}
       </div>
+
+      <CustomerItemRates customerId={id} />
 
       <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
         <h2 className="font-semibold text-slate-800 p-4 border-b border-slate-200">Last invoices</h2>

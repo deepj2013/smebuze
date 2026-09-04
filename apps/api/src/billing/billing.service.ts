@@ -16,6 +16,7 @@ import {
   INTERVAL_MONTHS,
   payablePlan,
   PLAN_LABELS,
+  PLAN_LIST_RUPEES,
   PLAN_PRICE_RUPEES,
   planAmountPaise,
   planAmountRupees,
@@ -24,6 +25,8 @@ import {
 } from '../common/plans';
 import { TenantSubscriptionPayment } from './entities/tenant-subscription-payment.entity';
 import { BillingPayDto } from './dto/billing-pay.dto';
+import { CustomPlanEnquiryDto } from './dto/custom-plan-enquiry.dto';
+import { MailService } from '../mail/mail.service';
 
 const SUPPORT_EMAIL = 'support@smebuze.com';
 
@@ -50,6 +53,7 @@ export class BillingService {
     private readonly tenantRepo: Repository<Tenant>,
     @InjectRepository(TenantSubscriptionPayment)
     private readonly paymentRepo: Repository<TenantSubscriptionPayment>,
+    private readonly mail: MailService,
   ) {}
 
   private tenantId(ctx: TenantContext): string {
@@ -152,10 +156,12 @@ export class BillingService {
       ...sub,
       trial: stored.trial === true && (sub.days_left == null || sub.days_left > 0),
       prices: PLAN_PRICE_RUPEES,
+      list_prices: PLAN_LIST_RUPEES,
       plans: Object.keys(PLAN_PRICE_RUPEES).map((id) => ({
         id,
         label: PLAN_LABELS[id],
         monthly_rupees: PLAN_PRICE_RUPEES[id],
+        list_rupees: PLAN_LIST_RUPEES[id],
       })),
       intervals: [
         { id: 'monthly', label: 'Monthly', months: 1, discount_percent: 0 },
@@ -454,5 +460,32 @@ export class BillingService {
       interval: payment.interval,
       subscription_ends_at: nextEnd.toISOString(),
     };
+  }
+
+  async captureCustomEnquiry(dto: CustomPlanEnquiryDto) {
+    const name = (dto.name || '').trim();
+    const phone = (dto.phone || '').trim();
+    const email = (dto.email || '').trim();
+    const company = (dto.company || '').trim();
+    const message = (dto.message || '').trim();
+    if (!phone && !email) {
+      throw new BadRequestException('Share a phone number or email so we can reply.');
+    }
+    const safe = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] || c));
+    const subject = `Custom SMEBUZE plan — ${name}${company ? ` (${company})` : ''}`;
+    const html = `
+      <p>A custom-plan request came in from smebuze.com.</p>
+      <table cellpadding="6" style="font-family:sans-serif;font-size:14px">
+        <tr><td><b>Name</b></td><td>${safe(name)}</td></tr>
+        <tr><td><b>Phone</b></td><td>${safe(phone) || '—'}</td></tr>
+        <tr><td><b>Email</b></td><td>${safe(email) || '—'}</td></tr>
+        <tr><td><b>Business</b></td><td>${safe(company) || '—'}</td></tr>
+        <tr><td><b>What they need</b></td><td>${safe(message) || '—'}</td></tr>
+      </table>
+    `;
+    const text = `Custom SMEBUZE plan request\nName: ${name}\nPhone: ${phone || '—'}\nEmail: ${email || '—'}\nBusiness: ${company || '—'}\nMessage:\n${message || '—'}`;
+    const mailed = await this.mail.sendHtml(SUPPORT_EMAIL, subject, html, text, { replyTo: email || undefined });
+    this.logger.log(`Custom plan enquiry from ${name} (${email || phone}) mailed=${mailed.sent}`);
+    return { ok: true };
   }
 }

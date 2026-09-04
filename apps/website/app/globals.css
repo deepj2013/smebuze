@@ -54,6 +54,26 @@ body {
   }
 }
 
+/* Number fields: always dark digits on white. Tiny table cells and iOS spinners used to hide typed values. */
+input[type='number'],
+input[inputmode='decimal'],
+input[inputmode='numeric'] {
+  color: #0f172a !important;
+  background-color: #ffffff !important;
+  -webkit-text-fill-color: #0f172a;
+  caret-color: #0f172a;
+  color-scheme: light;
+}
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* Mobile-first: ensure touch targets and readable tap areas */
 @layer utilities {
   .text-balance {
