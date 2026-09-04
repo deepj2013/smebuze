@@ -5,6 +5,8 @@ export type PricedItem = {
   id: string;
   name: string;
   sku?: string | null;
+  barcode?: string | null;
+  category?: string | null;
   description?: string | null;
   unit?: string;
   hsn_sac?: string | null;
@@ -33,9 +35,47 @@ export function splitItemGst(item: PricedItem): { cgst: number; sgst: number; ta
 
 export function defaultItemRate(item: PricedItem): number {
   const sale = item.sale_price != null && item.sale_price !== '' ? Number(item.sale_price) : NaN;
-  if (Number.isFinite(sale) && sale >= 0) return round2(sale);
+  if (Number.isFinite(sale) && sale > 0) return round2(sale);
   const mrp = item.mrp != null && item.mrp !== '' ? Number(item.mrp) : NaN;
-  return Number.isFinite(mrp) ? round2(mrp) : 0;
+  return Number.isFinite(mrp) && mrp > 0 ? round2(mrp) : Number.isFinite(sale) ? round2(sale) : 0;
+}
+
+export type InvoiceItemLinePatch = {
+  item_id: string;
+  item_sku: string | null;
+  item_name: string;
+  item_image_url: string | null;
+  hsn_sac?: string;
+  description?: string;
+  unit?: string;
+  rate: number;
+  cgst_rate: number;
+  sgst_rate: number;
+  customer_rate: boolean;
+};
+
+export function invoiceLinePatchFromItem(item: PricedItem, customRate: number | null): InvoiceItemLinePatch {
+  const gst = splitItemGst(item);
+  const rate = customRate ?? defaultItemRate(item);
+  return {
+    item_id: item.id,
+    item_sku: item.sku ?? null,
+    item_name: item.name,
+    item_image_url: Array.isArray(item.image_urls) && item.image_urls[0] ? item.image_urls[0] : null,
+    hsn_sac: item.hsn_sac ?? undefined,
+    description: item.description || item.name,
+    unit: item.unit || undefined,
+    rate: Number.isFinite(rate) ? rate : 0,
+    cgst_rate: gst.cgst,
+    sgst_rate: gst.sgst,
+    customer_rate: customRate != null,
+  };
+}
+
+export function unwrapItemList<T>(data: T[] | { data?: T[] } | undefined | null): T[] {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray((data as { data?: T[] }).data)) return (data as { data: T[] }).data;
+  return [];
 }
 
 export async function lookupCustomerRate(customerId: string | undefined | null, itemId: string): Promise<number | null> {

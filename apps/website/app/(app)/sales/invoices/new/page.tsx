@@ -1,22 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
 import { useToast } from '@/app/(app)/components/ToastContext';
 import NumberField from '@/app/(app)/components/NumberField';
-import { defaultItemRate, lookupCustomerRate, splitItemGst, type PricedItem } from '@/lib/item-pricing';
+import InvoiceItemSearchCell from '@/app/(app)/components/InvoiceItemSearchCell';
+import { invoiceLinePatchFromItem, lookupCustomerRate, type PricedItem } from '@/lib/item-pricing';
 
 interface Company { id: string; name: string }
 interface Branch { id: string; name: string }
 interface Customer { id: string; name: string }
 interface Vendor { id: string; name: string }
 interface SalesOrderOption { id:string; number:string; customer_id?:string|null; status:string; lines?:Array<{item_id?:string|null;description?:string|null;quantity:string;unit:string;rate:string;item?:{name:string;sku?:string|null;hsn_sac?:string|null}}> }
-
-interface SearchItem { id: string; name: string; sku: string | null; category?: string | null }
-interface FullItem extends PricedItem {}
 
 type PaymentTermKey = 'due_on_receipt' | 'net_15' | 'net_30' | 'net_45' | 'custom';
 
@@ -173,26 +170,18 @@ export default function NewInvoicePage() {
     );
   };
 
-  const setLineFromItem = useCallback(async (lineIndex: number, item: FullItem) => {
-    const gst = splitItemGst(item);
+  const setLineFromItem = useCallback(async (lineIndex: number, item: PricedItem) => {
     const custom = await lookupCustomerRate(customerId, item.id);
-    const rate = custom ?? defaultItemRate(item);
+    const patch = invoiceLinePatchFromItem(item, custom);
     setLines((prev) =>
       prev.map((line, idx) =>
         idx === lineIndex
           ? {
               ...line,
-              item_id: item.id,
-              item_sku: item.sku ?? null,
-              item_name: item.name,
-              item_image_url: Array.isArray(item.image_urls) && item.image_urls[0] ? item.image_urls[0] : null,
-              hsn_sac: item.hsn_sac ?? line.hsn_sac,
-              description: item.description ?? item.name ?? line.description,
-              unit: item.unit ?? line.unit,
-              rate: Number.isFinite(rate) ? rate : line.rate,
-              cgst_rate: gst.cgst,
-              sgst_rate: gst.sgst,
-              customer_rate: custom != null,
+              ...patch,
+              hsn_sac: patch.hsn_sac ?? line.hsn_sac,
+              description: patch.description ?? line.description,
+              unit: patch.unit ?? line.unit,
             }
           : line
       )
@@ -383,12 +372,9 @@ export default function NewInvoicePage() {
                 {lines.map((line, i) => (
                   <tr key={i} className="border-b border-slate-100 align-top">
                     <td className="py-2 pr-2 overflow-visible relative">
-                      <ItemSearchCell
+                      <InvoiceItemSearchCell
                         line={line}
-                        onSelectItem={async (itemId) => {
-                          const { data } = await apiGet<FullItem>(`inventory/items/${itemId}`);
-                          if (data) setLineFromItem(i, data);
-                        }}
+                        onSelectItem={(item) => setLineFromItem(i, item)}
                         onClearItem={() => {
                           setLines((prev) =>
                             prev.map((ln, idx) =>
@@ -399,6 +385,7 @@ export default function NewInvoicePage() {
                                     item_sku: undefined,
                                     item_name: undefined,
                                     item_image_url: undefined,
+                                    customer_rate: false,
                                   }
                                 : ln
                             )
@@ -435,207 +422,6 @@ export default function NewInvoicePage() {
           <Link href="/sales/invoices" className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</Link>
         </div>
       </form>
-    </div>
-  );
-}
-
-// Debounced item search dropdown; on focus shows suggested items, on type searches
-function ItemSearchCell({
-  line,
-  onSelectItem,
-  onClearItem,
-}: {
-  line: LineRow;
-  onSelectItem: (itemId: string) => Promise<void>;
-  onClearItem?: () => void;
-}) {
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const [results, setResults] = useState<SearchItem[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [loadingSuggested, setLoadingSuggested] = useState(false);
-  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    if (!open || !wrapperRef.current) {
-      setDropdownRect(null);
-      return;
-    }
-    const el = wrapperRef.current;
-    const rect = el.getBoundingClientRect();
-    setDropdownRect({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 200) });
-  }, [open, results.length, loadingSuggested, searching]);
-
-  const loadSuggestedItems = useCallback(() => {
-    setLoadingSuggested(true);
-    apiGet<SearchItem[] | { data: SearchItem[] }>('inventory/items?purpose=sale')
-      .then(({ data }) => {
-        const raw = Array.isArray(data) ? data : (data as { data?: SearchItem[] })?.data ?? [];
-        const list = raw.slice(0, 14).map((it: { id: string; name: string; sku?: string | null; category?: string | null }) => ({
-          id: it.id,
-          name: it.name,
-          sku: it.sku ?? null,
-          category: it.category ?? null,
-        }));
-        setResults(list);
-        setOpen(list.length > 0);
-      })
-      .finally(() => setLoadingSuggested(false));
-  }, []);
-
-  useEffect(() => {
-    if (!query.trim()) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setSearching(true);
-      apiGet<{ items?: SearchItem[] }>(`search?q=${encodeURIComponent(query)}`)
-        .then(({ data }) => {
-          const list = data?.items ?? [];
-          setResults(list);
-          setOpen(list.length > 0);
-        })
-        .finally(() => setSearching(false));
-    }, 280);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [query]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const hasItem = line.item_id && (line.item_name || line.item_sku);
-  const showSuggested = open && !query.trim();
-  const showSearchResults = open && query.trim();
-
-  return (
-    <div ref={wrapperRef} className="relative overflow-visible">
-      {hasItem ? (
-        <div className="flex items-center gap-2">
-          {line.item_image_url ? (
-            <div className="h-10 w-10 shrink-0 overflow-hidden rounded border border-slate-200 bg-slate-50">
-              <img src={line.item_image_url} alt="" className="h-full w-full object-cover" />
-            </div>
-          ) : (
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded border border-slate-200 bg-slate-100 text-slate-400 text-xs">—</div>
-          )}
-          <div className="min-w-0 flex-1">
-            <div className="truncate font-medium text-slate-800">{line.item_name || 'Item'}</div>
-            {line.item_sku && <div className="truncate text-xs text-slate-500">{line.item_sku}</div>}
-          </div>
-          <button
-            type="button"
-            onClick={() => { onClearItem?.(); setQuery(''); setResults([]); setOpen(false); }}
-            className="text-xs text-brand-600 hover:underline shrink-0"
-          >
-            Change
-          </button>
-        </div>
-      ) : (
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => {
-            if (!query.trim()) {
-              loadSuggestedItems();
-            } else if (results.length > 0) setOpen(true);
-          }}
-          onClick={() => {
-            if (!query.trim()) loadSuggestedItems();
-          }}
-          placeholder="Click or search by SKU / name..."
-          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-        />
-      )}
-      {typeof document !== 'undefined' &&
-        open &&
-        (showSuggested || showSearchResults || hasItem) &&
-        dropdownRect &&
-        createPortal(
-          <ul
-            className="max-h-56 overflow-auto rounded border border-slate-200 bg-white py-1 shadow-lg"
-            style={{
-              position: 'fixed',
-              top: dropdownRect.top,
-              left: dropdownRect.left,
-              width: dropdownRect.width,
-              zIndex: 10000,
-            }}
-          >
-            {showSuggested && (
-              <>
-                <li className="px-3 py-1.5 text-xs font-medium text-slate-500 uppercase tracking-wide border-b border-slate-100">
-                  Browse items
-                </li>
-                {loadingSuggested ? (
-                  <li className="px-3 py-2 text-slate-500 text-sm">Loading...</li>
-                ) : results.length === 0 ? (
-                  <li className="px-3 py-2 text-slate-500 text-sm">No items yet. Add items in Inventory.</li>
-                ) : (
-                  results.map((it) => (
-                    <li key={it.id}>
-                      <button
-                        type="button"
-                        className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-slate-50"
-                        onClick={() => {
-                          onSelectItem(it.id);
-                          setQuery('');
-                          setResults([]);
-                          setOpen(false);
-                        }}
-                      >
-                        <span className="font-medium text-slate-800">{it.name}</span>
-                        <span className="flex items-center gap-2 text-xs text-slate-500">
-                          {it.sku && <span>{it.sku}</span>}
-                          {it.category && <span className="rounded bg-slate-100 px-1.5 py-0.5">{it.category}</span>}
-                        </span>
-                      </button>
-                    </li>
-                  ))
-                )}
-              </>
-            )}
-            {showSearchResults && (
-              <>
-                {searching ? (
-                  <li className="px-3 py-2 text-slate-500 text-sm">Searching...</li>
-                ) : results.length === 0 ? (
-                  <li className="px-3 py-2 text-slate-500 text-sm">No items found</li>
-                ) : (
-                  results.map((it) => (
-                    <li key={it.id}>
-                      <button
-                        type="button"
-                        className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-slate-50"
-                        onClick={() => {
-                          onSelectItem(it.id);
-                          setQuery('');
-                          setResults([]);
-                          setOpen(false);
-                        }}
-                      >
-                        <span className="font-medium text-slate-800">{it.name}</span>
-                        <span className="flex items-center gap-2 text-xs text-slate-500">
-                          {it.sku && <span>{it.sku}</span>}
-                          {it.category && <span className="rounded bg-slate-100 px-1.5 py-0.5">{it.category}</span>}
-                        </span>
-                      </button>
-                    </li>
-                  ))
-                )}
-              </>
-            )}
-          </ul>,
-          document.body
-        )}
     </div>
   );
 }

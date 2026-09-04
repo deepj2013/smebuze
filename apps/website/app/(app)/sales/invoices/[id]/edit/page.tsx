@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPatch } from '@/lib/api';
 import NumberField from '@/app/(app)/components/NumberField';
+import InvoiceItemSearchCell from '@/app/(app)/components/InvoiceItemSearchCell';
+import { invoiceLinePatchFromItem, lookupCustomerRate, type PricedItem } from '@/lib/item-pricing';
 
 interface Company { id: string; name: string }
 interface Branch { id: string; name: string }
@@ -12,6 +14,10 @@ interface Customer { id: string; name: string }
 interface Vendor { id: string; name: string }
 
 interface LineRow {
+  item_id?: string;
+  item_sku?: string | null;
+  item_name?: string;
+  item_image_url?: string | null;
   hsn_sac: string;
   description: string;
   qty: number;
@@ -19,9 +25,11 @@ interface LineRow {
   rate: number;
   cgst_rate: number;
   sgst_rate: number;
+  customer_rate?: boolean;
 }
 
 interface InvoiceLine {
+  item_id?: string | null;
   hsn_sac: string;
   description: string;
   qty: string | number;
@@ -29,7 +37,23 @@ interface InvoiceLine {
   rate: string | number;
   cgst_rate: string | number;
   sgst_rate: string | number;
+  item?: {
+    id: string;
+    name: string;
+    sku?: string | null;
+    image_urls?: string[];
+  } | null;
 }
+
+const emptyLine = (gst = { cgst: 9, sgst: 9 }): LineRow => ({
+  hsn_sac: '9983',
+  description: '',
+  qty: 1,
+  unit: 'pcs',
+  rate: 0,
+  cgst_rate: gst.cgst,
+  sgst_rate: gst.sgst,
+});
 
 export default function EditInvoicePage() {
   const router = useRouter();
@@ -51,6 +75,16 @@ export default function EditInvoicePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [defaultGst, setDefaultGst] = useState({ cgst: 9, sgst: 9 });
+
+  useEffect(() => {
+    apiGet<{ tenant?: { slug?: string; settings?: { business_type?: string } } }>('auth/me').then(({ data }) => {
+      const t = data?.tenant;
+      if (t?.slug === 'ice-crest' || t?.settings?.business_type === 'ice_crest') {
+        setDefaultGst({ cgst: 2.5, sgst: 2.5 });
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -90,6 +124,10 @@ export default function EditInvoicePage() {
         setShowDueDate(Boolean(due));
         if (inv.lines?.length) {
           setLines(inv.lines.map((l) => ({
+            item_id: l.item_id || l.item?.id || undefined,
+            item_sku: l.item?.sku ?? null,
+            item_name: l.item?.name || l.description,
+            item_image_url: Array.isArray(l.item?.image_urls) && l.item?.image_urls[0] ? l.item.image_urls[0] : null,
             hsn_sac: l.hsn_sac,
             description: l.description,
             qty: Number(l.qty),
@@ -99,7 +137,7 @@ export default function EditInvoicePage() {
             sgst_rate: Number(l.sgst_rate),
           })));
         } else {
-          setLines([{ hsn_sac: '9983', description: '', qty: 1, unit: 'pcs', rate: 0, cgst_rate: 9, sgst_rate: 9 }]);
+          setLines([emptyLine()]);
         }
       }
       setLoading(false);
@@ -115,8 +153,41 @@ export default function EditInvoicePage() {
     });
   }, [companyId]);
 
+  const applyCustomerRates = useCallback(async (nextCustomerId: string) => {
+    if (!nextCustomerId) return;
+    const { data } = await apiGet<Array<{ item_id: string; rate: string }>>(`crm/customers/${nextCustomerId}/item-rates`);
+    if (!data?.length) return;
+    const map: Record<string, number> = {};
+    for (const r of data) map[r.item_id] = Number(r.rate);
+    setLines((prev) =>
+      prev.map((l) =>
+        l.item_id && map[l.item_id] != null && Number.isFinite(map[l.item_id])
+          ? { ...l, rate: map[l.item_id], customer_rate: true }
+          : l,
+      ),
+    );
+  }, []);
+
+  const setLineFromItem = useCallback(async (lineIndex: number, item: PricedItem) => {
+    const custom = await lookupCustomerRate(customerId, item.id);
+    const patch = invoiceLinePatchFromItem(item, custom);
+    setLines((prev) =>
+      prev.map((line, idx) =>
+        idx === lineIndex
+          ? {
+              ...line,
+              ...patch,
+              hsn_sac: patch.hsn_sac ?? line.hsn_sac,
+              description: patch.description ?? line.description,
+              unit: patch.unit ?? line.unit,
+            }
+          : line,
+      ),
+    );
+  }, [customerId]);
+
   const addLine = () => {
-    setLines((prev) => [...prev, { hsn_sac: '9983', description: '', qty: 1, unit: 'pcs', rate: 0, cgst_rate: 9, sgst_rate: 9 }]);
+    setLines((prev) => [...prev, emptyLine(defaultGst)]);
   };
 
   const updateLine = (i: number, field: keyof LineRow, value: string | number) => {
@@ -135,6 +206,17 @@ export default function EditInvoicePage() {
       setError('Select only one: Customer or Vendor.');
       return;
     }
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (!Number.isFinite(l.qty) || l.qty <= 0) {
+        setError(`Line ${i + 1}: quantity must be greater than 0`);
+        return;
+      }
+      if (!Number.isFinite(l.rate) || l.rate < 0) {
+        setError(`Line ${i + 1}: rate must be a number 0 or greater`);
+        return;
+      }
+    }
     setError(null);
     setSaving(true);
     const body = {
@@ -146,8 +228,9 @@ export default function EditInvoicePage() {
       due_date: showDueDate && dueDate ? dueDate : null,
       number: number || undefined,
       lines: lines.map((l) => ({
+        item_id: l.item_id || undefined,
         hsn_sac: l.hsn_sac,
-        description: l.description || 'Item',
+        description: l.description || l.item_name || 'Item',
         qty: l.qty,
         unit: l.unit,
         rate: l.rate,
@@ -175,7 +258,7 @@ export default function EditInvoicePage() {
       <Link href="/sales/invoices" className="text-sm text-slate-600 hover:text-slate-900 mb-4 inline-block">← Invoices</Link>
       <h1 className="text-2xl font-bold text-slate-900 mb-4">Edit invoice</h1>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
-      <form onSubmit={submit} className="space-y-6 max-w-4xl">
+      <form onSubmit={submit} className="space-y-6 max-w-5xl">
         <div className="rounded-xl border border-slate-200 bg-white p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Company *</label>
@@ -196,7 +279,16 @@ export default function EditInvoicePage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Bill to: Customer</label>
-            <select value={customerId} onChange={(e) => { setCustomerId(e.target.value); setVendorId(''); }} className="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+            <select
+              value={customerId}
+              onChange={(e) => {
+                const next = e.target.value;
+                setCustomerId(next);
+                setVendorId('');
+                void applyCustomerRates(next);
+              }}
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+            >
               <option value="">—</option>
               {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -251,24 +343,50 @@ export default function EditInvoicePage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-600">
-                  <th className="text-left py-2 pr-2">HSN/SAC</th>
-                  <th className="text-left py-2 pr-2">Description</th>
-                  <th className="text-right py-2 pr-2">Qty</th>
-                  <th className="text-left py-2 pr-2">Unit</th>
-                  <th className="text-right py-2 pr-2">Rate</th>
-                  <th className="text-right py-2 pr-2">CGST %</th>
-                  <th className="text-right py-2 pr-2">SGST %</th>
-                  <th className="w-10"></th>
+                  <th className="text-left py-2 pr-2 w-[200px]">Item (search by SKU)</th>
+                  <th className="text-left py-2 pr-2 w-20">HSN/SAC</th>
+                  <th className="text-left py-2 pr-2 min-w-[140px]">Description</th>
+                  <th className="text-right py-2 pr-2 w-16">Qty</th>
+                  <th className="text-left py-2 pr-2 w-14">Unit</th>
+                  <th className="text-right py-2 pr-2 w-20">Rate</th>
+                  <th className="text-right py-2 pr-2 w-14">CGST %</th>
+                  <th className="text-right py-2 pr-2 w-14">SGST %</th>
+                  <th className="w-16"></th>
                 </tr>
               </thead>
               <tbody>
                 {lines.map((line, i) => (
-                  <tr key={i} className="border-b border-slate-100">
-                    <td className="py-1 pr-2"><input type="text" value={line.hsn_sac} onChange={(e) => updateLine(i, 'hsn_sac', e.target.value)} className="w-20 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
+                  <tr key={i} className="border-b border-slate-100 align-top">
+                    <td className="py-2 pr-2 overflow-visible relative">
+                      <InvoiceItemSearchCell
+                        line={line}
+                        onSelectItem={(item) => setLineFromItem(i, item)}
+                        onClearItem={() => {
+                          setLines((prev) =>
+                            prev.map((ln, idx) =>
+                              idx === i
+                                ? {
+                                    ...ln,
+                                    item_id: undefined,
+                                    item_sku: undefined,
+                                    item_name: undefined,
+                                    item_image_url: undefined,
+                                    customer_rate: false,
+                                  }
+                                : ln,
+                            ),
+                          );
+                        }}
+                      />
+                    </td>
+                    <td className="py-1 pr-2"><input type="text" value={line.hsn_sac} onChange={(e) => updateLine(i, 'hsn_sac', e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1 text-sm" /></td>
                     <td className="py-1 pr-2"><input type="text" value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} className="w-full min-w-[120px] rounded border border-slate-300 px-2 py-1 text-sm" /></td>
                     <td className="py-1 pr-2 min-w-[5.5rem]"><NumberField whole min={0} value={line.qty} onNumber={(n) => updateLine(i, 'qty', n)} aria-label={`Line ${i + 1} quantity`} /></td>
-                    <td className="py-1 pr-2"><input type="text" value={line.unit} onChange={(e) => updateLine(i, 'unit', e.target.value)} className="w-14 min-h-[44px] rounded border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900" /></td>
-                    <td className="py-1 pr-2 min-w-[6rem]"><NumberField min={0} step="0.01" value={line.rate} onNumber={(n) => updateLine(i, 'rate', n)} aria-label={`Line ${i + 1} rate`} /></td>
+                    <td className="py-1 pr-2"><input type="text" value={line.unit} onChange={(e) => updateLine(i, 'unit', e.target.value)} className="w-full min-h-[44px] rounded border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900" /></td>
+                    <td className="py-1 pr-2 min-w-[6rem]">
+                      <NumberField min={0} step="0.01" value={line.rate} onNumber={(n) => updateLine(i, 'rate', n)} aria-label={`Line ${i + 1} rate`} />
+                      {line.customer_rate && <p className="text-[10px] text-cyan-700 mt-0.5">Customer rate</p>}
+                    </td>
                     <td className="py-1 pr-2 min-w-[5.5rem]"><NumberField min={0} max={100} step="0.01" value={line.cgst_rate} onNumber={(n) => updateLine(i, 'cgst_rate', n)} aria-label={`Line ${i + 1} CGST`} /></td>
                     <td className="py-1 pr-2 min-w-[5.5rem]"><NumberField min={0} max={100} step="0.01" value={line.sgst_rate} onNumber={(n) => updateLine(i, 'sgst_rate', n)} aria-label={`Line ${i + 1} SGST`} /></td>
                     <td className="py-1"><button type="button" onClick={() => removeLine(i)} className="text-red-600 text-xs hover:underline">Remove</button></td>

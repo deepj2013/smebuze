@@ -430,7 +430,7 @@ export class SalesService {
     const tenantId = this.assertTenantId(ctx);
     const inv = await this.invoiceRepo.findOne({
       where: { id, tenant_id: tenantId },
-      relations: ['customer', 'vendor', 'company', 'branch', 'lines'],
+      relations: ['customer', 'vendor', 'company', 'branch', 'lines', 'lines.item'],
     });
     if (!inv) throw new NotFoundException('Invoice not found');
     return inv;
