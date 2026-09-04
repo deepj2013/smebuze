@@ -10,7 +10,7 @@ import PosSwitcher from '../../../../components/PosSwitcher';
 import BarcodeCapture from '../../../../components/BarcodeCapture';
 import { DecimalInput } from '../../../../components/NumberField';
 import { parseNonNeg, splitItemGst } from '@/lib/item-pricing';
-import { parseMoney } from '@/lib/money';
+import { parseMoney, parseQty } from '@/lib/money';
 
 function validateHsnSac(v: string): string | null {
   if (!v.trim()) return null;
@@ -154,7 +154,7 @@ export default function EditItemPage() {
       category: category || undefined,
       hsn_sac: hsnSac.trim() || undefined,
     };
-    if (reorderLevel.trim() !== '') body.reorder_level = parseMoney(reorderLevel);
+    if (reorderLevel.trim() !== '') body.reorder_level = parseQty(reorderLevel);
     if (mrp.trim() !== '') body.mrp = parseMoney(mrp);
     else body.mrp = null;
     if (costPrice.trim() !== '') body.cost_price = parseMoney(costPrice);
@@ -181,7 +181,7 @@ export default function EditItemPage() {
       <h1 className="text-2xl font-bold text-slate-900 mb-4">Edit item</h1>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
       <form onSubmit={submit} className="max-w-2xl space-y-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
@@ -200,14 +200,14 @@ export default function EditItemPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Barcode</label>
-            <div className="flex items-center gap-2">
-              <Barcode className="h-4 w-4 text-slate-400 shrink-0" />
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <Barcode className="h-4 w-4 text-slate-400 shrink-0 hidden sm:block" />
               <input
                 type="text"
                 value={barcode}
                 onChange={(e) => setBarcode(e.target.value)}
                 placeholder="Scan with a reader, camera, or type"
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                className="w-full min-w-0 rounded border border-slate-300 px-3 py-2 text-sm"
               />
               <BarcodeCapture onDetected={(code) => setBarcode(code)} label="Scan" />
             </div>
@@ -240,7 +240,7 @@ export default function EditItemPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Unit</label>
               <input type="text" value={unit} onChange={(e) => setUnit(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
@@ -250,7 +250,7 @@ export default function EditItemPage() {
               <CategoryPicker value={category} onChange={setCategory} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">HSN/SAC</label>
               <input
@@ -263,11 +263,11 @@ export default function EditItemPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Reorder level</label>
-              <DecimalInput min={0} value={reorderLevel} onValue={(v) => { setReorderLevel(v); setFieldErrors((p) => ({ ...p, reorderLevel: '' })); }} invalid={!!fieldErrors.reorderLevel} />
+              <DecimalInput whole min={0} value={reorderLevel} onValue={(v) => { setReorderLevel(v); setFieldErrors((p) => ({ ...p, reorderLevel: '' })); }} invalid={!!fieldErrors.reorderLevel} />
               {fieldErrors.reorderLevel && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.reorderLevel}</p>}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Cost price</label>
               <DecimalInput min={0} value={costPrice} onValue={(v) => { setCostPrice(v); setFieldErrors((p) => ({ ...p, costPrice: '' })); }} invalid={!!fieldErrors.costPrice} />
@@ -301,7 +301,7 @@ export default function EditItemPage() {
                 Combined GST {((parseFloat(cgstRate) || 0) + (parseFloat(sgstRate) || 0)).toFixed(2)}%. Copied onto invoices and still editable there.
               </p>
             </div>
-            <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+            <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
               <p className="text-sm font-medium text-slate-800">This product is used for</p>
               <label className="flex items-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" checked={forSale} onChange={(e) => { setForSale(e.target.checked); setFieldErrors((p) => ({ ...p, purpose: '' })); }} />
@@ -315,9 +315,9 @@ export default function EditItemPage() {
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
-          <button type="submit" disabled={loading} className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50">Save</button>
-          <Link href="/inventory/items" className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</Link>
+        <div className="sticky bottom-20 z-10 -mx-4 flex gap-2 border-t border-slate-200 bg-[var(--tenant-canvas,#f8fafc)] px-4 py-3 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0">
+          <button type="submit" disabled={loading} className="min-h-[44px] flex-1 rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50 sm:flex-none">Save</button>
+          <Link href="/inventory/items" className="min-h-[44px] inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</Link>
         </div>
       </form>
     </div>

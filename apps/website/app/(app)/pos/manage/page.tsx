@@ -7,7 +7,7 @@ import { useToast } from '../../components/ToastContext';
 import PosSwitcher from '../../components/PosSwitcher';
 import { posSellingRate } from '@/lib/business-types';
 import BarcodeCapture from '../../components/BarcodeCapture';
-import { limitDecimalPlaces, parseMoney } from '@/lib/money';
+import { limitDecimalPlaces, limitInteger, parseMoney, parseQty } from '@/lib/money';
 
 interface Category {
   id: string;
@@ -148,8 +148,8 @@ export default function PosManagePage() {
     if (form.sale_price !== '') body.sale_price = parseMoney(form.sale_price);
     else if (form.mrp !== '') body.sale_price = parseMoney(form.mrp);
     if (form.discount_percent !== '') body.discount_percent = parseMoney(form.discount_percent);
-    if (form.opening_qty !== '') body.opening_qty = parseMoney(form.opening_qty);
-    if (form.reorder_level !== '') body.reorder_level = parseMoney(form.reorder_level);
+    if (form.opening_qty !== '') body.opening_qty = parseQty(form.opening_qty);
+    if (form.reorder_level !== '') body.reorder_level = parseQty(form.reorder_level);
     const { error } = await apiPost('inventory/items', body);
     setSavingItem(false);
     if (error) {
@@ -268,11 +268,11 @@ export default function PosManagePage() {
               </label>
               <label className="text-xs font-medium text-slate-600">
                 Opening stock
-                <input type="text" inputMode="decimal" min={0} value={form.opening_qty} onChange={(e) => setForm({ ...form, opening_qty: limitDecimalPlaces(e.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                <input type="text" inputMode="numeric" min={0} value={form.opening_qty} onChange={(e) => setForm({ ...form, opening_qty: limitInteger(e.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
               </label>
               <label className="text-xs font-medium text-slate-600">
                 Alert when stock ≤
-                <input type="text" inputMode="decimal" min={0} value={form.reorder_level} onChange={(e) => setForm({ ...form, reorder_level: limitDecimalPlaces(e.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                <input type="text" inputMode="numeric" min={0} value={form.reorder_level} onChange={(e) => setForm({ ...form, reorder_level: limitInteger(e.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
               </label>
               <div className="sm:col-span-2 lg:col-span-3">
                 <button type="submit" disabled={savingItem} className="rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-50 min-h-[44px]">

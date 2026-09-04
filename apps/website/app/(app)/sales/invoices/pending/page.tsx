@@ -77,8 +77,9 @@ export default function PendingReceivablesPage() {
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
       {loading && <p className="text-slate-600">Loading…</p>}
       {!loading && (
-        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="rounded-xl border border-slate-200 bg-white">
+          <div className="responsive-table-wrap">
+          <table className="w-full text-sm table-min-width">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="text-left p-3 font-medium text-slate-700">Invoice</th>
@@ -122,6 +123,7 @@ export default function PendingReceivablesPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

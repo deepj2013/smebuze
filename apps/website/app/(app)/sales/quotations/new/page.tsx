@@ -203,7 +203,7 @@ export default function NewQuotationPage() {
                 </div>
                 <div className="min-w-[5.5rem] flex-1">
                   <label className="block text-xs text-slate-500 mb-0.5">Qty</label>
-                  <NumberField min={0} step="0.01" value={line.qty} onNumber={(n) => updateLine(i, 'qty', n)} aria-label="Quantity" />
+                  <NumberField whole min={0} value={line.qty} onNumber={(n) => updateLine(i, 'qty', n)} aria-label="Quantity" />
                 </div>
                 <div className="w-16">
                   <label className="block text-xs text-slate-500 mb-0.5">Unit</label>

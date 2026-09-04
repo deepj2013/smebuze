@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
-import { limitDecimalPlaces } from '@/lib/money';
+import { parseQty } from '@/lib/money';
+import { DecimalInput } from '../../../components/NumberField';
 import BarcodeCapture from '../../../components/BarcodeCapture';
 import PosSwitcher from '../../../components/PosSwitcher';
 
@@ -53,7 +54,7 @@ export default function ReceiveStockPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    const qty = parseFloat(quantity);
+    const qty = parseQty(quantity);
     if (!warehouseId || !itemId || !Number.isFinite(qty) || qty <= 0) {
       setError('Select warehouse, item and enter a positive quantity.');
       return;
@@ -114,7 +115,7 @@ export default function ReceiveStockPage() {
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Quantity *</label>
-          <input type="text" inputMode="decimal" min="0.01" value={quantity} onChange={(e) => setQuantity(limitDecimalPlaces(e.target.value))} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+          <DecimalInput whole min={1} value={quantity} onValue={setQuantity} required aria-label="Quantity" />
         </div>
         <div className="flex gap-2">
           <button type="submit" disabled={loading} className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50">Add to stock</button>

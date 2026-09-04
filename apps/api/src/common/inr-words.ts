@@ -83,6 +83,10 @@ export function gstPlaceOfSupply(gstin?: string | null, address?: Record<string,
   return '';
 }
 
+export function formatQty(n: number): string {
+  return (Number.isFinite(n) ? Math.round(n) : 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+}
+
 export function formatInr(n: number): string {
   return (Number.isFinite(n) ? n : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

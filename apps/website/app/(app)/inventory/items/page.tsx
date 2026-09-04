@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import PosSwitcher from '../../components/PosSwitcher';
+import { PageHeader } from '../../components/PageHeader';
+import { ResponsiveDataList, type Column } from '../../components/ResponsiveDataList';
+import { formatQty } from '@/lib/money';
 import { posSellingRate } from '@/lib/business-types';
 
 interface Item {
@@ -22,6 +25,11 @@ interface Item {
   current_stock?: number;
 }
 
+function money(v: string | number | null | undefined): string {
+  if (v == null || v === '') return '—';
+  return Number(v).toFixed(2);
+}
+
 export default function ItemsPage() {
   const [list, setList] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,69 +45,127 @@ export default function ItemsPage() {
     })();
   }, []);
 
+  const columns: Column<Item>[] = [
+    {
+      key: 'image',
+      label: 'Image',
+      className: 'w-12',
+      render: (item) =>
+        item.image_urls?.length ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={item.image_urls[0]} alt="" className="w-10 h-10 object-cover rounded border border-slate-200" />
+        ) : (
+          <span className="w-10 h-10 flex items-center justify-center rounded bg-slate-100 text-slate-400 text-xs">—</span>
+        ),
+    },
+    { key: 'name', label: 'Name', cardLabel: 'Name', render: (item) => <span className="font-medium">{item.name}</span> },
+    { key: 'sku', label: 'SKU', cardLabel: 'SKU', render: (item) => item.sku ?? '—' },
+    { key: 'barcode', label: 'Barcode', render: (item) => <span className="font-mono text-xs">{item.barcode ?? '—'}</span> },
+    { key: 'unit', label: 'Unit', render: (item) => item.unit ?? '—' },
+    { key: 'category', label: 'Category', cardLabel: 'Category', render: (item) => item.category ?? '—' },
+    { key: 'cost_price', label: 'Cost', className: 'text-right', render: (item) => <span className="tabular-nums">{money(item.cost_price)}</span> },
+    { key: 'mrp', label: 'MRP', className: 'text-right', render: (item) => <span className="tabular-nums">{money(item.mrp)}</span> },
+    {
+      key: 'counter',
+      label: 'Counter',
+      className: 'text-right',
+      render: (item) => (
+        <span className="font-medium tabular-nums">
+          ₹{posSellingRate(item).toFixed(2)}
+          {item.discount_percent ? ` (−${Number(item.discount_percent)}%)` : ''}
+        </span>
+      ),
+    },
+    {
+      key: 'stock',
+      label: 'Stock',
+      className: 'text-right',
+      render: (item) => (
+        <span className="font-medium tabular-nums">
+          {item.current_stock != null ? formatQty(item.current_stock) : '0'}
+        </span>
+      ),
+    },
+    { key: 'hsn_sac', label: 'HSN/SAC', render: (item) => item.hsn_sac ?? '—' },
+    {
+      key: 'actions',
+      label: 'Actions',
+      render: (item) => (
+        <Link href={`/inventory/items/${item.id}/edit`} className="text-brand-600 hover:underline text-sm font-medium">
+          Edit
+        </Link>
+      ),
+    },
+  ];
+
   return (
     <div>
       <PosSwitcher />
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-slate-900">Items</h1>
-        <div className="flex gap-2">
-          <Link href="/inventory/categories" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Categories</Link>
-          <Link href="/inventory/items/new" className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700">Add item</Link>
-        </div>
-      </div>
+      <PageHeader title="Items">
+        <Link href="/inventory/categories" className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 min-h-[44px] inline-flex items-center justify-center">
+          Categories
+        </Link>
+        <Link href="/inventory/items/new" className="rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-medium hover:bg-brand-700 min-h-[44px] inline-flex items-center justify-center">
+          Add item
+        </Link>
+      </PageHeader>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
       {loading && <p className="text-slate-600">Loading…</p>}
       {!loading && (
-        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="text-left p-3 font-medium text-slate-700 w-12">Image</th>
-                <th className="text-left p-3 font-medium text-slate-700">Name</th>
-                <th className="text-left p-3 font-medium text-slate-700">SKU</th>
-                <th className="text-left p-3 font-medium text-slate-700">Barcode</th>
-                <th className="text-left p-3 font-medium text-slate-700">Unit</th>
-                <th className="text-left p-3 font-medium text-slate-700">Category</th>
-                <th className="text-right p-3 font-medium text-slate-700">Cost</th>
-                <th className="text-right p-3 font-medium text-slate-700">MRP</th>
-                <th className="text-right p-3 font-medium text-slate-700">Counter</th>
-                <th className="text-right p-3 font-medium text-slate-700">Stock</th>
-                <th className="text-left p-3 font-medium text-slate-700">HSN/SAC</th>
-                <th className="text-left p-3 font-medium text-slate-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.length === 0 ? (
-                <tr><td colSpan={12} className="p-4 text-slate-500">No items yet.</td></tr>
-              ) : (
-                list.map((item) => (
-                  <tr key={item.id} className="border-b border-slate-100 last:border-0">
-                    <td className="p-2">
-                      {item.image_urls?.length ? (
-                        <img src={item.image_urls[0]} alt="" className="w-10 h-10 object-cover rounded border border-slate-200" />
-                      ) : (
-                        <span className="w-10 h-10 flex items-center justify-center rounded bg-slate-100 text-slate-400 text-xs">—</span>
-                      )}
-                    </td>
-                    <td className="p-3 font-medium">{item.name}</td>
-                    <td className="p-3">{item.sku ?? '—'}</td>
-                    <td className="p-3 font-mono text-xs">{item.barcode ?? '—'}</td>
-                    <td className="p-3">{item.unit ?? '—'}</td>
-                    <td className="p-3">{item.category ?? '—'}</td>
-                    <td className="p-3 text-right tabular-nums">{item.cost_price != null && item.cost_price !== '' ? Number(item.cost_price).toFixed(2) : '—'}</td>
-                    <td className="p-3 text-right tabular-nums">{item.mrp != null && item.mrp !== '' ? Number(item.mrp).toFixed(2) : '—'}</td>
-                    <td className="p-3 text-right font-medium tabular-nums">₹{posSellingRate(item).toFixed(2)}{item.discount_percent ? ` (−${Number(item.discount_percent)}%)` : ''}</td>
-                    <td className="p-3 text-right font-medium tabular-nums">
-                      {item.current_stock != null ? Number(item.current_stock).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : '0'}
-                    </td>
-                    <td className="p-3">{item.hsn_sac ?? '—'}</td>
-                    <td className="p-3"><Link href={`/inventory/items/${item.id}/edit`} className="text-brand-600 hover:underline text-sm">Edit</Link></td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <ResponsiveDataList<Item>
+          columns={columns}
+          data={list}
+          keyField="id"
+          emptyMessage="No items yet."
+          emptyAction={
+            <Link href="/inventory/items/new" className="inline-block rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-medium hover:bg-brand-700">
+              Add your first item
+            </Link>
+          }
+          renderMobileCard={(item) => (
+            <Link href={`/inventory/items/${item.id}/edit`} className="block">
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm active:bg-slate-50">
+                <div className="flex gap-3">
+                  {item.image_urls?.length ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={item.image_urls[0]} alt="" className="h-14 w-14 shrink-0 rounded-lg border border-slate-200 object-cover" />
+                  ) : (
+                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">No img</span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-slate-900">{item.name}</div>
+                    <p className="mt-0.5 truncate text-xs text-slate-500">
+                      {[item.sku, item.category, item.unit].filter(Boolean).join(' · ') || '—'}
+                    </p>
+                  </div>
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">MRP</dt>
+                    <dd className="tabular-nums font-medium">{money(item.mrp)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Counter</dt>
+                    <dd className="tabular-nums font-medium">₹{posSellingRate(item).toFixed(2)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Cost</dt>
+                    <dd className="tabular-nums">{money(item.cost_price)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Stock</dt>
+                    <dd className="tabular-nums font-medium">
+                      {item.current_stock != null ? formatQty(item.current_stock) : '0'}
+                    </dd>
+                  </div>
+                </dl>
+                <span className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-lg bg-brand-600 px-3 text-sm font-medium text-white">
+                  Edit item
+                </span>
+              </div>
+            </Link>
+          )}
+        />
       )}
     </div>
   );

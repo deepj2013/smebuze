@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiGet } from '@/lib/api';
+import { PageHeader } from '../../components/PageHeader';
+import { ResponsiveDataList, type Column } from '../../components/ResponsiveDataList';
 
 interface Quotation {
   id: string;
@@ -38,62 +40,55 @@ export default function QuotationsPage() {
   const sentOn = (q: Quotation) => (q.sent_at && typeof q.sent_at === 'string' ? q.sent_at.slice(0, 10) : null);
   const customerOrLead = (q: Quotation) => q.customer?.name ?? q.lead?.name ?? '—';
 
+  const columns: Column<Quotation>[] = [
+    { key: 'number', label: 'Number', cardLabel: 'Number' },
+    { key: 'party', label: 'Customer / Lead', cardLabel: 'For', render: customerOrLead },
+    { key: 'status', label: 'Status', cardLabel: 'Status', render: (q) => <span className="capitalize">{q.status}</span> },
+    { key: 'sent_at', label: 'Sent on', render: (q) => sentOn(q) ?? '—' },
+    { key: 'total', label: 'Total', className: 'text-right', render: (q) => `₹${Number(q.total).toFixed(2)}` },
+    { key: 'actions', label: 'Actions', render: (q) => <Link href={`/sales/quotations/${q.id}`} className="text-brand-600 hover:underline text-sm font-medium">View</Link> },
+  ];
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-slate-900">Quotations</h1>
-        <Link href="/sales/quotations/new" className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700">Create quotation</Link>
-      </div>
-      <div className="mb-4 flex gap-2 items-center">
-        <label className="text-sm text-slate-600">Status:</label>
+      <PageHeader title="Quotations">
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+          className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm min-h-[44px] bg-white"
         >
-          <option value="">All</option>
+          <option value="">All statuses</option>
           <option value="draft">Draft</option>
           <option value="sent">Sent</option>
           <option value="viewed">Viewed</option>
           <option value="accepted">Accepted</option>
           <option value="rejected">Rejected</option>
         </select>
-      </div>
+        <Link href="/sales/quotations/new" className="rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-medium hover:bg-brand-700 min-h-[44px] inline-flex items-center justify-center">Create quotation</Link>
+      </PageHeader>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
       {loading && <p className="text-slate-600">Loading…</p>}
       {!loading && (
-        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="text-left p-3 font-medium text-slate-700">Number</th>
-                <th className="text-left p-3 font-medium text-slate-700">Customer / Lead</th>
-                <th className="text-left p-3 font-medium text-slate-700">Status</th>
-                <th className="text-left p-3 font-medium text-slate-700">Sent on</th>
-                <th className="text-right p-3 font-medium text-slate-700">Total</th>
-                <th className="text-left p-3 font-medium text-slate-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.length === 0 ? (
-                <tr><td colSpan={6} className="p-4 text-slate-500">No quotations yet.</td></tr>
-              ) : (
-                list.map((q) => (
-                  <tr key={q.id} className="border-b border-slate-100 last:border-0">
-                    <td className="p-3">{q.number}</td>
-                    <td className="p-3">{customerOrLead(q)}</td>
-                    <td className="p-3"><span className="capitalize">{q.status}</span></td>
-                    <td className="p-3">{sentOn(q) ?? '—'}</td>
-                    <td className="p-3 text-right">₹{Number(q.total).toFixed(2)}</td>
-                    <td className="p-3">
-                      <Link href={`/sales/quotations/${q.id}`} className="text-brand-600 hover:underline text-sm">View</Link>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <ResponsiveDataList<Quotation>
+          columns={columns}
+          data={list}
+          keyField="id"
+          emptyMessage="No quotations yet."
+          emptyAction={<Link href="/sales/quotations/new" className="inline-block rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-medium hover:bg-brand-700">Create quotation</Link>}
+          renderMobileCard={(q) => (
+            <Link href={`/sales/quotations/${q.id}`} className="block">
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm active:bg-slate-50">
+                <div className="flex justify-between gap-2">
+                  <span className="font-semibold text-slate-900">{q.number}</span>
+                  <span className="tabular-nums font-medium text-brand-600">₹{Number(q.total).toFixed(2)}</span>
+                </div>
+                <p className="mt-1 text-sm text-slate-600">{customerOrLead(q)}</p>
+                <p className="mt-1 text-xs text-slate-500 capitalize">{q.status}{sentOn(q) ? ` · sent ${sentOn(q)}` : ''}</p>
+                <span className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-lg bg-brand-600 px-3 text-sm font-medium text-white">View</span>
+              </div>
+            </Link>
+          )}
+        />
       )}
     </div>
   );

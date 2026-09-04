@@ -45,8 +45,8 @@ export function ResponsiveDataList<T extends object>({
 
   return (
     <>
-      {/* Desktop: table */}
-      <div className="hidden md:block rounded-xl border border-slate-200 bg-white overflow-hidden">
+      {/* Desktop: table — swipe horizontally if columns overflow */}
+      <div className="hidden md:block rounded-xl border border-slate-200 bg-white">
         <div className="responsive-table-wrap">
           <table className="w-full text-sm table-min-width">
             <thead className="bg-slate-50 border-b border-slate-200">

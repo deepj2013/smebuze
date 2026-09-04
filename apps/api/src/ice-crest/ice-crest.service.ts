@@ -15,7 +15,7 @@ import { SalesOrder } from '../sales/entities/sales-order.entity';
 import { Company } from '../tenant/entities/company.entity';
 import { AccountingService } from '../accounting/accounting.service';
 import { defaultExpenseNature, EXPENSE_NATURES, isValidExpenseNature } from '../common/gst-returns';
-import { moneyStr, round2 } from '../common/money';
+import { moneyStr, round2, roundQty } from '../common/money';
 
 export { EXPENSE_NATURES };
 export const ICE_CREST_EXPENSE_CATEGORIES = ['Purchase / raw material', 'Salary', 'Daily wages', 'Contract labour', 'Transport', 'Fuel', 'Electricity', 'Water', 'Rent', 'Repairs & maintenance', 'Plastic/packaging charges', 'Machinery / equipment', 'Marketing', 'Professional fees', 'Bank charges', 'Taxes & licences', 'Miscellaneous', 'Other operational expenses'];
@@ -127,7 +127,7 @@ export class IceCrestService {
 
   async recordMovement(body: { warehouse_id: string; item_id: string; movement_type: 'opening'|'inward'|'outward'|'adjustment'; quantity: number; movement_date?: string; notes?: string; reference_number?: string }, ctx: TenantContext) {
     const tenantId = this.tenantId(ctx); await this.assertIceCrest(tenantId);
-    const qty = Number(body.quantity);
+    const qty = roundQty(Number(body.quantity));
     if (!Number.isFinite(qty) || qty <= 0) throw new ForbiddenException('Quantity must be greater than zero');
     if (body.movement_type === 'outward') await this.inventoryService.deductStock(ctx, body.warehouse_id, body.item_id, qty);
     else await this.inventoryService.receiveStock(ctx, body.warehouse_id, body.item_id, qty);

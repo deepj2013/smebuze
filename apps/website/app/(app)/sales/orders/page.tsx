@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiGet } from '@/lib/api';
+import { PageHeader } from '../../components/PageHeader';
+import { ResponsiveDataList, type Column } from '../../components/ResponsiveDataList';
 
 interface SalesOrder {
   id: string;
@@ -30,47 +32,43 @@ export default function SalesOrdersPage() {
     })();
   }, []);
 
+  const columns: Column<SalesOrder>[] = [
+    { key: 'number', label: 'Number', cardLabel: 'Number' },
+    { key: 'customer', label: 'Customer', cardLabel: 'Customer', render: (o) => o.customer?.name ?? '—' },
+    { key: 'order_date', label: 'Date', cardLabel: 'Date', render: (o) => (typeof o.order_date === 'string' ? o.order_date.slice(0, 10) : '—') },
+    { key: 'status', label: 'Status', cardLabel: 'Status', render: (o) => <span className="capitalize">{o.status}</span> },
+    { key: 'total', label: 'Total', className: 'text-right', render: (o) => `₹${Number(o.total).toFixed(2)}` },
+    { key: 'actions', label: 'Actions', render: (o) => <Link href={`/sales/orders/${o.id}`} className="text-brand-600 hover:underline text-sm font-medium">View</Link> },
+  ];
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-slate-900">Sales orders</h1>
-        <Link href="/sales/orders/new" className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700">Create sales order</Link>
-      </div>
+      <PageHeader title="Sales orders">
+        <Link href="/sales/orders/new" className="rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-medium hover:bg-brand-700 min-h-[44px] inline-flex items-center justify-center">Create sales order</Link>
+      </PageHeader>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
       {loading && <p className="text-slate-600">Loading…</p>}
       {!loading && (
-        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="text-left p-3 font-medium text-slate-700">Number</th>
-                <th className="text-left p-3 font-medium text-slate-700">Customer</th>
-                <th className="text-left p-3 font-medium text-slate-700">Date</th>
-                <th className="text-left p-3 font-medium text-slate-700">Status</th>
-                <th className="text-right p-3 font-medium text-slate-700">Total</th>
-                <th className="text-left p-3 font-medium text-slate-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.length === 0 ? (
-                <tr><td colSpan={6} className="p-4 text-slate-500">No sales orders yet.</td></tr>
-              ) : (
-                list.map((o) => (
-                  <tr key={o.id} className="border-b border-slate-100 last:border-0">
-                    <td className="p-3">{o.number}</td>
-                    <td className="p-3">{o.customer?.name ?? '—'}</td>
-                    <td className="p-3">{typeof o.order_date === 'string' ? o.order_date.slice(0, 10) : '—'}</td>
-                    <td className="p-3 capitalize">{o.status}</td>
-                    <td className="p-3 text-right">₹{Number(o.total).toFixed(2)}</td>
-                    <td className="p-3">
-                      <Link href={`/sales/orders/${o.id}`} className="text-brand-600 hover:underline text-sm">View</Link>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <ResponsiveDataList<SalesOrder>
+          columns={columns}
+          data={list}
+          keyField="id"
+          emptyMessage="No sales orders yet."
+          emptyAction={<Link href="/sales/orders/new" className="inline-block rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-medium hover:bg-brand-700">Create sales order</Link>}
+          renderMobileCard={(o) => (
+            <Link href={`/sales/orders/${o.id}`} className="block">
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm active:bg-slate-50">
+                <div className="flex justify-between gap-2">
+                  <span className="font-semibold text-slate-900">{o.number}</span>
+                  <span className="tabular-nums font-medium text-brand-600">₹{Number(o.total).toFixed(2)}</span>
+                </div>
+                <p className="mt-1 text-sm text-slate-600">{o.customer?.name ?? '—'}</p>
+                <p className="mt-1 text-xs text-slate-500 capitalize">{typeof o.order_date === 'string' ? o.order_date.slice(0, 10) : '—'} · {o.status}</p>
+                <span className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-lg bg-brand-600 px-3 text-sm font-medium text-white">View</span>
+              </div>
+            </Link>
+          )}
+        />
       )}
     </div>
   );

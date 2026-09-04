@@ -8,7 +8,7 @@ import { Stock } from './entities/stock.entity';
 import { StockTransfer } from './entities/stock-transfer.entity';
 import { StockTransferLine } from './entities/stock-transfer-line.entity';
 import { TenantContext } from '../common/tenant-context';
-import { moneyStr, optionalMoneyStr, round2 } from '../common/money';
+import { moneyStr, optionalMoneyStr, round2, roundQty } from '../common/money';
 
 @Injectable()
 export class InventoryService {
@@ -401,7 +401,7 @@ export class InventoryService {
     const tenantId = this.assertTenantId(ctx);
     await this.findOneWarehouse(warehouseId, ctx);
     let row = await this.stockRepo.findOne({ where: { tenant_id: tenantId, warehouse_id: warehouseId, item_id: itemId } });
-    const qty = Math.max(0, quantity);
+    const qty = Math.max(0, roundQty(quantity));
     if (row) {
       row.quantity = String(parseFloat(row.quantity) + qty);
       await this.stockRepo.save(row);
@@ -415,7 +415,7 @@ export class InventoryService {
   async deductStock(ctx: TenantContext, warehouseId: string, itemId: string, quantity: number): Promise<void> {
     const tenantId = this.assertTenantId(ctx);
     const row = await this.stockRepo.findOne({ where: { tenant_id: tenantId, warehouse_id: warehouseId, item_id: itemId } });
-    const qty = Math.max(0, quantity);
+    const qty = Math.max(0, roundQty(quantity));
     if (!row) throw new ForbiddenException(`No stock record for item ${itemId} in warehouse ${warehouseId}; cannot deduct.`);
     const current = parseFloat(row.quantity);
     if (current < qty) throw new ForbiddenException(`Insufficient stock for item: have ${current}, need ${qty}.`);

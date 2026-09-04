@@ -177,10 +177,24 @@ input[type='number'] {
 .responsive-table-wrap {
   @apply overflow-x-auto -mx-2 sm:mx-0;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 .responsive-table-wrap::-webkit-scrollbar {
   height: 6px;
 }
 .responsive-table-wrap .table-min-width {
   min-width: 640px;
+}
+
+/* List pages that wrap a table in overflow-hidden: allow swipe to reach Edit/Actions on phones */
+@media (max-width: 767px) {
+  main .overflow-hidden:has(table) {
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  main .overflow-hidden:has(table) table {
+    min-width: 640px;
+  }
 }

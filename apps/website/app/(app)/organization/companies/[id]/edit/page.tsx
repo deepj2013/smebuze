@@ -118,16 +118,16 @@ export default function EditCompanyPage() {
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Legal name</label><input type="text" value={legalName} onChange={(e) => setLegalName(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
         <div><label className="block text-sm font-medium text-slate-700 mb-1">GSTIN</label><input type="text" value={gstin} onChange={(e) => setGstin(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Address line 1</label><input type="text" value={line1} onChange={(e) => setLine1(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div><label className="block text-sm font-medium text-slate-700 mb-1">City</label><input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
           <div><label className="block text-sm font-medium text-slate-700 mb-1">State</label><input type="text" value={stateVal} onChange={(e) => setStateVal(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Pincode</label><input type="text" value={pincode} onChange={(e) => setPincode(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
         </div>
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div><label className="block text-sm font-medium text-slate-700 mb-1">FSSAI No.</label><input type="text" value={fssai} onChange={(e) => setFssai(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" placeholder="Printed on invoice" /></div>
           <div><label className="block text-sm font-medium text-slate-700 mb-1">MSME No.</label><input type="text" value={msme} onChange={(e) => setMsme(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" placeholder="Printed on invoice" /></div>
         </div>
@@ -150,7 +150,7 @@ export default function EditCompanyPage() {
         <div><label className="block text-sm text-slate-600 mb-1">Bank name</label><input type="text" value={bankName} onChange={(e) => setBankName(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
         <div><label className="block text-sm text-slate-600 mb-1">Branch</label><input type="text" value={bankBranch} onChange={(e) => setBankBranch(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
         <div><label className="block text-sm text-slate-600 mb-1">Account holder&apos;s name</label><input type="text" value={accountName} onChange={(e) => setAccountName(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div><label className="block text-sm text-slate-600 mb-1">Account no.</label><input type="text" value={accountNo} onChange={(e) => setAccountNo(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
           <div><label className="block text-sm text-slate-600 mb-1">IFSC</label><input type="text" value={ifsc} onChange={(e) => setIfsc(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
         </div>

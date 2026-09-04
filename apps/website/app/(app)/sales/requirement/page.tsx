@@ -268,7 +268,7 @@ export default function RequirementPage() {
                     {l.mrp > 0 ? `₹${Number(l.mrp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
                   </td>
                   <td className="py-1 pr-2">
-                    <NumberField min={0} value={l.qty || 0} onNumber={(n) => updateLine(idx, { qty: n })} aria-label="Quantity" />
+                    <NumberField whole min={0} value={l.qty || 0} onNumber={(n) => updateLine(idx, { qty: n })} aria-label="Quantity" />
                   </td>
                   <td className="py-1 pr-2">
                     <NumberField min={0} value={l.rate || 0} onNumber={(n) => setLineRate(idx, n)} aria-label="Rate" />

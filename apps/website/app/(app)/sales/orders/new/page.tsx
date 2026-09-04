@@ -167,7 +167,7 @@ export default function NewSalesOrderPage() {
                   <option value="">Select SKU</option>
                   {items.map((x) => <option key={x.id} value={x.id}>{x.name} {x.sku ? `(${x.sku})` : ''}</option>)}
                 </select>
-                <NumberField aria-label="Quantity" required min={0.01} step="0.01" value={line.qty} onNumber={(n)=>setLines(v=>v.map((x,j)=>j===i?{...x,qty:n}:x))} />
+                <NumberField aria-label="Quantity" required whole min={1} value={line.qty} onNumber={(n)=>setLines(v=>v.map((x,j)=>j===i?{...x,qty:n}:x))} />
                 <div>
                   <NumberField aria-label="Rate" required min={0} step="0.01" value={line.rate} onNumber={(n)=>setLines(v=>v.map((x,j)=>j===i?{...x,rate:n,customer_rate:false}:x))} />
                   {line.customer_rate && <p className="text-[10px] text-cyan-700 mt-0.5">Customer rate</p>}

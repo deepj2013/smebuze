@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiGet } from '@/lib/api';
-import { limitDecimalPlaces } from '@/lib/money';
+import { limitInteger } from '@/lib/money';
 
 type Row = { item_id: string; sku?: string; name: string; confirmed_orders: number; available_stock: number; safety_stock: number; produce_tomorrow: number };
 type Plan = { plan_date: string; order_count: number; safety_stock: number; rows: Row[]; totals: { confirmed: number; to_produce: number } };
@@ -36,7 +36,7 @@ export default function ProductionPlanPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <input type="date" value={date} onChange={e => setDate(e.target.value)} className="rounded border px-3 py-2 text-sm" aria-label="Plan date" />
-          <label className="text-sm">Safety stock / SKU<input type="text" inputMode="decimal" value={safety} onChange={e => setSafety(limitDecimalPlaces(e.target.value))} className="ml-2 w-20 rounded border px-2 py-2" /></label>
+          <label className="text-sm">Safety stock / SKU<input type="text" inputMode="numeric" value={safety} onChange={e => setSafety(limitInteger(e.target.value))} className="ml-2 w-20 rounded border px-2 py-2" /></label>
         </div>
       </div>
       {error && <p className="rounded bg-red-50 p-3 text-red-700">{error}</p>}

@@ -1,6 +1,6 @@
 import { IsArray, IsBoolean, IsDateString, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateIf, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
-import { To2Decimals } from '../../common/money';
+import { To2Decimals, ToInteger } from '../../common/money';
 
 export class CreateInvoiceLineDto {
   @IsOptional()
@@ -14,7 +14,7 @@ export class CreateInvoiceLineDto {
   description: string;
 
   @Type(() => Number)
-  @To2Decimals()
+  @ToInteger()
   @IsNumber()
   @Min(0)
   qty: number;

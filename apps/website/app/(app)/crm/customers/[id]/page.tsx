@@ -92,12 +92,13 @@ export default function Customer360Page() {
 
       <CustomerItemRates customerId={id} />
 
-      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <div className="rounded-lg border border-slate-200 bg-white">
         <h2 className="font-semibold text-slate-800 p-4 border-b border-slate-200">Last invoices</h2>
         {last_invoices.length === 0 ? (
           <p className="p-4 text-slate-500 text-sm">No invoices yet.</p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="responsive-table-wrap">
+          <table className="w-full text-sm table-min-width">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="text-left p-3 font-medium text-slate-700">Number</th>
@@ -121,6 +122,7 @@ export default function Customer360Page() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

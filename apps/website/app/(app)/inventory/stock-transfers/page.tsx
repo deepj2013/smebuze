@@ -31,15 +31,16 @@ export default function StockTransfersPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-slate-900">Stock transfers</h1>
-        <Link href="/inventory/stock-transfers/new" className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700">Create stock transfer</Link>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Stock transfers</h1>
+        <Link href="/inventory/stock-transfers/new" className="rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-medium hover:bg-brand-700 min-h-[44px] inline-flex items-center justify-center w-fit">Create stock transfer</Link>
       </div>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
       {loading && <p className="text-slate-600">Loading…</p>}
       {!loading && (
-        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="rounded-xl border border-slate-200 bg-white">
+          <div className="responsive-table-wrap">
+          <table className="w-full text-sm table-min-width">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="text-left p-3 font-medium text-slate-700">From</th>
@@ -65,6 +66,7 @@ export default function StockTransfersPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

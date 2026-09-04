@@ -36,11 +36,11 @@ import { StockMovement } from '../ice-crest/entities/stock-movement.entity';
 import { StockReservation } from '../inventory/entities/stock-reservation.entity';
 import { Stock } from '../inventory/entities/stock.entity';
 import { Warehouse } from '../inventory/entities/warehouse.entity';
-import { moneyStr, round2 } from '../common/money';
-import { amountInInrWords, formatInr, formatInvoiceDate, gstPlaceOfSupply } from '../common/inr-words';
+import { amountInInrWords, formatInr, formatInvoiceDate, formatQty, gstPlaceOfSupply } from '../common/inr-words';
+import { moneyStr, round2, roundQty } from '../common/money';
 
 function gstLine(qty: number, rate: number, cgstRate = 0, sgstRate = 0, igstRate = 0) {
-  const q = round2(qty);
+  const q = roundQty(qty);
   const r = round2(rate);
   const taxable = round2(q * r);
   const cgst = round2(cgstRate);
@@ -1152,7 +1152,7 @@ export class SalesService {
     const lineRows = lines
       .map(
         (l: SalesInvoiceLine) =>
-          `<tr><td>${escapeHtml(l.hsn_sac)}</td><td>${escapeHtml(String(l.description).slice(0, 15))}</td><td>${Number(l.qty).toFixed(2)}</td><td>${Number(l.rate).toFixed(2)}</td><td>${parseFloat(l.taxable_value).toFixed(2)}</td><td>${Number(l.cgst_rate).toFixed(2)}</td><td>${parseFloat(l.cgst_amount).toFixed(2)}</td><td>${Number(l.sgst_rate).toFixed(2)}</td><td>${parseFloat(l.sgst_amount).toFixed(2)}</td></tr>`,
+          `<tr><td>${escapeHtml(l.hsn_sac)}</td><td>${escapeHtml(String(l.description).slice(0, 15))}</td><td>${formatQty(Number(l.qty))}</td><td>${Number(l.rate).toFixed(2)}</td><td>${parseFloat(l.taxable_value).toFixed(2)}</td><td>${Number(l.cgst_rate).toFixed(2)}</td><td>${parseFloat(l.cgst_amount).toFixed(2)}</td><td>${Number(l.sgst_rate).toFixed(2)}</td><td>${parseFloat(l.sgst_amount).toFixed(2)}</td></tr>`,
       )
       .join('');
 
@@ -1458,13 +1458,13 @@ ${this.invoicePayBlockHtml(pay)}
     let gstTotal = 0;
     let amountTotal = 0;
     const itemRows = lines.map((l, i) => {
-      const qty = round2(Number(l.qty || 0));
+      const qty = roundQty(Number(l.qty || 0));
       const rate = round2(Number(l.rate || 0));
       const taxable = round2(Number(l.taxable_value || 0));
       const gstAmt = round2(Number(l.cgst_amount || 0) + Number(l.sgst_amount || 0) + Number(l.igst_amount || 0));
       const gstPct = round2(Number(l.cgst_rate || 0) + Number(l.sgst_rate || 0) + Number(l.igst_rate || 0));
       const amount = round2(taxable + gstAmt);
-      qtyTotal = round2(qtyTotal + qty);
+      qtyTotal = roundQty(qtyTotal + qty);
       taxableTotal = round2(taxableTotal + taxable);
       gstTotal = round2(gstTotal + gstAmt);
       amountTotal = round2(amountTotal + amount);
@@ -1472,7 +1472,7 @@ ${this.invoicePayBlockHtml(pay)}
         <td class="c">${i + 1}</td>
         <td>${escapeHtml(String(l.description || ''))}</td>
         <td class="c">${escapeHtml(l.hsn_sac || '')}</td>
-        <td class="r">${formatInr(qty)}</td>
+        <td class="r">${formatQty(qty)}</td>
         <td class="c">${escapeHtml((l.unit || 'PCS').toUpperCase())}</td>
         <td class="r">${formatInr(rate)}</td>
         <td class="r">${formatInr(taxable)}</td>
@@ -1614,7 +1614,7 @@ table.grid th{background:#eee;font-size:10px}
       ${itemRows || `<tr><td colspan="9" class="c">No items</td></tr>`}
       <tr>
         <td colspan="3" class="r"><strong>Total</strong></td>
-        <td class="r"><strong>${formatInr(qtyTotal)}</strong></td>
+        <td class="r"><strong>${formatQty(qtyTotal)}</strong></td>
         <td></td><td></td>
         <td class="r"><strong>${formatInr(taxableTotal)}</strong></td>
         <td class="r"><strong>${formatInr(gstTotal)}</strong></td>
@@ -1702,7 +1702,7 @@ ${this.invoicePayBlockHtml(pay)}
     const validUntil = q.valid_until ? new Date(q.valid_until as Date | string).toISOString().slice(0, 10) : '—';
     const items = q.items ?? [];
     const lineRows = items.map((l, i) =>
-      `<tr><td>${i + 1}</td><td>${escapeHtml(String(l.description ?? 'Ice product'))}</td><td class="right">${Number(l.qty).toFixed(2)}</td><td>${l.unit ?? 'pcs'}</td><td class="right">${Number(l.rate).toFixed(2)}</td><td class="right">${Number(l.amount).toFixed(2)}</td><td class="right">${Number(l.tax_rate ?? 0).toFixed(2)}%</td></tr>`,
+      `<tr><td>${i + 1}</td><td>${escapeHtml(String(l.description ?? 'Ice product'))}</td><td class="right">${formatQty(Number(l.qty))}</td><td>${l.unit ?? 'pcs'}</td><td class="right">${Number(l.rate).toFixed(2)}</td><td class="right">${Number(l.amount).toFixed(2)}</td><td class="right">${Number(l.tax_rate ?? 0).toFixed(2)}%</td></tr>`,
     ).join('');
     const defaultTerms = 'Quotation valid for 7 days. Prices exclude delivery unless stated. GST as applicable.';
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Quotation ${escapeHtml(q.number)}</title><style>${this.iceCrestPrintStyles(branding)}</style></head><body>

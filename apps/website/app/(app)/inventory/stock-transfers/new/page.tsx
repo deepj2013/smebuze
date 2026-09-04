@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
+import NumberField from '../../../components/NumberField';
 
 interface Warehouse { id: string; name: string }
 interface Item { id: string; name: string }
@@ -129,7 +130,7 @@ export default function NewStockTransferPage() {
                 </div>
                 <div className="w-24">
                   <label className="block text-xs text-slate-500 mb-0.5">Qty</label>
-                  <input type="number" min={0} step={1} value={line.quantity} onChange={(e) => updateLine(i, 'quantity', e.target.valueAsNumber || 0)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+                  <NumberField whole min={0} value={line.quantity} onNumber={(n) => updateLine(i, 'quantity', n)} aria-label="Quantity" />
                 </div>
                 <button type="button" onClick={() => removeLine(i)} className="text-red-600 text-sm hover:underline">Remove</button>
               </div>

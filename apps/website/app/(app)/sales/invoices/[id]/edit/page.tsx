@@ -266,7 +266,7 @@ export default function EditInvoicePage() {
                   <tr key={i} className="border-b border-slate-100">
                     <td className="py-1 pr-2"><input type="text" value={line.hsn_sac} onChange={(e) => updateLine(i, 'hsn_sac', e.target.value)} className="w-20 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
                     <td className="py-1 pr-2"><input type="text" value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} className="w-full min-w-[120px] rounded border border-slate-300 px-2 py-1 text-sm" /></td>
-                    <td className="py-1 pr-2 min-w-[5.5rem]"><NumberField min={0} step="0.01" value={line.qty} onNumber={(n) => updateLine(i, 'qty', n)} aria-label={`Line ${i + 1} quantity`} /></td>
+                    <td className="py-1 pr-2 min-w-[5.5rem]"><NumberField whole min={0} value={line.qty} onNumber={(n) => updateLine(i, 'qty', n)} aria-label={`Line ${i + 1} quantity`} /></td>
                     <td className="py-1 pr-2"><input type="text" value={line.unit} onChange={(e) => updateLine(i, 'unit', e.target.value)} className="w-14 min-h-[44px] rounded border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900" /></td>
                     <td className="py-1 pr-2 min-w-[6rem]"><NumberField min={0} step="0.01" value={line.rate} onNumber={(n) => updateLine(i, 'rate', n)} aria-label={`Line ${i + 1} rate`} /></td>
                     <td className="py-1 pr-2 min-w-[5.5rem]"><NumberField min={0} max={100} step="0.01" value={line.cgst_rate} onNumber={(n) => updateLine(i, 'cgst_rate', n)} aria-label={`Line ${i + 1} CGST`} /></td>
