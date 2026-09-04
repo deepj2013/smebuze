@@ -8,6 +8,7 @@ import { Stock } from './entities/stock.entity';
 import { StockTransfer } from './entities/stock-transfer.entity';
 import { StockTransferLine } from './entities/stock-transfer-line.entity';
 import { TenantContext } from '../common/tenant-context';
+import { moneyStr, optionalMoneyStr, round2 } from '../common/money';
 
 @Injectable()
 export class InventoryService {
@@ -178,31 +179,33 @@ export class InventoryService {
   ): Promise<{ tax_rate: string; cgst_rate: string; sgst_rate: string }> {
     const hasSplit = dto.cgst_rate !== undefined || dto.sgst_rate !== undefined;
     if (hasSplit) {
-      const cgst = dto.cgst_rate !== undefined ? Number(dto.cgst_rate) : Number(existing?.cgst_rate ?? 0);
-      const sgst = dto.sgst_rate !== undefined ? Number(dto.sgst_rate) : Number(existing?.sgst_rate ?? 0);
+      const cgst = round2(dto.cgst_rate !== undefined ? Number(dto.cgst_rate) : Number(existing?.cgst_rate ?? 0));
+      const sgst = round2(dto.sgst_rate !== undefined ? Number(dto.sgst_rate) : Number(existing?.sgst_rate ?? 0));
       if (!Number.isFinite(cgst) || cgst < 0 || cgst > 100 || !Number.isFinite(sgst) || sgst < 0 || sgst > 100) {
         throw new BadRequestException('CGST and SGST must be between 0 and 100');
       }
-      return { cgst_rate: String(cgst), sgst_rate: String(sgst), tax_rate: String(cgst + sgst) };
+      return { cgst_rate: moneyStr(cgst), sgst_rate: moneyStr(sgst), tax_rate: moneyStr(cgst + sgst) };
     }
     if (dto.tax_rate !== undefined) {
-      const tax = Number(dto.tax_rate);
+      const tax = round2(Number(dto.tax_rate));
       if (!Number.isFinite(tax) || tax < 0 || tax > 100) {
         throw new BadRequestException('Tax rate must be between 0 and 100');
       }
-      return { tax_rate: String(tax), cgst_rate: String(tax / 2), sgst_rate: String(tax / 2) };
+      const half = round2(tax / 2);
+      return { tax_rate: moneyStr(tax), cgst_rate: moneyStr(half), sgst_rate: moneyStr(tax - half) };
     }
     if (existing) {
-      const tax = Number(existing.tax_rate ?? 0);
+      const tax = round2(Number(existing.tax_rate ?? 0));
+      const half = round2(tax / 2);
       return {
-        tax_rate: existing.tax_rate,
-        cgst_rate: existing.cgst_rate ?? String(tax / 2),
-        sgst_rate: existing.sgst_rate ?? String(tax / 2),
+        tax_rate: moneyStr(existing.tax_rate),
+        cgst_rate: existing.cgst_rate != null ? moneyStr(existing.cgst_rate) : moneyStr(half),
+        sgst_rate: existing.sgst_rate != null ? moneyStr(existing.sgst_rate) : moneyStr(tax - half),
       };
     }
     const ice = await this.iceCrestGstDefaults(tenantId);
-    if (ice) return { cgst_rate: String(ice.cgst), sgst_rate: String(ice.sgst), tax_rate: String(ice.cgst + ice.sgst) };
-    return { tax_rate: '0', cgst_rate: '0', sgst_rate: '0' };
+    if (ice) return { cgst_rate: moneyStr(ice.cgst), sgst_rate: moneyStr(ice.sgst), tax_rate: moneyStr(ice.cgst + ice.sgst) };
+    return { tax_rate: '0.00', cgst_rate: '0.00', sgst_rate: '0.00' };
   }
 
   private assertSaleOrConsume(forSale: boolean, forConsume: boolean) {
@@ -254,11 +257,11 @@ export class InventoryService {
       unit: dto.unit ?? 'pcs',
       category: dto.category ?? null,
       hsn_sac: dto.hsn_sac ?? null,
-      reorder_level: dto.reorder_level != null ? String(dto.reorder_level) : '0',
-      mrp: dto.mrp != null ? String(dto.mrp) : null,
-      cost_price: dto.cost_price != null ? String(dto.cost_price) : null,
-      sale_price: dto.sale_price != null ? String(dto.sale_price) : dto.mrp != null ? String(dto.mrp) : null,
-      discount_percent: dto.discount_percent != null ? String(dto.discount_percent) : null,
+      reorder_level: dto.reorder_level != null ? moneyStr(dto.reorder_level) : '0.00',
+      mrp: optionalMoneyStr(dto.mrp),
+      cost_price: optionalMoneyStr(dto.cost_price),
+      sale_price: optionalMoneyStr(dto.sale_price) ?? optionalMoneyStr(dto.mrp),
+      discount_percent: optionalMoneyStr(dto.discount_percent),
       tax_rate: gst.tax_rate,
       cgst_rate: gst.cgst_rate,
       sgst_rate: gst.sgst_rate,
@@ -357,11 +360,11 @@ export class InventoryService {
       if (dto.category.trim()) await this.ensureCategory(dto.category, ctx);
     }
     if (dto.hsn_sac != null) item.hsn_sac = dto.hsn_sac;
-    if (dto.reorder_level != null) item.reorder_level = String(dto.reorder_level);
-    if (dto.mrp !== undefined) item.mrp = dto.mrp != null ? String(dto.mrp) : null;
-    if (dto.cost_price !== undefined) item.cost_price = dto.cost_price != null ? String(dto.cost_price) : null;
-    if (dto.sale_price !== undefined) item.sale_price = dto.sale_price != null ? String(dto.sale_price) : null;
-    if (dto.discount_percent !== undefined) item.discount_percent = dto.discount_percent != null ? String(dto.discount_percent) : null;
+    if (dto.reorder_level != null) item.reorder_level = moneyStr(dto.reorder_level);
+    if (dto.mrp !== undefined) item.mrp = optionalMoneyStr(dto.mrp);
+    if (dto.cost_price !== undefined) item.cost_price = optionalMoneyStr(dto.cost_price);
+    if (dto.sale_price !== undefined) item.sale_price = optionalMoneyStr(dto.sale_price);
+    if (dto.discount_percent !== undefined) item.discount_percent = optionalMoneyStr(dto.discount_percent);
     if (dto.cgst_rate !== undefined || dto.sgst_rate !== undefined || dto.tax_rate !== undefined) {
       const gst = await this.resolveItemGst(dto, item.tenant_id, item);
       item.tax_rate = gst.tax_rate;

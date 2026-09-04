@@ -15,6 +15,7 @@ import { SalesOrder } from '../sales/entities/sales-order.entity';
 import { Company } from '../tenant/entities/company.entity';
 import { AccountingService } from '../accounting/accounting.service';
 import { defaultExpenseNature, EXPENSE_NATURES, isValidExpenseNature } from '../common/gst-returns';
+import { moneyStr, round2 } from '../common/money';
 
 export { EXPENSE_NATURES };
 export const ICE_CREST_EXPENSE_CATEGORIES = ['Purchase / raw material', 'Salary', 'Daily wages', 'Contract labour', 'Transport', 'Fuel', 'Electricity', 'Water', 'Rent', 'Repairs & maintenance', 'Plastic/packaging charges', 'Machinery / equipment', 'Marketing', 'Professional fees', 'Bank charges', 'Taxes & licences', 'Miscellaneous', 'Other operational expenses'];
@@ -56,10 +57,10 @@ export class IceCrestService {
     if (!ICE_CREST_EXPENSE_CATEGORIES.includes(body.category)) throw new ForbiddenException('Invalid expense category');
     const entryType=body.entry_type??'operating_expense';if(!ICE_CREST_ENTRY_TYPES.includes(entryType))throw new ForbiddenException('Invalid expense entry type');
     const nature = body.nature && isValidExpenseNature(body.nature) ? body.nature : defaultExpenseNature(body.category);
-    const taxable=Number(body.taxable_amount??body.amount??0),gstRate=Number(body.gst_rate??0),tds=Number(body.tds_amount??0);
+    const taxable=round2(Number(body.taxable_amount??body.amount??0)),gstRate=Number(body.gst_rate??0),tds=round2(Number(body.tds_amount??0));
     if(!Number.isFinite(taxable)||taxable<=0)throw new ForbiddenException('Taxable/base amount must be greater than zero');
     if(![0,5,12,18,28].includes(gstRate))throw new ForbiddenException('GST rate must be 0, 5, 12, 18 or 28 percent');
-    const gst=taxable*gstRate/100,total=taxable+gst,paid=Number(body.paid_amount??0);
+    const gst=round2(taxable*gstRate/100),total=round2(taxable+gst),paid=round2(Number(body.paid_amount??0));
     if(!Number.isFinite(paid)||paid<0||paid+tds>total)throw new ForbiddenException('Paid amount plus TDS cannot exceed total amount');
     if(['wage','salary'].includes(entryType)&&!body.employee_name?.trim())throw new ForbiddenException('Employee/worker name is required for wage and salary entries');
     if(entryType==='purchase'&&!body.vendor_id)throw new ForbiddenException('Vendor is required for purchase entries');
@@ -74,8 +75,8 @@ export class IceCrestService {
     const saved = await this.expenseRepo.save(this.expenseRepo.create({
       tenant_id: tenantId, company_id: companyId, entry_type:entryType,expense_number:body.expense_number?.trim()||`EXP-${Date.now()}`,
       vendor_id:body.vendor_id??null,employee_name:body.employee_name?.trim()||null,category: body.category, nature, hsn_sac: body.hsn_sac?.trim() || null, itc_eligible: itcEligible,
-      taxable_amount:taxable.toFixed(2),gst_rate:String(gstRate),gst_amount:gst.toFixed(2),tds_amount:tds.toFixed(2),
-      amount: total.toFixed(2),paid_amount:paid.toFixed(2),status,due_date:dueDate, expense_date: expenseDate,
+      taxable_amount:moneyStr(taxable),gst_rate:moneyStr(gstRate),gst_amount:moneyStr(gst),tds_amount:moneyStr(tds),
+      amount: moneyStr(total),paid_amount:moneyStr(paid),status,due_date:dueDate, expense_date: expenseDate,
       description: body.description ?? null, payment_mode: body.payment_mode ?? null,
       reference: body.reference ?? null,invoice_number:body.invoice_number??null,attachment_url:body.attachment_url??null, created_by: ctx.userId,
     }));
@@ -102,10 +103,10 @@ export class IceCrestService {
   }
 
   async recordExpensePayment(id:string,body:{amount:number;payment_mode?:string;reference?:string},ctx:TenantContext){
-    const tenantId=this.tenantId(ctx);await this.assertIceCrest(tenantId);const amount=Number(body.amount);if(!Number.isFinite(amount)||amount<=0)throw new ForbiddenException('Payment amount must be greater than zero');
+    const tenantId=this.tenantId(ctx);await this.assertIceCrest(tenantId);const amount=round2(Number(body.amount));if(!Number.isFinite(amount)||amount<=0)throw new ForbiddenException('Payment amount must be greater than zero');
     return this.dataSource.transaction(async manager=>{const row=await manager.getRepository(BusinessExpense).createQueryBuilder('e').setLock('pessimistic_write').where('e.id=:id AND e.tenant_id=:tenantId',{id,tenantId}).getOne();if(!row)throw new NotFoundException('Expense entry not found');
-      const total=Number(row.amount),paid=Number(row.paid_amount),tds=Number(row.tds_amount),outstanding=total-paid-tds;if(amount>outstanding)throw new ForbiddenException(`Payment exceeds outstanding amount ${outstanding.toFixed(2)}`);
-      row.paid_amount=(paid+amount).toFixed(2);row.status=paid+amount+tds>=total?'paid':'partial';if(body.payment_mode)row.payment_mode=body.payment_mode;if(body.reference)row.reference=body.reference;
+      const total=Number(row.amount),paid=Number(row.paid_amount),tds=Number(row.tds_amount),outstanding=round2(total-paid-tds);if(amount>outstanding)throw new ForbiddenException(`Payment exceeds outstanding amount ${outstanding.toFixed(2)}`);
+      row.paid_amount=moneyStr(paid+amount);row.status=round2(paid+amount+tds)>=total?'paid':'partial';if(body.payment_mode)row.payment_mode=body.payment_mode;if(body.reference)row.reference=body.reference;
       const saved=await manager.save(row);
       if (saved.company_id) {
         try {

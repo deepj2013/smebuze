@@ -22,6 +22,9 @@ export default function EditCompanyPage() {
   const [bankBranch, setBankBranch] = useState('');
   const [accountNo, setAccountNo] = useState('');
   const [ifsc, setIfsc] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [fssai, setFssai] = useState('');
+  const [msme, setMsme] = useState('');
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [logoUploading, setLogoUploading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -44,11 +47,14 @@ export default function EditCompanyPage() {
         setPincode(addr.pincode ?? '');
         setEmail(addr.email ?? '');
         setPhone(addr.phone ?? '');
+        setFssai(addr.fssai ?? '');
+        setMsme(addr.msme ?? '');
         const bank = (d.bank_details as Record<string, string>) ?? {};
         setBankName(bank.bank_name ?? '');
         setBankBranch(bank.branch ?? '');
         setAccountNo(bank.account_no ?? '');
         setIfsc(bank.ifsc ?? '');
+        setAccountName(bank.account_name ?? '');
       }
     });
   }, [id]);
@@ -75,8 +81,23 @@ export default function EditCompanyPage() {
       name,
       legal_name: legalName || undefined,
       gstin: gstin || undefined,
-      address: { line1: line1 || undefined, city, state: stateVal, pincode, email: email || undefined, phone: phone || undefined },
-      bank_details: { bank_name: bankName || undefined, branch: bankBranch || undefined, account_no: accountNo || undefined, ifsc: ifsc || undefined },
+      address: {
+        line1: line1 || undefined,
+        city,
+        state: stateVal,
+        pincode,
+        email: email || undefined,
+        phone: phone || undefined,
+        fssai: fssai || undefined,
+        msme: msme || undefined,
+      },
+      bank_details: {
+        bank_name: bankName || undefined,
+        branch: bankBranch || undefined,
+        account_no: accountNo || undefined,
+        ifsc: ifsc || undefined,
+        account_name: accountName || undefined,
+      },
     });
     setLoading(false);
     if (err) setError(err);
@@ -88,7 +109,9 @@ export default function EditCompanyPage() {
     <div>
       <Link href="/organization/companies" className="text-sm text-slate-600 hover:text-slate-900 mb-4 inline-block">← Companies</Link>
       <h1 className="text-2xl font-bold text-slate-900 mb-4">Edit company</h1>
-      <p className="mb-4 text-sm text-slate-500">These details appear on Ice Crest branded invoices and quotations.</p>
+      <p className="mb-4 text-sm text-slate-500">
+        Logo, company name, GSTIN, FSSAI, MSME, and bank details print on the tax invoice. Change them here whenever you need.
+      </p>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
       <form onSubmit={submit} className="max-w-lg space-y-4 rounded-xl border border-slate-200 bg-white p-6">
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Name *</label><input type="text" value={name} onChange={(e) => setName(e.target.value)} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
@@ -104,8 +127,12 @@ export default function EditCompanyPage() {
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
         </div>
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
+        <div className="grid grid-cols-2 gap-4">
+          <div><label className="block text-sm font-medium text-slate-700 mb-1">FSSAI No.</label><input type="text" value={fssai} onChange={(e) => setFssai(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" placeholder="Printed on invoice" /></div>
+          <div><label className="block text-sm font-medium text-slate-700 mb-1">MSME No.</label><input type="text" value={msme} onChange={(e) => setMsme(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" placeholder="Printed on invoice" /></div>
+        </div>
         <hr className="border-slate-200" />
-        <p className="text-sm font-medium text-slate-700">Company logo (invoices & quotations)</p>
+        <p className="text-sm font-medium text-slate-700">Company logo (printed on invoices)</p>
         <div className="flex items-center gap-4">
           {logoPreview ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -115,13 +142,14 @@ export default function EditCompanyPage() {
           )}
           <div>
             <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={onLogoChange} disabled={logoUploading} className="text-sm" />
-            <p className="mt-1 text-xs text-slate-500">PNG, JPG, WEBP or SVG · max 2 MB. Leave blank to use IC monogram.</p>
+            <p className="mt-1 text-xs text-slate-500">PNG, JPG, WEBP or SVG · max 2 MB. This logo appears at the top of the tax invoice.</p>
           </div>
         </div>
         <hr className="border-slate-200" />
-        <p className="text-sm font-medium text-slate-700">Bank details (shown on invoices)</p>
+        <p className="text-sm font-medium text-slate-700">Bank details (printed on invoices)</p>
         <div><label className="block text-sm text-slate-600 mb-1">Bank name</label><input type="text" value={bankName} onChange={(e) => setBankName(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
         <div><label className="block text-sm text-slate-600 mb-1">Branch</label><input type="text" value={bankBranch} onChange={(e) => setBankBranch(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
+        <div><label className="block text-sm text-slate-600 mb-1">Account holder&apos;s name</label><input type="text" value={accountName} onChange={(e) => setAccountName(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
         <div className="grid grid-cols-2 gap-4">
           <div><label className="block text-sm text-slate-600 mb-1">Account no.</label><input type="text" value={accountNo} onChange={(e) => setAccountNo(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>
           <div><label className="block text-sm text-slate-600 mb-1">IFSC</label><input type="text" value={ifsc} onChange={(e) => setIfsc(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" /></div>

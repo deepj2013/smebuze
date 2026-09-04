@@ -10,6 +10,7 @@ import PosSwitcher from '../components/PosSwitcher';
 import BarcodeCapture from '../components/BarcodeCapture';
 import { useHidBarcode } from '@/lib/use-hid-barcode';
 import { playScanBeep } from '@/lib/pos-beep';
+import { limitDecimalPlaces, round2 } from '@/lib/money';
 
 interface PosItem {
   id: string;
@@ -200,7 +201,7 @@ export default function PosPage() {
   const setQty = (itemId: string, qty: number) => {
     setCart((prev) => {
       if (qty <= 0) return prev.filter((l) => l.item_id !== itemId);
-      return prev.map((l) => (l.item_id === itemId ? { ...l, qty } : l));
+      return prev.map((l) => (l.item_id === itemId ? { ...l, qty: round2(qty) } : l));
     });
   };
 
@@ -208,11 +209,11 @@ export default function PosPage() {
     let subtotal = 0;
     let tax = 0;
     for (const l of cart) {
-      const taxable = l.qty * l.rate;
-      subtotal += taxable;
-      tax += taxable * (l.tax_rate / 100);
+      const taxable = round2(l.qty * l.rate);
+      subtotal = round2(subtotal + taxable);
+      tax = round2(tax + round2(taxable * (Number(l.tax_rate) / 100)));
     }
-    return { subtotal, tax, total: subtotal + tax };
+    return { subtotal, tax, total: round2(subtotal + tax) };
   }, [cart]);
 
   const tendered = Number(cashTendered || 0);
@@ -481,11 +482,10 @@ export default function PosPage() {
           <label className="mt-3 block text-xs font-medium text-slate-600">
             Cash received
             <input
-              type="number"
-              min={0}
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               value={cashTendered}
-              onChange={(e) => setCashTendered(e.target.value)}
+              onChange={(e) => setCashTendered(limitDecimalPlaces(e.target.value))}
               placeholder={totals.total ? String(totals.total.toFixed(2)) : '0'}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm min-h-[44px]"
             />

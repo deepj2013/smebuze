@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { To2Decimals } from '../../common/money';
 
 export class SaveRazorpayDto {
   @IsOptional()
@@ -32,6 +33,7 @@ export class SaveRazorpayDto {
 
   @IsOptional()
   @Type(() => Number)
+  @To2Decimals()
   @IsNumber()
   @Min(1)
   @Max(10000000)

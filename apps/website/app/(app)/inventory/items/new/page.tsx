@@ -8,8 +8,9 @@ import { RefreshCw, Barcode, ImagePlus, X } from 'lucide-react';
 import CategoryPicker from '../../../components/CategoryPicker';
 import PosSwitcher from '../../../components/PosSwitcher';
 import BarcodeCapture from '../../../components/BarcodeCapture';
-import { numberInputClass } from '../../../components/NumberField';
+import { DecimalInput } from '../../../components/NumberField';
 import { parseNonNeg } from '@/lib/item-pricing';
+import { parseMoney } from '@/lib/money';
 
 function validateHsnSac(v: string): string | null {
   if (!v.trim()) return null;
@@ -142,14 +143,14 @@ export default function NewItemPage() {
       category: category || undefined,
       hsn_sac: hsnSac.trim() || undefined,
     };
-    if (reorderLevel.trim() !== '') body.reorder_level = parseFloat(reorderLevel) || 0;
-    if (mrp.trim() !== '') body.mrp = parseFloat(mrp);
-    if (costPrice.trim() !== '') body.cost_price = parseFloat(costPrice);
-    if (salePrice.trim() !== '') body.sale_price = parseFloat(salePrice);
-    if (discountPercent.trim() !== '') body.discount_percent = parseFloat(discountPercent);
-    if (openingQty.trim() !== '') body.opening_qty = parseFloat(openingQty);
-    if (cgstRate.trim() !== '') body.cgst_rate = parseFloat(cgstRate) || 0;
-    if (sgstRate.trim() !== '') body.sgst_rate = parseFloat(sgstRate) || 0;
+    if (reorderLevel.trim() !== '') body.reorder_level = parseMoney(reorderLevel);
+    if (mrp.trim() !== '') body.mrp = parseMoney(mrp);
+    if (costPrice.trim() !== '') body.cost_price = parseMoney(costPrice);
+    if (salePrice.trim() !== '') body.sale_price = parseMoney(salePrice);
+    if (discountPercent.trim() !== '') body.discount_percent = parseMoney(discountPercent);
+    if (openingQty.trim() !== '') body.opening_qty = parseMoney(openingQty);
+    if (cgstRate.trim() !== '') body.cgst_rate = parseMoney(cgstRate);
+    if (sgstRate.trim() !== '') body.sgst_rate = parseMoney(sgstRate);
     body.for_sale = forSale;
     body.for_consume = forConsume;
     const { error: err } = await apiPost('inventory/items', body);
@@ -254,79 +255,43 @@ export default function NewItemPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Reorder level</label>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                min={0}
-                value={reorderLevel}
-                onChange={(e) => { setReorderLevel(e.target.value); setFieldErrors((p) => ({ ...p, reorderLevel: '' })); }}
-                className={`${numberInputClass} ${fieldErrors.reorderLevel ? 'border-red-500' : ''}`}
-              />
+              <DecimalInput min={0} value={reorderLevel} onValue={(v) => { setReorderLevel(v); setFieldErrors((p) => ({ ...p, reorderLevel: '' })); }} invalid={!!fieldErrors.reorderLevel} />
               {fieldErrors.reorderLevel && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.reorderLevel}</p>}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Cost price</label>
-              <input type="number" inputMode="decimal" step="0.01" min={0} value={costPrice} onChange={(e) => { setCostPrice(e.target.value); setFieldErrors((p) => ({ ...p, costPrice: '' })); }} className={`${numberInputClass} ${fieldErrors.costPrice ? 'border-red-500' : ''}`} />
+              <DecimalInput min={0} value={costPrice} onValue={(v) => { setCostPrice(v); setFieldErrors((p) => ({ ...p, costPrice: '' })); }} invalid={!!fieldErrors.costPrice} />
               {fieldErrors.costPrice && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.costPrice}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">MRP</label>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                min={0}
-                value={mrp}
-                onChange={(e) => { setMrp(e.target.value); setFieldErrors((p) => ({ ...p, mrp: '' })); }}
-                className={`${numberInputClass} ${fieldErrors.mrp ? 'border-red-500' : ''}`}
-              />
+              <DecimalInput min={0} value={mrp} onValue={(v) => { setMrp(v); setFieldErrors((p) => ({ ...p, mrp: '' })); }} invalid={!!fieldErrors.mrp} />
               {fieldErrors.mrp && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.mrp}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Sale price</label>
-              <input type="number" inputMode="decimal" step="0.01" min={0} value={salePrice} onChange={(e) => { setSalePrice(e.target.value); setFieldErrors((p) => ({ ...p, salePrice: '' })); }} placeholder="Defaults to MRP" className={`${numberInputClass} ${fieldErrors.salePrice ? 'border-red-500' : ''}`} />
+              <DecimalInput min={0} value={salePrice} onValue={(v) => { setSalePrice(v); setFieldErrors((p) => ({ ...p, salePrice: '' })); }} invalid={!!fieldErrors.salePrice} placeholder="Defaults to MRP" />
               {fieldErrors.salePrice && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.salePrice}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Discount % (optional)</label>
-              <input type="number" inputMode="decimal" step="0.01" min={0} max={100} value={discountPercent} onChange={(e) => { setDiscountPercent(e.target.value); setFieldErrors((p) => ({ ...p, discountPercent: '' })); }} className={`${numberInputClass} ${fieldErrors.discountPercent ? 'border-red-500' : ''}`} />
+              <DecimalInput min={0} max={100} value={discountPercent} onValue={(v) => { setDiscountPercent(v); setFieldErrors((p) => ({ ...p, discountPercent: '' })); }} invalid={!!fieldErrors.discountPercent} />
               {fieldErrors.discountPercent && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.discountPercent}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Opening stock</label>
-              <input type="number" inputMode="decimal" step="0.01" min={0} value={openingQty} onChange={(e) => setOpeningQty(e.target.value)} className={numberInputClass} />
+              <DecimalInput min={0} value={openingQty} onValue={setOpeningQty} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">CGST %</label>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                min={0}
-                max={100}
-                value={cgstRate}
-                onChange={(e) => { setCgstRate(e.target.value); setFieldErrors((p) => ({ ...p, cgstRate: '' })); }}
-                className={`${numberInputClass} ${fieldErrors.cgstRate ? 'border-red-500' : ''}`}
-                aria-label="CGST percent"
-              />
+              <DecimalInput min={0} max={100} value={cgstRate} onValue={(v) => { setCgstRate(v); setFieldErrors((p) => ({ ...p, cgstRate: '' })); }} invalid={!!fieldErrors.cgstRate} aria-label="CGST percent" />
               {fieldErrors.cgstRate && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.cgstRate}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">SGST %</label>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                min={0}
-                max={100}
-                value={sgstRate}
-                onChange={(e) => { setSgstRate(e.target.value); setFieldErrors((p) => ({ ...p, sgstRate: '' })); }}
-                className={`${numberInputClass} ${fieldErrors.sgstRate ? 'border-red-500' : ''}`}
-                aria-label="SGST percent"
-              />
+              <DecimalInput min={0} max={100} value={sgstRate} onValue={(v) => { setSgstRate(v); setFieldErrors((p) => ({ ...p, sgstRate: '' })); }} invalid={!!fieldErrors.sgstRate} aria-label="SGST percent" />
               {fieldErrors.sgstRate && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.sgstRate}</p>}
               <p className="text-xs text-slate-500 mt-0.5">
                 Combined GST {((parseFloat(cgstRate) || 0) + (parseFloat(sgstRate) || 0)).toFixed(2)}%. Copied onto invoices and still editable there.

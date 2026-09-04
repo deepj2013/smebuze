@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
+import { limitDecimalPlaces, round2 } from '@/lib/money';
 
 type Vendor = { id: string; name: string; gstin?: string | null };
 type Expense = {
@@ -45,10 +46,10 @@ export default function Expenses() {
   const [to, setTo] = useState('');
   const [msg, setMsg] = useState('');
   const [saving, setSaving] = useState(false);
-  const base = Number(form.taxable_amount || 0);
-  const gst = base * Number(form.gst_rate || 0) / 100;
-  const total = base + gst;
-  const due = total - Number(form.paid_amount || 0) - Number(form.tds_amount || 0);
+  const base = round2(Number(form.taxable_amount || 0));
+  const gst = round2(base * Number(form.gst_rate || 0) / 100);
+  const total = round2(base + gst);
+  const due = round2(total - Number(form.paid_amount || 0) - Number(form.tds_amount || 0));
   const query = useMemo(() => {
     const p = new URLSearchParams();
     if (filter) p.set('category', filter);
@@ -120,14 +121,14 @@ export default function Expenses() {
         <label className="text-sm">Expense date *<input required type="date" value={form.expense_date} onChange={(e) => setForm({ ...form, expense_date: e.target.value })} className={input} /></label>
         <label className="text-sm">Supplier invoice / wage ref<input value={form.invoice_number} onChange={(e) => setForm({ ...form, invoice_number: e.target.value })} className={input} /></label>
         <label className="text-sm">HSN / SAC<input value={form.hsn_sac} onChange={(e) => setForm({ ...form, hsn_sac: e.target.value })} className={input} placeholder="For GST purchases" /></label>
-        <label className="text-sm">Base amount *<input required min="0.01" step="0.01" type="number" inputMode="decimal" value={form.taxable_amount} onChange={(e) => setForm({ ...form, taxable_amount: e.target.value })} className={input} /></label>
+        <label className="text-sm">Base amount *<input required inputMode="decimal" value={form.taxable_amount} onChange={(e) => setForm({ ...form, taxable_amount: limitDecimalPlaces(e.target.value) })} className={input} /></label>
         <label className="text-sm">GST rate<select value={form.gst_rate} onChange={(e) => setForm({ ...form, gst_rate: e.target.value, itc_eligible: Number(e.target.value) > 0 && form.entry_type === 'purchase' })} className={input}>{[0, 5, 12, 18, 28].map((x) => <option key={x} value={x}>{x}%</option>)}</select></label>
         <label className="flex items-center gap-2 text-sm lg:col-span-2 pt-6">
           <input type="checkbox" checked={form.itc_eligible} onChange={(e) => setForm({ ...form, itc_eligible: e.target.checked })} />
           ITC eligible (input GST posted to books, used in GSTR-2A)
         </label>
-        <label className="text-sm">TDS deducted<input min="0" step="0.01" type="number" inputMode="decimal" value={form.tds_amount} onChange={(e) => setForm({ ...form, tds_amount: e.target.value })} className={input} /></label>
-        <label className="text-sm">Paid amount<input min="0" max={total} step="0.01" type="number" inputMode="decimal" value={form.paid_amount} onChange={(e) => setForm({ ...form, paid_amount: e.target.value })} className={input} /></label>
+        <label className="text-sm">TDS deducted<input inputMode="decimal" value={form.tds_amount} onChange={(e) => setForm({ ...form, tds_amount: limitDecimalPlaces(e.target.value) })} className={input} /></label>
+        <label className="text-sm">Paid amount<input inputMode="decimal" value={form.paid_amount} onChange={(e) => setForm({ ...form, paid_amount: limitDecimalPlaces(e.target.value) })} className={input} /></label>
         <label className="text-sm">Due date<input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} className={input} /></label>
         <label className="text-sm">Payment mode<select value={form.payment_mode} onChange={(e) => setForm({ ...form, payment_mode: e.target.value })} className={input}>{['Cash', 'UPI', 'Bank transfer', 'Card', 'Cheque', 'Credit', 'Other'].map((x) => <option key={x}>{x}</option>)}</select></label>
         <label className="text-sm lg:col-span-2">Description<input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={input} /></label>

@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
 import { REQUIREMENT_CHANNEL_OPTIONS } from '@/lib/requirement-channels';
+import NumberField from '@/app/(app)/components/NumberField';
+import { round2 } from '@/lib/money';
 
 const GST_TREATMENT_OPTIONS = [
   { value: 'extra', label: 'GST extra' },
@@ -92,7 +94,7 @@ export default function RequirementPage() {
       if (f.rate !== undefined || f.mrp !== undefined) {
         const mrp = next.mrp ?? 0;
         const rate = next.rate ?? 0;
-        next.discount_percent = mrp > 0 && rate >= 0 ? Math.round((1 - rate / mrp) * 100 * 100) / 100 : null;
+        next.discount_percent = mrp > 0 && rate >= 0 ? round2((1 - rate / mrp) * 100) : null;
       }
       return next;
     }));
@@ -266,25 +268,10 @@ export default function RequirementPage() {
                     {l.mrp > 0 ? `₹${Number(l.mrp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
                   </td>
                   <td className="py-1 pr-2">
-                    <input
-                      type="number"
-                      min={0}
-                      step="any"
-                      value={l.qty || ''}
-                      onChange={(e) => updateLine(idx, { qty: parseFloat(e.target.value) || 0 })}
-                      className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
-                    />
+                    <NumberField min={0} value={l.qty || 0} onNumber={(n) => updateLine(idx, { qty: n })} aria-label="Quantity" />
                   </td>
                   <td className="py-1 pr-2">
-                    <input
-                      type="number"
-                      min={0}
-                      step="any"
-                      value={l.rate || ''}
-                      onChange={(e) => setLineRate(idx, parseFloat(e.target.value) || 0)}
-                      className="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"
-                      placeholder="Selling price"
-                    />
+                    <NumberField min={0} value={l.rate || 0} onNumber={(n) => setLineRate(idx, n)} aria-label="Rate" />
                   </td>
                   <td className="py-1 pr-2 text-right align-middle text-slate-600">
                     {l.discount_percent != null ? `${l.discount_percent}%` : '—'}

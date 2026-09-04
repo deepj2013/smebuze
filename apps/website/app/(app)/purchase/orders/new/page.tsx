@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
+import { limitDecimalPlaces } from '@/lib/money';
 
 interface Company { id: string; name: string }
 interface Branch { id: string; name: string }
@@ -103,11 +104,11 @@ export default function NewPurchaseOrderPage() {
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Total *</label>
-          <input type="number" step="0.01" value={total} onChange={(e) => setTotal(e.target.value)} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+          <input type="text" inputMode="decimal" value={total} onChange={(e) => setTotal(limitDecimalPlaces(e.target.value))} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Tax amount</label>
-          <input type="number" step="0.01" value={taxAmount} onChange={(e) => setTaxAmount(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+          <input type="text" inputMode="decimal" value={taxAmount} onChange={(e) => setTaxAmount(limitDecimalPlaces(e.target.value))} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
         </div>
         <div className="flex gap-2">
           <button type="submit" disabled={loading} className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50">Create</button>

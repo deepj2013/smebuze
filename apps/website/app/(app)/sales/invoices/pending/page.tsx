@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
+import { limitDecimalPlaces } from '@/lib/money';
 
 interface PendingRow {
   id: string;
@@ -131,7 +132,7 @@ export default function PendingReceivablesPage() {
             <form onSubmit={submitPayment} className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Amount *</label>
-                <input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+                <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(limitDecimalPlaces(e.target.value))} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Date *</label>

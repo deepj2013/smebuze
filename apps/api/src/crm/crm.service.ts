@@ -8,6 +8,7 @@ import { CustomerItemRate } from './entities/customer-item-rate.entity';
 import { Item } from '../inventory/entities/item.entity';
 import { TenantContext } from '../common/tenant-context';
 import { SalesService } from '../sales/sales.service';
+import { moneyStr, round2 } from '../common/money';
 
 @Injectable()
 export class CrmService {
@@ -96,7 +97,7 @@ export class CrmService {
       phone: dto.phone ?? null,
       gstin: dto.gstin ?? null,
       address: dto.address ?? {},
-      credit_limit: dto.credit_limit != null ? String(dto.credit_limit) : '0',
+      credit_limit: dto.credit_limit != null ? moneyStr(dto.credit_limit) : '0.00',
       tags: Array.isArray(dto.tags) ? dto.tags : [],
       contacts: Array.isArray(dto.contacts) ? dto.contacts : [],
       segment: dto.segment ?? null,
@@ -177,7 +178,7 @@ export class CrmService {
     if (dto.phone != null) customer.phone = dto.phone;
     if (dto.gstin != null) customer.gstin = dto.gstin;
     if (dto.address != null) customer.address = dto.address;
-    if (dto.credit_limit != null) customer.credit_limit = String(dto.credit_limit);
+    if (dto.credit_limit != null) customer.credit_limit = moneyStr(dto.credit_limit);
     if (dto.segment != null) customer.segment = dto.segment;
     if (dto.category_id !== undefined) customer.category_id = dto.category_id;
     if (Array.isArray(dto.tags)) customer.tags = dto.tags;
@@ -325,7 +326,7 @@ export class CrmService {
     const tenantId = this.assertTenantId(ctx);
     await this.findOneCustomer(customerId, ctx);
     if (!dto.item_id) throw new BadRequestException('item_id is required');
-    const rate = Number(dto.rate);
+    const rate = round2(Number(dto.rate));
     if (!Number.isFinite(rate) || rate < 0) throw new BadRequestException('Rate must be a number 0 or greater');
     const item = await this.itemRepo.findOne({ where: { id: dto.item_id, tenant_id: tenantId } });
     if (!item) throw new NotFoundException('Item not found');
@@ -333,13 +334,13 @@ export class CrmService {
       where: { tenant_id: tenantId, customer_id: customerId, item_id: dto.item_id },
     });
     if (row) {
-      row.rate = String(rate);
+      row.rate = moneyStr(rate);
     } else {
       row = this.itemRateRepo.create({
         tenant_id: tenantId,
         customer_id: customerId,
         item_id: dto.item_id,
-        rate: String(rate),
+        rate: moneyStr(rate),
       });
     }
     const saved = await this.itemRateRepo.save(row);

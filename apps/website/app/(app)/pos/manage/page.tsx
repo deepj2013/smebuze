@@ -7,6 +7,7 @@ import { useToast } from '../../components/ToastContext';
 import PosSwitcher from '../../components/PosSwitcher';
 import { posSellingRate } from '@/lib/business-types';
 import BarcodeCapture from '../../components/BarcodeCapture';
+import { limitDecimalPlaces, parseMoney } from '@/lib/money';
 
 interface Category {
   id: string;
@@ -142,13 +143,13 @@ export default function PosManagePage() {
       category: form.category || (selected !== 'all' && selected !== 'uncat' ? selected : undefined),
       unit: form.unit || 'pcs',
     };
-    if (form.cost_price !== '') body.cost_price = parseFloat(form.cost_price);
-    if (form.mrp !== '') body.mrp = parseFloat(form.mrp);
-    if (form.sale_price !== '') body.sale_price = parseFloat(form.sale_price);
-    else if (form.mrp !== '') body.sale_price = parseFloat(form.mrp);
-    if (form.discount_percent !== '') body.discount_percent = parseFloat(form.discount_percent);
-    if (form.opening_qty !== '') body.opening_qty = parseFloat(form.opening_qty);
-    if (form.reorder_level !== '') body.reorder_level = parseFloat(form.reorder_level);
+    if (form.cost_price !== '') body.cost_price = parseMoney(form.cost_price);
+    if (form.mrp !== '') body.mrp = parseMoney(form.mrp);
+    if (form.sale_price !== '') body.sale_price = parseMoney(form.sale_price);
+    else if (form.mrp !== '') body.sale_price = parseMoney(form.mrp);
+    if (form.discount_percent !== '') body.discount_percent = parseMoney(form.discount_percent);
+    if (form.opening_qty !== '') body.opening_qty = parseMoney(form.opening_qty);
+    if (form.reorder_level !== '') body.reorder_level = parseMoney(form.reorder_level);
     const { error } = await apiPost('inventory/items', body);
     setSavingItem(false);
     if (error) {
@@ -251,27 +252,27 @@ export default function PosManagePage() {
               </label>
               <label className="text-xs font-medium text-slate-600">
                 Cost price
-                <input type="number" min={0} step="0.01" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                <input type="text" inputMode="decimal" min={0} value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: limitDecimalPlaces(e.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
               </label>
               <label className="text-xs font-medium text-slate-600">
                 MRP
-                <input type="number" min={0} step="0.01" value={form.mrp} onChange={(e) => setForm({ ...form, mrp: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                <input type="text" inputMode="decimal" min={0} value={form.mrp} onChange={(e) => setForm({ ...form, mrp: limitDecimalPlaces(e.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
               </label>
               <label className="text-xs font-medium text-slate-600">
                 Sale price
-                <input type="number" min={0} step="0.01" value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: e.target.value })} placeholder="Same as MRP if empty" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                <input type="text" inputMode="decimal" min={0} value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: limitDecimalPlaces(e.target.value) })} placeholder="Same as MRP if empty" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
               </label>
               <label className="text-xs font-medium text-slate-600">
                 Discount % (optional)
-                <input type="number" min={0} max={100} step="0.01" value={form.discount_percent} onChange={(e) => setForm({ ...form, discount_percent: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                <input type="text" inputMode="decimal" min={0} max={100} value={form.discount_percent} onChange={(e) => setForm({ ...form, discount_percent: limitDecimalPlaces(e.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
               </label>
               <label className="text-xs font-medium text-slate-600">
                 Opening stock
-                <input type="number" min={0} step="0.01" value={form.opening_qty} onChange={(e) => setForm({ ...form, opening_qty: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                <input type="text" inputMode="decimal" min={0} value={form.opening_qty} onChange={(e) => setForm({ ...form, opening_qty: limitDecimalPlaces(e.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
               </label>
               <label className="text-xs font-medium text-slate-600">
                 Alert when stock ≤
-                <input type="number" min={0} step="0.01" value={form.reorder_level} onChange={(e) => setForm({ ...form, reorder_level: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                <input type="text" inputMode="decimal" min={0} value={form.reorder_level} onChange={(e) => setForm({ ...form, reorder_level: limitDecimalPlaces(e.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
               </label>
               <div className="sm:col-span-2 lg:col-span-3">
                 <button type="submit" disabled={savingItem} className="rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-50 min-h-[44px]">

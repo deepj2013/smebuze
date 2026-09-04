@@ -44,6 +44,7 @@ export default function EditInvoicePage() {
   const [customerId, setCustomerId] = useState('');
   const [vendorId, setVendorId] = useState('');
   const [invoiceDate, setInvoiceDate] = useState('');
+  const [showDueDate, setShowDueDate] = useState(false);
   const [dueDate, setDueDate] = useState('');
   const [number, setNumber] = useState('');
   const [lines, setLines] = useState<LineRow[]>([]);
@@ -84,7 +85,9 @@ export default function EditInvoicePage() {
         setVendorId(inv.vendor_id || '');
         setNumber(inv.number);
         setInvoiceDate(typeof inv.invoice_date === 'string' ? inv.invoice_date.slice(0, 10) : '');
-        setDueDate(inv.due_date ? (typeof inv.due_date === 'string' ? inv.due_date.slice(0, 10) : '') : '');
+        const due = inv.due_date ? (typeof inv.due_date === 'string' ? inv.due_date.slice(0, 10) : '') : '';
+        setDueDate(due);
+        setShowDueDate(Boolean(due));
         if (inv.lines?.length) {
           setLines(inv.lines.map((l) => ({
             hsn_sac: l.hsn_sac,
@@ -140,7 +143,7 @@ export default function EditInvoicePage() {
       customer_id: customerId || undefined,
       vendor_id: vendorId || undefined,
       invoice_date: invoiceDate,
-      due_date: dueDate || undefined,
+      due_date: showDueDate && dueDate ? dueDate : null,
       number: number || undefined,
       lines: lines.map((l) => ({
         hsn_sac: l.hsn_sac,
@@ -179,6 +182,10 @@ export default function EditInvoicePage() {
             <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm">
               {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+            <p className="mt-1 text-xs text-slate-500">
+              Printed invoice uses this company&apos;s logo, name, and bank details.{' '}
+              <Link href={companyId ? `/organization/companies/${companyId}/edit` : '/organization/companies'} className="text-brand-600 hover:underline">Edit company</Link>
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Branch</label>
@@ -205,10 +212,30 @@ export default function EditInvoicePage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">Invoice date *</label>
             <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
           </div>
+          <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+              <input
+                type="checkbox"
+                checked={showDueDate}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setShowDueDate(on);
+                  if (on && !dueDate && invoiceDate) setDueDate(invoiceDate);
+                  if (!on) setDueDate('');
+                }}
+              />
+              Show due date on invoice
+            </label>
+            <p className="mt-1 text-xs text-slate-500">
+              Optional. Leave off to hide the due date on print and WhatsApp copies.
+            </p>
+          </div>
+          {showDueDate && (
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Due date</label>
             <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
           </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Invoice number</label>
             <input type="text" value={number} onChange={(e) => setNumber(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />

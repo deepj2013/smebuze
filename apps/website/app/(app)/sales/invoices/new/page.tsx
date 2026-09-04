@@ -73,6 +73,7 @@ export default function NewInvoicePage() {
   const [vendorId, setVendorId] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [paymentTerm, setPaymentTerm] = useState<PaymentTermKey>('net_30');
+  const [showDueDate, setShowDueDate] = useState(true);
   const [dueDate, setDueDate] = useState('');
   const [number, setNumber] = useState('');
   const [lines, setLines] = useState<LineRow[]>([emptyLine()]);
@@ -92,18 +93,24 @@ export default function NewInvoicePage() {
       if (t?.slug === 'ice-crest' || t?.settings?.business_type === 'ice_crest') {
         setDefaultGst({ cgst: 2.5, sgst: 2.5 });
         setLines((prev) => prev.map((l) => (l.item_id ? l : { ...l, cgst_rate: 2.5, sgst_rate: 2.5 })));
+        setShowDueDate(false);
+        setDueDate('');
       }
     });
   }, []);
   useEffect(()=>{const id=searchParams?.get('sales_order_id');if(id&&salesOrders.some(x=>x.id===id)){const o=salesOrders.find(x=>x.id===id)!;setSalesOrderId(id);setCustomerId(o.customer_id||'');setVendorId('');setLines((o.lines||[]).map(l=>({item_id:l.item_id||undefined,item_sku:l.item?.sku,item_name:l.item?.name,hsn_sac:l.item?.hsn_sac||'22019010',description:l.description||l.item?.name||'Item',qty:Number(l.quantity),unit:l.unit||'pcs',rate:Number(l.rate),cgst_rate:defaultGst.cgst,sgst_rate:defaultGst.sgst}))) }},[searchParams,salesOrders,defaultGst]);
 
-  // Derive due date from payment term and invoice date
+  // Derive due date from payment term and invoice date when they choose to show it
   useEffect(() => {
+    if (!showDueDate) {
+      setDueDate('');
+      return;
+    }
     if (paymentTerm === 'custom') return;
     const term = PAYMENT_TERMS.find((t) => t.value === paymentTerm);
     const days = term?.days ?? 30;
     setDueDate(addDays(invoiceDate, days));
-  }, [invoiceDate, paymentTerm]);
+  }, [invoiceDate, paymentTerm, showDueDate]);
 
   useEffect(() => {
     if (!customerId) { setCustomerCreditLimit(null); return; }
@@ -231,7 +238,7 @@ export default function NewInvoicePage() {
       customer_id: customerId || undefined,
       vendor_id: vendorId || undefined,
       invoice_date: invoiceDate,
-      due_date: dueDate || undefined,
+      due_date: showDueDate && dueDate ? dueDate : null,
       number: number || undefined,
       gst_applicable: gstApplicable,
       shipping_charges: shippingCharges,
@@ -277,6 +284,10 @@ export default function NewInvoicePage() {
             <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm">
               {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+            <p className="mt-1 text-xs text-slate-500">
+              Printed invoice uses this company&apos;s logo, name, and bank details.{' '}
+              <Link href={companyId ? `/organization/companies/${companyId}/edit` : '/organization/companies'} className="text-brand-600 hover:underline">Edit company</Link>
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Branch</label>
@@ -303,6 +314,21 @@ export default function NewInvoicePage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">Invoice date *</label>
             <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
           </div>
+          <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+              <input
+                type="checkbox"
+                checked={showDueDate}
+                onChange={(e) => setShowDueDate(e.target.checked)}
+              />
+              Show due date on invoice
+            </label>
+            <p className="mt-1 text-xs text-slate-500">
+              Optional. Leave off to hide the due date on print and WhatsApp copies.
+            </p>
+          </div>
+          {showDueDate && (
+            <>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Payment term</label>
             <select
@@ -325,6 +351,8 @@ export default function NewInvoicePage() {
               disabled={paymentTerm !== 'custom'}
             />
           </div>
+            </>
+          )}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Invoice number</label>
             <input type="text" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="Auto if empty" className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />

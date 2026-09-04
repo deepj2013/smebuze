@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Script from 'next/script';
 import { getApiUrl } from '@/lib/api';
+import { limitDecimalPlaces } from '@/lib/money';
 
 type PayInvoice = {
   invoice_id: string;
@@ -153,12 +154,12 @@ export default function PayInvoicePage({ params }: { params: { token: string } }
                   <label className="block text-sm">
                     Amount to pay (₹)
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       min={invoice.min_partial_rupees}
                       max={invoice.outstanding}
-                      step="0.01"
                       value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
+                      onChange={(e) => setAmount(limitDecimalPlaces(e.target.value))}
                       className="mt-1 w-full rounded-lg border px-3 py-2.5"
                     />
                     <span className="mt-1 block text-xs text-slate-500">

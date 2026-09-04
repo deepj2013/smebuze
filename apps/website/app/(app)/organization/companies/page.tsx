@@ -34,6 +34,9 @@ export default function CompaniesPage() {
           Add company
         </Link>
       </div>
+      <p className="mb-4 text-sm text-slate-500">
+        Edit a company to upload the logo and change the name and bank details that print on tax invoices.
+      </p>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
       {loading && <p className="text-slate-600">Loading…</p>}
       {!loading && (

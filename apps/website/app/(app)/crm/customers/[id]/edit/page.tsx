@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPatch } from '@/lib/api';
 import { INDIAN_STATES, getCitiesForState } from '@/lib/india-states-cities';
+import { limitDecimalPlaces } from '@/lib/money';
 import { Plus, Trash2 } from 'lucide-react';
 
 const ENTITY_TYPES = [
@@ -247,7 +248,7 @@ export default function EditCustomerPage() {
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Credit limit</label>
-          <input type="number" step="0.01" min={0} value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input type="text" inputMode="decimal" min={0} value={creditLimit} onChange={(e) => setCreditLimit(limitDecimalPlaces(e.target.value))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Segment</label>

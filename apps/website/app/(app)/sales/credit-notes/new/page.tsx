@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
+import { limitDecimalPlaces } from '@/lib/money';
 
 interface Company { id: string; name: string }
 interface Branch { id: string; name: string }
@@ -110,7 +111,7 @@ export default function NewCreditNotePage() {
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Amount * (reduces receivable)</label>
-          <input type="number" min={0} step={0.01} value={amount} onChange={(e) => setAmount(e.target.value)} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm" placeholder="0.00" />
+          <input type="text" inputMode="decimal" min={0} value={amount} onChange={(e) => setAmount(limitDecimalPlaces(e.target.value))} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm" placeholder="0.00" />
           {selectedInv && <p className="text-xs text-slate-500 mt-0.5">Invoice total: ₹{Number(selectedInv.total).toFixed(2)}</p>}
         </div>
         <div>
