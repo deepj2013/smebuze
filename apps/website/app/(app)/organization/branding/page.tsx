@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPatch, apiUploadFile, getStaticUrl } from '@/lib/api';
 import { DEFAULT_BRANDING, parseTenantBranding, type TenantBranding } from '@/lib/branding';
+import { INVOICE_PRINT_SIZE_OPTIONS, type InvoicePrintSize } from '@/lib/invoice-print-size';
 import { VARIANT_THEMES } from '@/lib/variant-theme';
 
 const PRESETS = Object.values(VARIANT_THEMES).map((t) => ({
@@ -58,6 +59,7 @@ export default function BrandingPage() {
       primary_color: branding.primary_color,
       accent_color: branding.accent_color,
       display_name: branding.display_name ?? '',
+      invoice_print_size: branding.invoice_print_size,
     });
     setSaving(false);
     if (err) setError(err);
@@ -76,7 +78,7 @@ export default function BrandingPage() {
         <Link href="/organization/companies" className="text-sm text-slate-600 hover:text-slate-900">← Organization</Link>
         <h1 className="mt-2 text-2xl font-bold text-slate-900">Look & logo</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Upload your logo for the app corner and for printed invoices and quotations. Pick colours and save — this workspace only.
+          Upload your logo for the app corner and for printed invoices and quotations. Pick colours and invoice print size — this workspace only.
         </p>
       </div>
       {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p>}
@@ -108,6 +110,30 @@ export default function BrandingPage() {
           placeholder="e.g. Ice Crest"
           className="w-full rounded-lg border px-3 py-2"
         />
+
+        <h2 className="font-semibold pt-2">Invoice print size</h2>
+        <p className="text-xs text-slate-500">
+          Applies to tax invoices, quotations and counter receipts (including Ice Crest). Default is Large.
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {INVOICE_PRINT_SIZE_OPTIONS.map((opt) => {
+            const selected = branding.invoice_print_size === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setBranding((b) => ({ ...b, invoice_print_size: opt.id as InvoicePrintSize }))}
+                className={`rounded-lg border px-3 py-3 text-left min-h-[56px] ${
+                  selected ? 'border-brand-600 bg-brand-50 ring-1 ring-brand-600' : 'border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <span className="block text-sm font-semibold text-slate-900">{opt.label}</span>
+                <span className="block text-xs text-slate-500 mt-0.5">{opt.hint}</span>
+              </button>
+            );
+          })}
+        </div>
+
         <h2 className="font-semibold pt-2">Colours</h2>
         <div className="flex flex-wrap gap-2">
           {PRESETS.map((p) => (

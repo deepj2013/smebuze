@@ -255,6 +255,8 @@ const starIceNav: typeof nav = [
     ],
   },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
 ];
 
 const iceCrestNav: typeof nav = [
@@ -304,6 +306,8 @@ const restaurantFloorNav: typeof nav = [
   { label: 'Restaurant admin', href: '/pos/floor', icon: LayoutDashboard, module: 'sales', permission: 'sales.order.view' },
   { label: 'Bills', href: '/sales/invoices', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
   { label: 'Setup', href: '/onboarding', icon: Settings, module: 'onboarding' },
   { label: 'Help', href: '/help', icon: CircleHelp, module: 'help' },
   { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
@@ -326,6 +330,8 @@ const posNav: typeof nav = [
   { label: 'Customers', href: '/crm/customers', icon: Users, module: 'crm', permission: 'crm.customer.view' },
   { label: 'Printers', href: '/organization/printers', icon: Printer, module: 'organization', permission: 'org.company.view' },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
   { label: 'Setup', href: '/onboarding', icon: Settings, module: 'onboarding' },
   { label: 'Help', href: '/help', icon: CircleHelp, module: 'help' },
   { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [

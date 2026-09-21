@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, getApiUrl } from '@/lib/api';
 
@@ -39,176 +39,423 @@ const REPORTS: { id: ReportId; label: string; description: string; hasExport: bo
   { id: 'trial-balance', label: 'Trial balance', description: 'Debits vs credits as of a date', hasExport: false },
   { id: 'vendor-ledger', label: 'Vendor ledger', description: 'Purchase orders and payments by vendor', hasExport: false },
   { id: 'tds-summary', label: 'TDS summary', description: 'TDS deducted on vendor payments', hasExport: false },
-  { id: 'health-score', label: 'Business health score', description: 'AI-style score 1–10 and message', hasExport: false },
-  { id: 'ageing', label: 'Ageing report', description: 'Receivables/payables by bucket (0–30, 31–60, 61–90, 90+ days) — CSV export', hasExport: true },
+  { id: 'health-score', label: 'Business health score', description: 'Score 1–10 and message', hasExport: false },
+  { id: 'ageing', label: 'Ageing report', description: 'Receivables/payables by bucket — CSV export', hasExport: true },
   { id: 'pl', label: 'P&L', description: 'Profit & Loss by period', hasExport: true },
   { id: 'balance-sheet', label: 'Balance sheet', description: 'Assets, liabilities, equity as of date', hasExport: true },
 ];
 
-const CUSTOM_REPORT_IDS: ReportId[] = [
-  'requirement-vs-delivery',
-  'stock-vs-delivery',
-  'delivery-vs-invoiced',
-  'invoice-vs-payment',
-];
+const money = (n: number | string | undefined | null) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(Number(n) || 0);
 
-type CustomReportData =
-  | { summary: { total_orders: number; total_lines: number; total_required: number; total_delivered: number; total_pending: number }; rows: Array<{ order_id: string; order_number: string; order_date: string; customer_name: string; item_name: string; required_qty: number; delivered_qty: number; pending_qty: number }> }
-  | { summary: { total_challans: number; invoiced: number; not_invoiced: number }; rows: Array<{ id: string; number: string; challan_date: string; customer_name: string; status: string; invoiced: boolean; invoice_number: string | null }> }
-  | { summary: { total_invoiced: number; total_received: number; total_pending: number }; rows: Array<{ customer_id: string; customer_name: string; total_invoiced: number; total_received: number; total_pending: number; invoice_count: number }> }
-  | { rows: Array<{ item_id: string; item_name: string; stock_on_hand: number; delivered_in_period: number }> };
+const qty = (n: number | string | undefined | null) =>
+  new Intl.NumberFormat('en-IN', { maximumFractionDigits: 4 }).format(Number(n) || 0);
 
-type ReqVsDelRow = { order_number: string; order_date: string; customer_name: string; item_name: string; required_qty: number; delivered_qty: number; pending_qty: number };
-type StockVsDelRow = { item_id: string; item_name: string; stock_on_hand: number; delivered_in_period: number };
-type DelVsInvRow = { id: string; number: string; challan_date: string; customer_name: string; status: string; invoiced: boolean; invoice_number: string | null };
-type InvVsPayRow = { customer_id: string; customer_name: string; total_invoiced: number; total_received: number; total_pending: number; invoice_count: number };
+function monthBounds() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const to = now.toISOString().slice(0, 10);
+  return { from, to };
+}
 
-function CustomReportView({ reportId, data }: { reportId: ReportId; data: unknown }) {
-  const d = data as CustomReportData & { summary?: Record<string, number> };
-  const rows = 'rows' in d ? d.rows : [];
-  const summary = 'summary' in d ? d.summary : null;
+function Stat({ label, value, tone }: { label: string; value: string; tone?: 'green' | 'amber' | 'slate' }) {
+  const toneCls =
+    tone === 'green' ? 'text-green-700' : tone === 'amber' ? 'text-amber-700' : 'text-slate-900';
+  return (
+    <div className="rounded-lg bg-slate-100 p-3">
+      <span className="text-xs text-slate-600">{label}</span>
+      <div className={`mt-0.5 font-semibold ${toneCls}`}>{value}</div>
+    </div>
+  );
+}
 
-  if (reportId === 'requirement-vs-delivery' && summary && 'total_orders' in summary) {
-    const s = summary as { total_orders: number; total_lines: number; total_required: number; total_delivered: number; total_pending: number };
-    const rRows = rows as ReqVsDelRow[];
+function Empty({ message }: { message: string }) {
+  return <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">{message}</p>;
+}
+
+function DataTable({ headers, rows }: { headers: string[]; rows: (string | number)[][] }) {
+  if (!rows.length) return <Empty message="No rows for this period. Try a wider date range or create invoices first." />;
+  return (
+    <div className="overflow-x-auto border border-slate-200 rounded-lg">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-100">
+          <tr>
+            {headers.map((h) => (
+              <th key={h} className="text-left p-2 whitespace-nowrap font-medium text-slate-700">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className="border-t border-slate-100">
+              {r.map((c, j) => (
+                <td key={j} className={`p-2 whitespace-nowrap ${typeof c === 'number' || (typeof c === 'string' && c.startsWith('₹')) ? 'text-right' : ''}`}>
+                  {c}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ReportResult({ reportId, data }: { reportId: ReportId; data: Record<string, unknown> }) {
+  if (reportId === 'sales-summary') {
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
-          <div className="rounded-lg bg-slate-100 p-3"><span className="text-slate-600">Orders</span><div className="font-semibold">{s.total_orders}</div></div>
-          <div className="rounded-lg bg-slate-100 p-3"><span className="text-slate-600">Lines</span><div className="font-semibold">{s.total_lines}</div></div>
-          <div className="rounded-lg bg-slate-100 p-3"><span className="text-slate-600">Required</span><div className="font-semibold">{s.total_required}</div></div>
-          <div className="rounded-lg bg-slate-100 p-3"><span className="text-slate-600">Delivered</span><div className="font-semibold text-green-700">{s.total_delivered}</div></div>
-          <div className="rounded-lg bg-slate-100 p-3"><span className="text-slate-600">Pending</span><div className="font-semibold text-amber-700">{s.total_pending}</div></div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Stat label="Invoiced" value={money(data.totalInvoiced as number)} />
+          <Stat label="Received" value={money(data.totalReceived as number)} tone="green" />
+          <Stat label="Pending" value={money(data.totalPending as number)} tone="amber" />
+          <Stat label="Invoices" value={String(data.invoiceCount ?? 0)} />
         </div>
-        <div className="overflow-x-auto border border-slate-200 rounded-lg">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="text-left p-2">Order #</th><th className="text-left p-2">Date</th><th className="text-left p-2">Customer</th><th className="text-left p-2">Item</th>
-                <th className="text-right p-2">Required</th><th className="text-right p-2">Delivered</th><th className="text-right p-2">Pending</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rRows.map((r, i) => (
-                <tr key={i} className="border-t border-slate-100">
-                  <td className="p-2">{r.order_number}</td><td className="p-2">{r.order_date}</td><td className="p-2">{r.customer_name}</td><td className="p-2">{r.item_name}</td>
-                  <td className="p-2 text-right">{r.required_qty}</td><td className="p-2 text-right text-green-700">{r.delivered_qty}</td><td className="p-2 text-right text-amber-700">{r.pending_qty}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <DataTable
+          headers={['Number', 'Date', 'Total', 'Paid', 'Due']}
+          rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
+            String(r.number ?? ''),
+            String(r.date ?? '').slice(0, 10),
+            money(r.total as number),
+            money(r.paid as number),
+            money(r.due as number),
+          ])}
+        />
+      </div>
+    );
+  }
+
+  if (reportId === 'purchase-summary') {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Stat label="Ordered" value={money(data.totalOrdered as number)} />
+          <Stat label="Paid" value={money(data.totalPaid as number)} tone="green" />
+          <Stat label="Pending" value={money(data.totalPending as number)} tone="amber" />
+          <Stat label="Orders" value={String(data.orderCount ?? 0)} />
         </div>
+        <DataTable
+          headers={['Number', 'Date', 'Total', 'Paid', 'Due']}
+          rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
+            String(r.number ?? ''),
+            String(r.date ?? '').slice(0, 10),
+            money(r.total as number),
+            money(r.paid as number),
+            money(r.due as number),
+          ])}
+        />
+      </div>
+    );
+  }
+
+  if (reportId === 'gst-summary') {
+    return (
+      <DataTable
+        headers={['HSN/SAC', 'Taxable', 'CGST', 'SGST', 'IGST', 'Lines']}
+        rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
+          String(r.hsn_sac ?? ''),
+          money(r.taxable_value as number),
+          money(r.cgst as number),
+          money(r.sgst as number),
+          money(r.igst as number),
+          Number(r.count ?? 0),
+        ])}
+      />
+    );
+  }
+
+  if (reportId === 'item-wise-sales') {
+    return (
+      <DataTable
+        headers={['Item', 'Qty', 'Taxable', 'Lines']}
+        rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
+          String(r.description ?? ''),
+          qty(r.quantity as number),
+          money(r.taxable_value as number),
+          Number(r.count ?? 0),
+        ])}
+      />
+    );
+  }
+
+  if (reportId === 'requirement-vs-delivery') {
+    const s = (data.summary || {}) as Record<string, number>;
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <Stat label="Orders" value={String(s.total_orders ?? 0)} />
+          <Stat label="Lines" value={String(s.total_lines ?? 0)} />
+          <Stat label="Required" value={qty(s.total_required)} />
+          <Stat label="Delivered" value={qty(s.total_delivered)} tone="green" />
+          <Stat label="Pending" value={qty(s.total_pending)} tone="amber" />
+        </div>
+        <DataTable
+          headers={['Order #', 'Date', 'Customer', 'Item', 'Required', 'Delivered', 'Pending']}
+          rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
+            String(r.order_number ?? ''),
+            String(r.order_date ?? ''),
+            String(r.customer_name ?? ''),
+            String(r.item_name ?? ''),
+            qty(r.required_qty as number),
+            qty(r.delivered_qty as number),
+            qty(r.pending_qty as number),
+          ])}
+        />
       </div>
     );
   }
 
   if (reportId === 'stock-vs-delivery') {
-    const sRows = rows as StockVsDelRow[];
+    return (
+      <DataTable
+        headers={['Item', 'Stock on hand', 'Delivered in period']}
+        rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
+          String(r.item_name ?? ''),
+          qty(r.stock_on_hand as number),
+          qty(r.delivered_in_period as number),
+        ])}
+      />
+    );
+  }
+
+  if (reportId === 'delivery-vs-invoiced') {
+    const s = (data.summary || {}) as Record<string, number>;
     return (
       <div className="space-y-4">
-        <div className="overflow-x-auto border border-slate-200 rounded-lg">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="text-left p-2">Item</th><th className="text-right p-2">Stock on hand</th><th className="text-right p-2">Delivered in period</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sRows.map((r, i) => (
-                <tr key={i} className="border-t border-slate-100">
-                  <td className="p-2">{r.item_name}</td><td className="p-2 text-right">{r.stock_on_hand}</td><td className="p-2 text-right">{r.delivered_in_period}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="grid grid-cols-3 gap-3">
+          <Stat label="Challans" value={String(s.total_challans ?? 0)} />
+          <Stat label="Invoiced" value={String(s.invoiced ?? 0)} tone="green" />
+          <Stat label="Not invoiced" value={String(s.not_invoiced ?? 0)} tone="amber" />
+        </div>
+        <DataTable
+          headers={['Number', 'Date', 'Customer', 'Status', 'Invoiced', 'Invoice #']}
+          rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
+            String(r.number ?? ''),
+            String(r.challan_date ?? ''),
+            String(r.customer_name ?? ''),
+            String(r.status ?? ''),
+            r.invoiced ? 'Yes' : 'No',
+            String(r.invoice_number ?? '—'),
+          ])}
+        />
+      </div>
+    );
+  }
+
+  if (reportId === 'invoice-vs-payment') {
+    const s = (data.summary || {}) as Record<string, number>;
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          <Stat label="Invoiced" value={money(s.total_invoiced)} />
+          <Stat label="Received" value={money(s.total_received)} tone="green" />
+          <Stat label="Pending" value={money(s.total_pending)} tone="amber" />
+        </div>
+        <DataTable
+          headers={['Customer', 'Invoices', 'Invoiced', 'Received', 'Pending']}
+          rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
+            String(r.customer_name ?? ''),
+            Number(r.invoice_count ?? 0),
+            money(r.total_invoiced as number),
+            money(r.total_received as number),
+            money(r.total_pending as number),
+          ])}
+        />
+      </div>
+    );
+  }
+
+  if (reportId === 'ledger-summary' || reportId === 'general-ledger') {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          <Stat label="Debit" value={money(data.totalDebit as number)} />
+          <Stat label="Credit" value={money(data.totalCredit as number)} />
+          <Stat label="Entries" value={String(data.entryCount ?? 0)} />
+        </div>
+        <DataTable
+          headers={['Number', 'Date', 'Reference', 'Debit', 'Credit']}
+          rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
+            String(r.number ?? ''),
+            String(r.date ?? '').slice(0, 10),
+            String(r.reference ?? '—'),
+            money(r.total_debit as number),
+            money(r.total_credit as number),
+          ])}
+        />
+      </div>
+    );
+  }
+
+  if (reportId === 'trial-balance') {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Stat label="As of" value={String(data.as_of ?? '')} />
+          <Stat label="Total debit" value={money(data.total_debit as number)} />
+          <Stat label="Total credit" value={money(data.total_credit as number)} />
+          <Stat label="Balanced" value={data.balanced ? 'Yes' : 'No'} tone={data.balanced ? 'green' : 'amber'} />
+        </div>
+        <p className="text-sm text-slate-500">{Number(data.entry_count ?? 0)} journal entries included.</p>
+      </div>
+    );
+  }
+
+  if (reportId === 'vendor-ledger') {
+    const vendors = (data.vendors as Array<Record<string, unknown>>) || [];
+    if (!vendors.length) return <Empty message="No vendors yet. Add vendors under Purchase to see this ledger." />;
+    return (
+      <div className="space-y-6">
+        {vendors.map((v) => (
+          <div key={String(v.vendor_id)} className="space-y-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="font-semibold text-slate-900">{String(v.vendor_name ?? 'Vendor')}</h3>
+              <span className="text-sm text-slate-600">Closing: {money(v.closing_balance as number)}</span>
+            </div>
+            <DataTable
+              headers={['Date', 'Type', 'Reference', 'Debit', 'Credit', 'Balance']}
+              rows={((v.transactions as Array<Record<string, unknown>>) || []).map((t) => [
+                String(t.date ?? '').slice(0, 10),
+                String(t.type ?? ''),
+                String(t.reference ?? ''),
+                money(t.debit as number),
+                money(t.credit as number),
+                money(t.balance as number),
+              ])}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (reportId === 'tds-summary') {
+    return (
+      <div className="space-y-4">
+        <Stat label="Total TDS deducted" value={money(data.total_tds_deducted as number)} />
+        <DataTable
+          headers={['Date', 'Vendor ID', 'Amount', 'TDS %', 'TDS amount']}
+          rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
+            String(r.payment_date ?? '').slice(0, 10),
+            String(r.vendor_id ?? '').slice(0, 8),
+            money(r.amount as number),
+            `${Number(r.tds_percent ?? 0)}%`,
+            money(r.tds_amount as number),
+          ])}
+        />
+      </div>
+    );
+  }
+
+  if (reportId === 'health-score') {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 space-y-3">
+        <p className="text-4xl font-bold text-brand-700">{Number(data.score ?? 0)}<span className="text-lg text-slate-500"> / 10</span></p>
+        <p className="text-slate-800">{String(data.message ?? '')}</p>
+        <div className="grid grid-cols-3 gap-3 pt-2">
+          <Stat label="Receivables" value={money((data.factors as Record<string, number>)?.receivables)} tone="amber" />
+          <Stat label="Payables" value={money((data.factors as Record<string, number>)?.payables)} />
+          <Stat label="Pending invoices" value={String((data.factors as Record<string, number>)?.pendingCount ?? 0)} />
         </div>
       </div>
     );
   }
 
-  if (reportId === 'delivery-vs-invoiced' && summary && 'total_challans' in summary) {
-    const s = summary as { total_challans: number; invoiced: number; not_invoiced: number };
-    const dRows = rows as DelVsInvRow[];
+  if (reportId === 'ageing') {
+    const buckets = (data.buckets || {}) as Record<string, number>;
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-3 gap-3 text-sm">
-          <div className="rounded-lg bg-slate-100 p-3"><span className="text-slate-600">Total challans</span><div className="font-semibold">{s.total_challans}</div></div>
-          <div className="rounded-lg bg-slate-100 p-3"><span className="text-slate-600">Invoiced</span><div className="font-semibold text-green-700">{s.invoiced}</div></div>
-          <div className="rounded-lg bg-slate-100 p-3"><span className="text-slate-600">Not invoiced</span><div className="font-semibold text-amber-700">{s.not_invoiced}</div></div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Stat label="0–30 days" value={money(buckets['0-30'])} />
+          <Stat label="31–60 days" value={money(buckets['31-60'])} tone="amber" />
+          <Stat label="61–90 days" value={money(buckets['61-90'])} tone="amber" />
+          <Stat label="90+ days" value={money(buckets['90+'])} />
         </div>
-        <div className="overflow-x-auto border border-slate-200 rounded-lg">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="text-left p-2">Challan #</th><th className="text-left p-2">Date</th><th className="text-left p-2">Customer</th><th className="text-left p-2">Status</th><th className="text-left p-2">Invoiced</th><th className="text-left p-2">Invoice #</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dRows.map((r, i) => (
-                <tr key={i} className="border-t border-slate-100">
-                  <td className="p-2">{r.number}</td><td className="p-2">{r.challan_date}</td><td className="p-2">{r.customer_name}</td><td className="p-2">{r.status}</td>
-                  <td className="p-2">{r.invoiced ? 'Yes' : 'No'}</td><td className="p-2">{r.invoice_number ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          headers={data.type === 'payables' ? ['Number', 'Vendor', 'Due', 'Due date', 'Days', 'Bucket'] : ['Number', 'Buyer', 'Due', 'Due date', 'Days', 'Bucket']}
+          rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
+            String(r.number ?? ''),
+            String((data.type === 'payables' ? r.vendor : r.buyer) ?? ''),
+            money(r.due as number),
+            String(r.due_date ?? '—').slice(0, 10),
+            Number(r.daysOverdue ?? 0),
+            String(r.bucket ?? ''),
+          ])}
+        />
       </div>
     );
   }
 
-  if (reportId === 'invoice-vs-payment' && summary && 'total_invoiced' in summary) {
-    const s = summary as { total_invoiced: number; total_received: number; total_pending: number };
-    const pRows = rows as InvVsPayRow[];
+  if (reportId === 'pl') {
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-3 gap-3 text-sm">
-          <div className="rounded-lg bg-slate-100 p-3"><span className="text-slate-600">Total invoiced</span><div className="font-semibold">₹{s.total_invoiced.toLocaleString()}</div></div>
-          <div className="rounded-lg bg-slate-100 p-3"><span className="text-slate-600">Total received</span><div className="font-semibold text-green-700">₹{s.total_received.toLocaleString()}</div></div>
-          <div className="rounded-lg bg-slate-100 p-3"><span className="text-slate-600">Total pending</span><div className="font-semibold text-amber-700">₹{s.total_pending.toLocaleString()}</div></div>
+        <div className="grid grid-cols-3 gap-3">
+          <Stat label="Income" value={money(data.total_income as number)} tone="green" />
+          <Stat label="Expense" value={money(data.total_expense as number)} tone="amber" />
+          <Stat label="Net profit" value={money(data.net_profit as number)} />
         </div>
-        <div className="overflow-x-auto border border-slate-200 rounded-lg">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="text-left p-2">Customer</th><th className="text-right p-2">Invoiced</th><th className="text-right p-2">Received</th><th className="text-right p-2">Pending</th><th className="text-right p-2">Invoices</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pRows.map((r, i) => (
-                <tr key={i} className="border-t border-slate-100">
-                  <td className="p-2">{r.customer_name}</td><td className="p-2 text-right">₹{r.total_invoiced.toLocaleString()}</td><td className="p-2 text-right text-green-700">₹{r.total_received.toLocaleString()}</td><td className="p-2 text-right text-amber-700">₹{r.total_pending.toLocaleString()}</td><td className="p-2 text-right">{r.invoice_count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <p className="text-sm text-slate-500">
+          Period {String(data.from ?? '')} → {String(data.to ?? '')}. Based on journal entries for this workspace.
+        </p>
+      </div>
+    );
+  }
+
+  if (reportId === 'balance-sheet') {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          <Stat label="Assets" value={money(data.assets as number)} />
+          <Stat label="Liabilities" value={money(data.liabilities as number)} tone="amber" />
+          <Stat label="Equity" value={money(data.equity as number)} tone="green" />
         </div>
+        <p className="text-sm text-slate-500">As of {String(data.as_of ?? '')}.</p>
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <pre className="text-xs bg-slate-50 p-4 rounded-lg overflow-auto max-h-96">{JSON.stringify(data, null, 2)}</pre>
-    </div>
+    <pre className="text-xs bg-slate-50 p-4 rounded-lg overflow-auto max-h-96">
+      {JSON.stringify(data, null, 2)}
+    </pre>
   );
 }
 
 export default function ReportsPage() {
+  const defaults = useMemo(() => monthBounds(), []);
   const [selected, setSelected] = useState<ReportId | null>(null);
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [from, setFrom] = useState(defaults.from);
+  const [to, setTo] = useState(defaults.to);
   const [companyId, setCompanyId] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [vendorId, setVendorId] = useState('');
-  const [data, setData] = useState<unknown>(null);
+  const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const [ageingType, setAgeingType] = useState<'receivables' | 'payables'>('receivables');
+  const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
+  const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([]);
+  const [vendors, setVendors] = useState<Array<{ id: string; name: string }>>([]);
 
-  const runReport = async (_exportCsv = false) => {
-    if (!selected || selected === 'dashboard') {
+  useEffect(() => {
+    const unwrap = <T,>(raw: T[] | { data?: T[] } | null | undefined): T[] => {
+      if (Array.isArray(raw)) return raw;
+      if (raw && Array.isArray((raw as { data?: T[] }).data)) return (raw as { data: T[] }).data;
+      return [];
+    };
+    void apiGet<Array<{ id: string; name: string }> | { data: Array<{ id: string; name: string }> }>('organization/companies').then((r) => {
+      setCompanies(unwrap(r.data).map((c) => ({ id: c.id, name: c.name })));
+    });
+    void apiGet<Array<{ id: string; name: string }> | { data: Array<{ id: string; name: string }> }>('crm/customers').then((r) => {
+      setCustomers(unwrap(r.data).map((c) => ({ id: c.id, name: c.name })));
+    });
+    void apiGet<Array<{ id: string; name: string }> | { data: Array<{ id: string; name: string }> }>('purchase/vendors').then((r) => {
+      setVendors(unwrap(r.data).map((v) => ({ id: v.id, name: v.name })));
+    });
+  }, []);
+
+  const runReport = useCallback(async (reportId: ReportId) => {
+    if (reportId === 'dashboard') {
       window.location.href = '/dashboard';
       return;
     }
@@ -216,35 +463,51 @@ export default function ReportsPage() {
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (selected === 'ageing') params.set('type', ageingType);
-      else if (selected === 'health-score') {
+      if (reportId === 'ageing') params.set('type', ageingType);
+      else if (reportId === 'health-score') {
         /* no filters */
-      } else if (selected === 'vendor-ledger') {
+      } else if (reportId === 'vendor-ledger') {
         if (vendorId) params.set('vendor_id', vendorId);
-      } else if (selected === 'trial-balance' || selected === 'balance-sheet') {
+      } else if (reportId === 'trial-balance' || reportId === 'balance-sheet') {
         params.set('as_of', to || new Date().toISOString().slice(0, 10));
         if (companyId) params.set('company_id', companyId);
       } else {
         if (from) params.set('from', from);
         if (to) params.set('to', to);
         if (companyId) params.set('company_id', companyId);
-        if (customerId && (selected === 'requirement-vs-delivery' || selected === 'invoice-vs-payment' || selected === 'delivery-vs-invoiced'))
+        if (
+          customerId &&
+          (reportId === 'requirement-vs-delivery' ||
+            reportId === 'invoice-vs-payment' ||
+            reportId === 'delivery-vs-invoiced')
+        ) {
           params.set('customer_id', customerId);
+        }
       }
       const qs = params.toString();
-      const path = selected === 'balance-sheet' ? `reports/balance-sheet${qs ? `?${qs}` : ''}` : `reports/${selected}${qs ? `?${qs}` : ''}`;
-      const { data: res, error: err } = await apiGet<unknown>(path);
+      const path =
+        reportId === 'balance-sheet'
+          ? `reports/balance-sheet${qs ? `?${qs}` : ''}`
+          : `reports/${reportId}${qs ? `?${qs}` : ''}`;
+      const { data: res, error: err } = await apiGet<Record<string, unknown>>(path);
       if (err) setError(err);
-      else setData(res);
+      else setData(res ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load report');
     }
     setLoading(false);
+  }, [ageingType, companyId, customerId, from, to, vendorId]);
+
+  const selectReport = (id: ReportId) => {
+    setSelected(id);
+    setData(null);
+    setError(null);
+    if (id !== 'dashboard') void runReport(id);
   };
 
   const handleExport = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('smebuzz_token') : null;
-    if (!token) return;
+    if (!token || !selected) return;
     const params = new URLSearchParams();
     params.set('format', 'csv');
     if (selected === 'ageing') params.set('type', ageingType);
@@ -253,7 +516,7 @@ export default function ReportsPage() {
       if (to) params.set('to', to);
       if (selected === 'balance-sheet') params.set('as_of', to || new Date().toISOString().slice(0, 10));
       if (companyId) params.set('company_id', companyId);
-      if (customerId && selected) params.set('customer_id', customerId);
+      if (customerId) params.set('customer_id', customerId);
     }
     const url = `${getApiUrl(selected === 'balance-sheet' ? 'reports/balance-sheet' : `reports/${selected}`)}?${params.toString()}`;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -268,7 +531,10 @@ export default function ReportsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900 mb-4">Reports</h1>
+      <h1 className="text-2xl font-bold text-slate-900 mb-1">Reports</h1>
+      <p className="text-sm text-slate-500 mb-4">
+        Live numbers for this workspace only. Pick a report — filters default to the current month.
+      </p>
       <div className="grid gap-4 sm:grid-cols-2 mb-6">
         <Link href="/reports/gstr-1" className="rounded-xl border-2 border-brand-200 bg-brand-50 p-6 hover:border-brand-400">
           <h2 className="font-semibold text-slate-900 mb-1">GSTR-1</h2>
@@ -284,7 +550,7 @@ export default function ReportsPage() {
           <button
             key={r.id}
             type="button"
-            onClick={() => { setSelected(r.id); setData(null); setError(null); }}
+            onClick={() => selectReport(r.id)}
             className={`rounded-xl border-2 p-6 text-left transition ${
               selected === r.id ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:border-brand-300'
             }`}
@@ -298,13 +564,17 @@ export default function ReportsPage() {
       {selected && selected !== 'dashboard' && (
         <div className="rounded-xl border border-slate-200 bg-white p-6 mb-6">
           <h2 className="font-semibold text-slate-900 mb-4">
-            {REPORTS.find((r) => r.id === selected)?.label} — Filters
+            {REPORTS.find((r) => r.id === selected)?.label}
           </h2>
           <div className="flex flex-wrap gap-4 items-end mb-4">
             {selected === 'ageing' && (
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
-                <select value={ageingType} onChange={(e) => setAgeingType(e.target.value as 'receivables' | 'payables')} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                <select
+                  value={ageingType}
+                  onChange={(e) => setAgeingType(e.target.value as 'receivables' | 'payables')}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[40px]"
+                >
                   <option value="receivables">Receivables</option>
                   <option value="payables">Payables</option>
                 </select>
@@ -312,8 +582,17 @@ export default function ReportsPage() {
             )}
             {selected === 'vendor-ledger' && (
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Vendor ID (optional)</label>
-                <input type="text" value={vendorId} onChange={(e) => setVendorId(e.target.value)} placeholder="Filter by vendor UUID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm w-56" />
+                <label className="block text-xs font-medium text-slate-600 mb-1">Vendor</label>
+                <select
+                  value={vendorId}
+                  onChange={(e) => setVendorId(e.target.value)}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[40px] min-w-[200px]"
+                >
+                  <option value="">All vendors</option>
+                  {vendors.map((v) => (
+                    <option key={v.id} value={v.id}>{v.name}</option>
+                  ))}
+                </select>
               </div>
             )}
             {selected !== 'ageing' && selected !== 'health-score' && selected !== 'vendor-ledger' && (
@@ -321,59 +600,82 @@ export default function ReportsPage() {
                 {selected !== 'invoice-vs-payment' && (
                   <>
                     <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">From date</label>
-                      <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        {selected === 'trial-balance' || selected === 'balance-sheet' ? 'As of' : 'From date'}
+                      </label>
+                      {selected === 'trial-balance' || selected === 'balance-sheet' ? (
+                        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                      ) : (
+                        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                      )}
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">To date</label>
-                      <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                    </div>
+                    {selected !== 'trial-balance' && selected !== 'balance-sheet' && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">To date</label>
+                        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                      </div>
+                    )}
                   </>
                 )}
-                {(selected === 'requirement-vs-delivery' || selected === 'delivery-vs-invoiced' || selected === 'invoice-vs-payment') && (
+                {(selected === 'requirement-vs-delivery' ||
+                  selected === 'delivery-vs-invoiced' ||
+                  selected === 'invoice-vs-payment') && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Customer ID (optional)</label>
-                    <input type="text" value={customerId} onChange={(e) => setCustomerId(e.target.value)} placeholder="Filter by customer UUID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm w-56" />
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Customer</label>
+                    <select
+                      value={customerId}
+                      onChange={(e) => setCustomerId(e.target.value)}
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[40px] min-w-[200px]"
+                    >
+                      <option value="">All customers</option>
+                      {customers.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
                   </div>
                 )}
-                {!CUSTOM_REPORT_IDS.includes(selected!) && selected !== 'tds-summary' && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Company ID (optional)</label>
-                    <input type="text" value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="UUID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm w-64" />
-                  </div>
-                )}
+                {selected !== 'tds-summary' &&
+                  selected !== 'requirement-vs-delivery' &&
+                  selected !== 'stock-vs-delivery' &&
+                  selected !== 'delivery-vs-invoiced' &&
+                  selected !== 'invoice-vs-payment' && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Company</label>
+                      <select
+                        value={companyId}
+                        onChange={(e) => setCompanyId(e.target.value)}
+                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[40px] min-w-[200px]"
+                      >
+                        <option value="">All companies</option>
+                        {companies.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
               </>
             )}
             <button
               type="button"
-              onClick={() => runReport(false)}
+              onClick={() => selected && void runReport(selected)}
               disabled={loading}
-              className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50"
+              className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50 min-h-[40px]"
             >
               {loading ? 'Loading…' : 'View report'}
             </button>
             {selected && REPORTS.find((r) => r.id === selected)?.hasExport && (
               <button
                 type="button"
-                onClick={handleExport}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => void handleExport()}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 min-h-[40px]"
               >
                 Export CSV
               </button>
             )}
           </div>
           {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
-          {data != null ? (
-            CUSTOM_REPORT_IDS.includes(selected!) ? (
-              <CustomReportView reportId={selected!} data={data} />
-            ) : (
-              <div className="overflow-x-auto">
-                <pre className="text-xs bg-slate-50 p-4 rounded-lg overflow-auto max-h-96">
-                  {JSON.stringify(data, null, 2)}
-                </pre>
-              </div>
-            )
-          ) : null}
+          {loading && !data ? <p className="text-sm text-slate-500">Loading…</p> : null}
+          {data != null ? <ReportResult reportId={selected} data={data} /> : null}
         </div>
       )}
 

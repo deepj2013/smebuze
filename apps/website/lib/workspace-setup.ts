@@ -50,10 +50,14 @@ export function resolveEnabledModules(
     : [];
   const shop = typeof settings?.business_type === 'string' ? settings.business_type : '';
   const defaults = shop && shop !== 'standard' ? normalizeEnabledModules(defaultModulesForShop(shop)) : undefined;
-  const enabled = fromTenant.length ? fromTenant : defaults;
+  let enabled = fromTenant.length ? fromTenant : defaults;
+  // Reports stay available for every shop type once the workspace has any modules.
+  if (enabled?.length && !enabled.includes('reports')) {
+    enabled = [...enabled, 'reports'];
+  }
   if (!enabled?.length) return userAllowed?.length ? userAllowed : undefined;
   if (userAllowed?.length) {
-    const keep = new Set<string>(ALWAYS_ON);
+    const keep = new Set<string>([...ALWAYS_ON, 'reports']);
     return enabled.filter((m) => keep.has(m) || userAllowed.includes(m));
   }
   return enabled;

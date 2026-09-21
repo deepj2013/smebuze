@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 
 export class SaveBrandingDto {
   @IsOptional()
@@ -16,4 +16,9 @@ export class SaveBrandingDto {
   @IsOptional()
   @IsString()
   logo_url?: string | null;
+
+  /** Printed invoice size: s compact · m normal · l large (default) · xl extra large */
+  @IsOptional()
+  @IsIn(['s', 'm', 'l', 'xl'])
+  invoice_print_size?: 's' | 'm' | 'l' | 'xl';
 }

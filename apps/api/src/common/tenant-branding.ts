@@ -1,3 +1,8 @@
+import {
+  DEFAULT_INVOICE_PRINT_SIZE,
+  parseInvoicePrintSize,
+  type InvoicePrintSize,
+} from './invoice-print-size';
 import { themeForBusinessType } from './variant-theme';
 
 export type TenantBranding = {
@@ -5,6 +10,8 @@ export type TenantBranding = {
   primary_color: string;
   accent_color: string;
   display_name: string | null;
+  /** Printed invoice / quotation text size (all layouts including Ice Crest). */
+  invoice_print_size: InvoicePrintSize;
   updated_at: string | null;
 };
 
@@ -13,6 +20,7 @@ export const DEFAULT_BRANDING: TenantBranding = {
   primary_color: '#0284c7',
   accent_color: '#0369a1',
   display_name: null,
+  invoice_print_size: DEFAULT_INVOICE_PRINT_SIZE,
   updated_at: null,
 };
 
@@ -32,6 +40,9 @@ export function parseTenantBranding(settings: Record<string, unknown> | null | u
     primary_color: sanitizeHex(raw.primary_color, fallback.primary),
     accent_color: sanitizeHex(raw.accent_color, fallback.accent),
     display_name: typeof raw.display_name === 'string' && raw.display_name.trim() ? raw.display_name.trim() : null,
+    invoice_print_size: parseInvoicePrintSize(
+      (raw as { invoice_print_size?: unknown }).invoice_print_size ?? DEFAULT_INVOICE_PRINT_SIZE,
+    ),
     updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : null,
   };
 }

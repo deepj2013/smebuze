@@ -21,6 +21,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { AuditService } from '../audit/audit.service';
 import { isPosBusinessType, isStockTrackedPos } from '../common/tenant-client-types';
 import { parseTenantBranding, TenantBranding } from '../common/tenant-branding';
+import { invoicePrintSizeCss } from '../common/invoice-print-size';
 import {
   buildInvoicePaySlip,
   frontendPayUrl,
@@ -1283,17 +1284,18 @@ export class SalesService {
       .join('');
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${escapeHtml(inv.number)}</title><style>
+${invoicePrintSizeCss(branding.invoice_print_size)}
 *{box-sizing:border-box}
-body{font-family:'Courier New',monospace;font-size:11px;line-height:1.25;width:80mm;max-width:80mm;margin:0 auto;padding:4px;background:#fff}
-h1{font-size:13px;text-align:center;margin:0 0 6px 0;text-transform:uppercase}
+body{font-family:'Courier New',monospace;font-size:12px;line-height:1.3;width:80mm;max-width:80mm;margin:0 auto;padding:4px;background:#fff}
+h1{font-size:14px;text-align:center;margin:0 0 6px 0;text-transform:uppercase}
 .section{margin:6px 0}
-table{border-collapse:collapse;width:100%;font-size:10px}
+table{border-collapse:collapse;width:100%;font-size:11px}
 th,td{border:1px solid #000;padding:2px 3px;text-align:left}
 th{background:#eee;font-weight:bold}
 .right{text-align:right}
 .totals{margin-top:6px;font-weight:bold}
 .totals td{border:none;padding:1px 0}
-.footer{text-align:center;margin-top:8px;font-size:9px}
+.footer{text-align:center;margin-top:8px;font-size:10px}
 </style></head><body>
 <h1>${inv.gst_applicable ? 'Tax Invoice' : 'Invoice / Receipt'}</h1>
 ${posLogo ? `<div class="section" style="text-align:center"><img src="${escapeHtml(posLogo)}" alt="Logo" style="max-width:48px;max-height:48px;object-fit:contain"/></div>` : ''}
@@ -1381,26 +1383,27 @@ ${this.invoicePayBlockHtml(pay, true)}
     const cgst9 = lines9.reduce((s, l) => s + parseFloat(l.cgst_amount ?? '0'), 0);
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${escapeHtml(inv.number)}</title><style>
+${invoicePrintSizeCss(branding?.invoice_print_size)}
 *{box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:11px;line-height:1.35;max-width:210mm;margin:0 auto;padding:12px;background:#fff;color:#000}
+body{font-family:Arial,sans-serif;font-size:13px;line-height:1.4;max-width:210mm;margin:0 auto;padding:14px;background:#fff;color:#000}
 .star-ice-header{margin-bottom:12px;border-bottom:1px solid #000;padding-bottom:8px}
-.star-ice-header h2{margin:0 0 4px 0;font-size:14px;text-transform:uppercase;font-weight:bold}
-.star-ice-header p{margin:2px 0;font-size:11px}
+.star-ice-header h2{margin:0 0 4px 0;font-size:18px;text-transform:uppercase;font-weight:bold}
+.star-ice-header p{margin:2px 0;font-size:13px}
 .star-ice-section{margin:10px 0}
-.star-ice-section h3{margin:0 0 4px 0;font-size:11px;font-weight:bold}
-table{border-collapse:collapse;width:100%;font-size:10px;margin:6px 0}
-th,td{border:1px solid #000;padding:4px 6px;text-align:left}
+.star-ice-section h3{margin:0 0 4px 0;font-size:13px;font-weight:bold}
+table{border-collapse:collapse;width:100%;font-size:12px;margin:6px 0}
+th,td{border:1px solid #000;padding:5px 7px;text-align:left}
 th{background:#f0f0f0;font-weight:bold}
 .right{text-align:right}
 .star-ice-tax-table{margin-top:8px}
 .star-ice-tax-table td{border:none;padding:2px 8px}
-.star-ice-bank{margin-top:12px;font-size:11px}
-.star-ice-cert{margin-top:16px;font-size:10px;font-style:italic}
+.star-ice-bank{margin-top:12px;font-size:13px}
+.star-ice-cert{margin-top:16px;font-size:12px;font-style:italic}
 .star-ice-cert p{margin:4px 0}
 </style></head><body>
 <div class="star-ice-header">
   <div style="display:flex;gap:12px;align-items:flex-start">
-    ${starLogo ? `<img src="${escapeHtml(starLogo)}" alt="Logo" style="width:56px;height:56px;object-fit:contain"/>` : ''}
+    ${starLogo ? `<img src="${escapeHtml(starLogo)}" alt="Logo" style="width:72px;height:72px;object-fit:contain"/>` : ''}
     <div>
       <h2>${escapeHtml(branding?.display_name || company.name)}</h2>
       <p>${escapeHtml(companyAddr)}</p>
@@ -1643,47 +1646,48 @@ ${this.invoicePayBlockHtml(pay)}
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(docTitle)} ${escapeHtml(inv.number)}</title>
 <style>
+${invoicePrintSizeCss(branding?.invoice_print_size)}
 *{box-sizing:border-box}
-body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#111;margin:0;padding:10px;background:#fff}
+body{font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;margin:0;padding:10px;background:#fff}
 .sheet{border:1px solid #111;max-width:210mm;margin:0 auto}
-.topbar{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-bottom:1px solid #111}
-.topbar h1{margin:0;font-size:18px;letter-spacing:.04em;text-transform:uppercase}
-.copy{font-size:9px;letter-spacing:.08em;text-transform:uppercase}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #111}
+.topbar h1{margin:0;font-size:22px;letter-spacing:.04em;text-transform:uppercase}
+.copy{font-size:11px;letter-spacing:.08em;text-transform:uppercase}
 .head{display:flex;border-bottom:1px solid #111}
-.head-left{flex:1.4;display:flex;gap:10px;padding:10px;border-right:1px solid #111}
-.head-left img,.pi-logo-fallback{width:72px;height:72px;object-fit:contain;border:1px solid #ccc;flex-shrink:0}
-.pi-logo-fallback{display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;background:#111;color:#fff}
-.co h2{margin:0 0 4px;font-size:16px}
-.co p{margin:0 0 2px;line-height:1.35}
+.head-left{flex:1.4;display:flex;gap:12px;padding:12px;border-right:1px solid #111}
+.head-left img,.pi-logo-fallback{width:84px;height:84px;object-fit:contain;border:1px solid #ccc;flex-shrink:0}
+.pi-logo-fallback{display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;background:#111;color:#fff}
+.co h2{margin:0 0 4px;font-size:18px}
+.co p{margin:0 0 2px;line-height:1.4}
 .head-right{flex:1;padding:0}
 .head-right table{width:100%;border-collapse:collapse}
-.head-right th,.head-right td{border-bottom:1px solid #111;padding:5px 8px;text-align:left;vertical-align:top}
+.head-right th,.head-right td{border-bottom:1px solid #111;padding:6px 10px;text-align:left;vertical-align:top}
 .head-right tr:last-child th,.head-right tr:last-child td{border-bottom:none}
 .head-right th{width:38%;background:#f3f3f3;font-weight:700}
 .parties{display:flex;border-bottom:1px solid #111}
-.parties>div{flex:1;padding:8px 10px}
+.parties>div{flex:1;padding:10px 12px}
 .parties>div:first-child{border-right:1px solid #111}
-.parties h3{margin:0 0 4px;font-size:11px;text-transform:uppercase}
+.parties h3{margin:0 0 4px;font-size:13px;text-transform:uppercase}
 .parties p{margin:0 0 2px}
 table.grid{width:100%;border-collapse:collapse}
-table.grid th,table.grid td{border:1px solid #111;padding:4px 5px}
-table.grid th{background:#eee;font-size:10px}
+table.grid th,table.grid td{border:1px solid #111;padding:6px 7px}
+table.grid th{background:#eee;font-size:12px}
 .c{text-align:center}.r{text-align:right}
 .mid{display:flex;border-bottom:1px solid #111}
-.mid-left{flex:1.4;padding:8px 10px;border-right:1px solid #111}
+.mid-left{flex:1.4;padding:10px 12px;border-right:1px solid #111}
 .mid-right{flex:1}
 .mid-right table{width:100%;border-collapse:collapse}
-.mid-right th,.mid-right td{border-bottom:1px solid #111;border-left:1px solid #111;padding:5px 8px}
+.mid-right th,.mid-right td{border-bottom:1px solid #111;border-left:1px solid #111;padding:6px 10px}
 .mid-right th{text-align:left;background:#f3f3f3;width:45%}
 .mid-right td{text-align:right}
 .mid-right tr:last-child th,.mid-right tr:last-child td{font-weight:700}
-.foot{display:flex;border-top:1px solid #111;min-height:110px}
-.foot>div{padding:8px 10px}
+.foot{display:flex;border-top:1px solid #111;min-height:120px}
+.foot>div{padding:10px 12px}
 .foot-bank{flex:1.1;border-right:1px solid #111}
 .foot-terms{flex:1;border-right:1px solid #111}
 .foot-sign{flex:.9;text-align:right}
-.foot h3{margin:0 0 4px;font-size:11px;text-transform:uppercase}
-.sign-space{height:56px}
+.foot h3{margin:0 0 4px;font-size:13px;text-transform:uppercase}
+.sign-space{height:60px}
 .ic-pay{margin:12px auto;max-width:210mm;padding:10px;border:1px dashed #111;display:flex;gap:14px;align-items:center}
 @page{size:A4;margin:8mm}
 @media print{body{padding:0}.sheet{border-width:1px}}
@@ -1845,18 +1849,18 @@ ${this.iceCrestLetterhead(company, addr, 'Quotation', branding)}
   private iceCrestPrintStyles(branding?: TenantBranding): string {
     const primary = branding?.primary_color || '#0891b2';
     const accent = branding?.accent_color || '#0e7490';
-    return `*{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px;line-height:1.4;max-width:210mm;margin:0 auto;padding:14px;color:#0f172a}
+    return `${invoicePrintSizeCss(branding?.invoice_print_size)}*{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:13px;line-height:1.45;max-width:210mm;margin:0 auto;padding:14px;color:#0f172a}
 .ic-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${primary};padding-bottom:10px;margin-bottom:12px}
-.ic-logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,${primary},${accent});color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:22px}
-.ic-brand h1{margin:0;font-size:20px;color:${accent};text-transform:uppercase;letter-spacing:.04em}
-.ic-brand p{margin:2px 0;font-size:11px;color:#475569}
-.ic-doc-title{font-size:14px;font-weight:bold;color:${primary};text-transform:uppercase;text-align:right}
-.ic-section{margin:10px 0}.ic-section h3{margin:0 0 4px;font-size:11px;color:${primary};text-transform:uppercase}
-table{border-collapse:collapse;width:100%;font-size:10px;margin:8px 0}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:left}th{background:#f1f5f9;color:${accent}}
+.ic-logo{width:64px;height:64px;border-radius:12px;background:linear-gradient(135deg,${primary},${accent});color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:24px}
+.ic-brand h1{margin:0;font-size:22px;color:${accent};text-transform:uppercase;letter-spacing:.04em}
+.ic-brand p{margin:2px 0;font-size:13px;color:#475569}
+.ic-doc-title{font-size:16px;font-weight:bold;color:${primary};text-transform:uppercase;text-align:right}
+.ic-section{margin:10px 0}.ic-section h3{margin:0 0 4px;font-size:13px;color:${primary};text-transform:uppercase}
+table{border-collapse:collapse;width:100%;font-size:12px;margin:8px 0}th,td{border:1px solid #cbd5e1;padding:6px 7px;text-align:left}th{background:#f1f5f9;color:${accent}}
 .right{text-align:right}.ic-totals table{width:280px;margin-left:auto;border:none}.ic-totals td{border:none;padding:3px 0}
-.ic-bank{margin-top:12px;padding:8px;background:#f8fafc;border:1px solid ${primary};border-radius:6px;font-size:11px}
+.ic-bank{margin-top:12px;padding:8px;background:#f8fafc;border:1px solid ${primary};border-radius:6px;font-size:13px}
 .ic-pay{margin-top:12px;padding:10px;border:1px dashed ${primary};border-radius:8px;display:flex;gap:14px;align-items:center}
-.ic-terms{margin-top:14px;font-size:10px;color:#475569}.ic-sign{margin-top:20px;font-size:11px}`;
+.ic-terms{margin-top:14px;font-size:12px;color:#475569}.ic-sign{margin-top:20px;font-size:13px}`;
   }
 
   private resolveLogoUrl(logoUrl?: string | null): string | null {

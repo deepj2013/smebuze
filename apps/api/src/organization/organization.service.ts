@@ -18,6 +18,7 @@ import { RolePermission } from '../auth/entities/role-permission.entity';
 import { Permission } from '../auth/entities/permission.entity';
 import { Tenant } from '../tenant/entities/tenant.entity';
 import { parseTenantBranding, sanitizeHex, TenantBranding } from '../common/tenant-branding';
+import { parseInvoicePrintSize } from '../common/invoice-print-size';
 import {
   decryptSecret,
   encryptSecret,
@@ -434,7 +435,13 @@ export class OrganizationService {
 
   async saveBranding(
     ctx: TenantContext,
-    dto: Partial<{ primary_color: string; accent_color: string; display_name: string | null; logo_url: string | null }>,
+    dto: Partial<{
+      primary_color: string;
+      accent_color: string;
+      display_name: string | null;
+      logo_url: string | null;
+      invoice_print_size: 's' | 'm' | 'l' | 'xl';
+    }>,
   ): Promise<TenantBranding> {
     const tenantId = this.assertTenantId(ctx);
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
@@ -451,6 +458,10 @@ export class OrganizationService {
             ? String(dto.display_name).trim()
             : null,
       logo_url: dto.logo_url !== undefined ? dto.logo_url : current.logo_url,
+      invoice_print_size:
+        dto.invoice_print_size !== undefined
+          ? parseInvoicePrintSize(dto.invoice_print_size)
+          : current.invoice_print_size,
       updated_at: new Date().toISOString(),
     };
     tenant.settings = { ...(tenant.settings ?? {}), branding: next };

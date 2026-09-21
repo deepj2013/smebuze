@@ -2,7 +2,13 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getApiUrl, getToken } from '@/lib/api';
+import { apiGet, apiPatch, getApiUrl, getToken } from '@/lib/api';
+import { parseTenantBranding, type TenantBranding } from '@/lib/branding';
+import {
+  DEFAULT_INVOICE_PRINT_SIZE,
+  INVOICE_PRINT_SIZE_OPTIONS,
+  type InvoicePrintSize,
+} from '@/lib/invoice-print-size';
 import {
   PrinterProfile,
   ReceiptPayload,
@@ -27,6 +33,9 @@ export default function PrintDocument({ title, fetchPath, receipt }: PrintDocume
   const [selectedId, setSelectedId] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [printSize, setPrintSize] = useState<InvoicePrintSize>(DEFAULT_INVOICE_PRINT_SIZE);
+  const [sizeBusy, setSizeBusy] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const list = loadPrinters();
@@ -35,11 +44,21 @@ export default function PrintDocument({ title, fetchPath, receipt }: PrintDocume
   }, []);
 
   useEffect(() => {
+    apiGet<TenantBranding>('organization/branding').then((r) => {
+      if (r.data) {
+        const b = parseTenantBranding({ branding: r.data });
+        setPrintSize(b.invoice_print_size);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
     const token = getToken();
     if (!token) {
       setError('Please sign in to print.');
       return;
     }
+    setHtml(null);
     fetch(getApiUrl(fetchPath), { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => {
         if (!r.ok) throw new Error('Could not load the document.');
@@ -47,7 +66,7 @@ export default function PrintDocument({ title, fetchPath, receipt }: PrintDocume
       })
       .then(setHtml)
       .catch(() => setError('Could not load this document for print.'));
-  }, [fetchPath]);
+  }, [fetchPath, reloadKey]);
 
   const selected = useMemo(
     () => printers.find((p) => p.id === selectedId) ?? getDefaultPrinter(),
@@ -58,6 +77,26 @@ export default function PrintDocument({ title, fetchPath, receipt }: PrintDocume
     if (!html) return '';
     return injectPaperCss(html, selected?.paper ?? 'a4');
   }, [html, selected]);
+
+  const handlePrintSize = useCallback(async (next: InvoicePrintSize) => {
+    if (next === printSize) return;
+    setSizeBusy(true);
+    setStatus(null);
+    const { data, error: err } = await apiPatch<TenantBranding>('organization/branding', {
+      invoice_print_size: next,
+    });
+    setSizeBusy(false);
+    if (err) {
+      setStatus(err);
+      return;
+    }
+    if (data) {
+      const b = parseTenantBranding({ branding: data });
+      setPrintSize(b.invoice_print_size);
+      setReloadKey((k) => k + 1);
+      setStatus(`Print size set to ${INVOICE_PRINT_SIZE_OPTIONS.find((o) => o.id === b.invoice_print_size)?.label ?? next}.`);
+    }
+  }, [printSize]);
 
   const handlePrint = useCallback(async () => {
     if (!html) return;
@@ -107,6 +146,19 @@ export default function PrintDocument({ title, fetchPath, receipt }: PrintDocume
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <select
+              value={printSize}
+              onChange={(e) => void handlePrintSize(e.target.value as InvoicePrintSize)}
+              disabled={sizeBusy}
+              className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+              title="Invoice print size for this workspace"
+            >
+              {INVOICE_PRINT_SIZE_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  Size: {o.label}
+                </option>
+              ))}
+            </select>
+            <select
               value={selectedId}
               onChange={(e) => setSelectedId(e.target.value)}
               className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
@@ -131,10 +183,10 @@ export default function PrintDocument({ title, fetchPath, receipt }: PrintDocume
                   : 'Print'}
             </button>
             <Link
-              href="/organization/printers"
+              href="/organization/branding"
               className="min-h-[44px] inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
             >
-              Printer setup
+              Print size setup
             </Link>
           </div>
         </div>
