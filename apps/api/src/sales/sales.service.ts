@@ -18,6 +18,7 @@ import { Vendor } from '../purchase/entities/vendor.entity';
 import { Company } from '../tenant/entities/company.entity';
 import { Tenant } from '../tenant/entities/tenant.entity';
 import { InventoryService } from '../inventory/inventory.service';
+import { AuditService } from '../audit/audit.service';
 import { isPosBusinessType, isStockTrackedPos } from '../common/tenant-client-types';
 import { parseTenantBranding, TenantBranding } from '../common/tenant-branding';
 import {
@@ -101,6 +102,7 @@ export class SalesService {
     @InjectRepository(StockMovement)
     private readonly stockMovementRepo: Repository<StockMovement>,
     private readonly inventoryService: InventoryService,
+    private readonly auditService: AuditService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -150,7 +152,11 @@ export class SalesService {
           const { taxable, tax } = gstLine(line.qty, line.rate, line.cgst_rate ?? 0, line.sgst_rate ?? 0, (line as { igst_rate?: number }).igst_rate ?? 0);
           draftTotal += taxable + tax;
         }
-        const pendingInvoices = await this.invoiceRepo.find({ where: { tenant_id: tenantId, customer_id: customerId } });
+        const pendingInvoices = await this.invoiceRepo
+          .createQueryBuilder('inv')
+          .where('inv.tenant_id = :tenantId AND inv.customer_id = :customerId', { tenantId, customerId })
+          .andWhere("inv.status <> 'deleted'")
+          .getMany();
         const currentExposure = pendingInvoices.reduce((sum, inv) => sum + parseFloat(inv.total) - parseFloat(inv.paid_amount), 0);
         if (currentExposure + draftTotal > creditLimit) {
           throw new ForbiddenException(`Invoice total (₹${draftTotal.toFixed(2)}) would exceed customer credit limit (₹${creditLimit.toFixed(2)}). Current exposure: ₹${currentExposure.toFixed(2)}.`);
@@ -335,6 +341,9 @@ export class SalesService {
       relations: ['lines'],
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
+    if (invoice.status === 'deleted') {
+      throw new ForbiddenException('This invoice was deleted. Create a new invoice if you need to bill again.');
+    }
     if (parseFloat(invoice.paid_amount) > 0) {
       throw new ForbiddenException('Cannot edit invoice that has payments; adjust payments first.');
     }
@@ -420,6 +429,7 @@ export class SalesService {
       .orderBy('inv.created_at', 'DESC');
     if (!limit) qb.leftJoinAndSelect('inv.lines', 'lines');
     if (status) qb.andWhere('inv.status = :status', { status });
+    else qb.andWhere("inv.status <> 'deleted'");
     if (customerId) qb.andWhere('inv.customer_id = :customerId', { customerId });
     if (from) qb.andWhere('inv.invoice_date >= :from', { from });
     if (limit && limit > 0) qb.take(Math.min(limit, 200));
@@ -436,12 +446,124 @@ export class SalesService {
     return inv;
   }
 
+  /**
+   * Soft-delete a wrong invoice. Keeps the row with status=deleted and writes a full
+   * snapshot to audit_logs. Restores stock if this invoice had deducted inventory.
+   * Blocked when payments exist — reverse payments first.
+   */
+  async deleteInvoice(
+    id: string,
+    ctx: TenantContext,
+    opts?: { reason?: string },
+  ): Promise<{ ok: true; id: string; number: string; status: string }> {
+    const tenantId = this.assertTenantId(ctx);
+    const invoice = await this.invoiceRepo.findOne({
+      where: { id, tenant_id: tenantId },
+      relations: ['lines', 'lines.item', 'customer', 'vendor', 'company'],
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    if (invoice.status === 'deleted') {
+      throw new ForbiddenException('Invoice is already deleted.');
+    }
+    if (parseFloat(invoice.paid_amount || '0') > 0) {
+      throw new ForbiddenException(
+        'This invoice has payments recorded. Remove or reverse payments first, then delete.',
+      );
+    }
+
+    const snapshot = {
+      id: invoice.id,
+      number: invoice.number,
+      status_before: invoice.status,
+      invoice_date: invoice.invoice_date,
+      due_date: invoice.due_date,
+      company_id: invoice.company_id,
+      company_name: invoice.company?.name ?? null,
+      customer_id: invoice.customer_id,
+      customer_name: invoice.customer?.name ?? null,
+      vendor_id: invoice.vendor_id,
+      vendor_name: invoice.vendor?.name ?? null,
+      subtotal: invoice.subtotal,
+      tax_amount: invoice.tax_amount,
+      total: invoice.total,
+      paid_amount: invoice.paid_amount,
+      shipping_charges: invoice.shipping_charges,
+      other_charges: invoice.other_charges,
+      discount_amount: invoice.discount_amount,
+      gst_applicable: invoice.gst_applicable,
+      stock_deducted_at: invoice.stock_deducted_at,
+      sales_order_id: invoice.sales_order_id,
+      created_by: invoice.created_by,
+      created_at: invoice.created_at,
+      lines: (invoice.lines || []).map((l) => ({
+        id: l.id,
+        item_id: l.item_id,
+        item_name: l.item?.name ?? null,
+        item_sku: l.item?.sku ?? null,
+        hsn_sac: l.hsn_sac,
+        description: l.description,
+        qty: l.qty,
+        unit: l.unit,
+        rate: l.rate,
+        taxable_value: l.taxable_value,
+        cgst_rate: l.cgst_rate,
+        cgst_amount: l.cgst_amount,
+        sgst_rate: l.sgst_rate,
+        sgst_amount: l.sgst_amount,
+        igst_rate: l.igst_rate,
+        igst_amount: l.igst_amount,
+      })),
+      reason: (opts?.reason || '').trim() || null,
+      deleted_by: ctx.userId ?? null,
+      deleted_at: new Date().toISOString(),
+    };
+
+    // Restore stock that was deducted when the invoice was created.
+    if (invoice.stock_deducted_at) {
+      const warehouseId = await this.inventoryService.getDefaultWarehouse(ctx);
+      if (warehouseId) {
+        for (const line of invoice.lines || []) {
+          if (!line.item_id) continue;
+          const qty = Number(line.qty);
+          if (!Number.isFinite(qty) || qty <= 0) continue;
+          await this.inventoryService.receiveStock(ctx, warehouseId, line.item_id, qty);
+          await this.stockMovementRepo.save(
+            this.stockMovementRepo.create({
+              tenant_id: tenantId,
+              warehouse_id: warehouseId,
+              item_id: line.item_id,
+              movement_type: 'inward',
+              quantity: String(qty),
+              movement_date: new Date(),
+              reference_type: 'sales_invoice_delete',
+              reference_id: invoice.id,
+              reference_number: invoice.number,
+              notes: 'Stock restored after invoice delete',
+              created_by: ctx.userId,
+            }),
+          );
+        }
+      }
+      invoice.stock_deducted_at = null;
+    }
+
+    invoice.status = 'deleted';
+    await this.invoiceRepo.save(invoice);
+
+    await this.auditService.log(ctx, 'invoice.delete', 'sales_invoice', invoice.id, snapshot);
+
+    return { ok: true, id: invoice.id, number: invoice.number, status: 'deleted' };
+  }
+
   async recordPayment(invoiceId: string, dto: RecordPaymentDto, ctx: TenantContext): Promise<SalesInvoice> {
     const tenantId = this.assertTenantId(ctx);
     const invoice = await this.invoiceRepo.findOne({
       where: { id: invoiceId, tenant_id: tenantId },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
+    if (invoice.status === 'deleted') {
+      throw new ForbiddenException('Cannot record payment on a deleted invoice.');
+    }
     const total = parseFloat(invoice.total);
     const paid = parseFloat(invoice.paid_amount);
     const newPaid = paid + dto.amount;
@@ -517,11 +639,14 @@ export class SalesService {
 
   async getPendingInvoices(ctx: TenantContext): Promise<{ invoices: SalesInvoice[]; totalPending: number }> {
     const tenantId = this.assertTenantId(ctx);
-    const invoices = await this.invoiceRepo.find({
-      where: { tenant_id: tenantId },
-      relations: ['customer', 'vendor'],
-      order: { due_date: 'ASC' },
-    });
+    const invoices = await this.invoiceRepo
+      .createQueryBuilder('inv')
+      .leftJoinAndSelect('inv.customer', 'customer')
+      .leftJoinAndSelect('inv.vendor', 'vendor')
+      .where('inv.tenant_id = :tenantId', { tenantId })
+      .andWhere("inv.status <> 'deleted'")
+      .orderBy('inv.due_date', 'ASC')
+      .getMany();
     const pending = invoices.filter((inv) => parseFloat(inv.paid_amount) < parseFloat(inv.total));
     const totalPending = pending.reduce(
       (sum, inv) => sum + (parseFloat(inv.total) - parseFloat(inv.paid_amount)),
@@ -744,11 +869,12 @@ export class SalesService {
     return this.findOneSalesOrder(id, ctx);
   }
 
-  async findSalesOrders(ctx: TenantContext, status?: string, customer_id?: string): Promise<SalesOrder[]> {
+  async findSalesOrders(ctx: TenantContext, status?: string, customer_id?: string, channel?: string): Promise<SalesOrder[]> {
     const tenantId = this.assertTenantId(ctx);
-    const where: { tenant_id: string; status?: string; customer_id?: string } = { tenant_id: tenantId };
+    const where: { tenant_id: string; status?: string; customer_id?: string; channel?: string } = { tenant_id: tenantId };
     if (status) where.status = status;
     if (customer_id) where.customer_id = customer_id;
+    if (channel) where.channel = channel;
     return this.salesOrderRepo.find({ where, relations: ['customer', 'company', 'lines', 'lines.item'], order: { order_date: 'DESC', created_at: 'DESC' } });
   }
 

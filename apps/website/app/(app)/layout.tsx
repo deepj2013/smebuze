@@ -40,10 +40,15 @@ import {
   Palette,
   CreditCard,
   CircleHelp,
+  ChefHat,
+  UtensilsCrossed,
+  Ticket,
+  KeyRound,
+  Handshake,
 } from 'lucide-react';
 import { parseTenantBranding } from '@/lib/branding';
 import { getStaticUrl } from '@/lib/api';
-import { isPosBusinessType } from '@/lib/business-types';
+import { isFloorBusinessType, isPosBusinessType } from '@/lib/business-types';
 import { needsWorkspaceSetup, resolveEnabledModules } from '@/lib/workspace-setup';
 import { applyWorkspaceThemeVars, resolveWorkspaceTheme } from '@/lib/variant-theme';
 
@@ -69,6 +74,7 @@ const nav: Array<{
     permission: 'crm.lead.view',
     children: [
       { label: 'Leads', href: '/crm/leads', icon: UserPlus, permission: 'crm.lead.view' },
+      { label: 'Lead hub', href: '/crm/lead-hub', icon: Megaphone, permission: 'crm.lead.view' },
       { label: 'Customers', href: '/crm/customers', icon: Users, permission: 'crm.customer.view' },
       { label: 'Pipeline', href: '/crm/pipeline', icon: LayoutDashboard, permission: 'crm.lead.view' },
       { label: 'Follow-up board', href: '/crm/follow-up-board', icon: Users, permission: 'crm.lead.view' },
@@ -85,6 +91,7 @@ const nav: Array<{
       { label: 'Pending receivables', href: '/sales/invoices/pending', icon: Receipt, permission: 'sales.invoice.view' },
       { label: 'Quotations', href: '/sales/quotations', icon: FileText, permission: 'sales.quotation.view' },
       { label: 'Sales orders', href: '/sales/orders', icon: FileText, permission: 'sales.order.view' },
+      { label: 'Portal orders', href: '/sales/portal-orders', icon: Store, permission: 'sales.order.view' },
       { label: 'Delivery challans', href: '/sales/delivery-challans', icon: FileText, permission: 'sales.invoice.view' },
       { label: 'Credit notes', href: '/sales/credit-notes', icon: Receipt, permission: 'sales.invoice.view' },
       { label: 'Recurring invoices', href: '/sales/recurring-invoices', icon: FileText, permission: 'sales.invoice.view' },
@@ -111,6 +118,7 @@ const nav: Array<{
     children: [
       { label: 'Categories', href: '/inventory/categories', icon: Layers, permission: 'inventory.item.view' },
       { label: 'Items', href: '/inventory/items', icon: Boxes, permission: 'inventory.item.view' },
+      { label: 'Public catalog', href: '/catalog', icon: Store, permission: 'inventory.item.view' },
       { label: 'Warehouses', href: '/inventory/warehouses', icon: Warehouse, permission: 'inventory.item.view' },
       { label: 'Stock', href: '/inventory/stock', icon: Package, permission: 'inventory.stock.view' },
       { label: 'Stock transfers', href: '/inventory/stock-transfers', icon: Package, permission: 'inventory.stock.view' },
@@ -158,6 +166,8 @@ const nav: Array<{
       { label: 'Departments', href: '/organization/departments', icon: Layers, permission: 'org.user.view' },
       { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
       { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+      { label: 'Public website', href: '/website', icon: Store, permission: 'org.company.update' },
+      { label: 'Channels', href: '/organization/channels', icon: Wallet, permission: 'org.company.update' },
       { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
       { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
     ],
@@ -169,6 +179,10 @@ const nav: Array<{
     permission: 'admin.tenant.view',
     children: [
       { label: 'Tenants', href: '/admin/tenants', icon: Building2, permission: 'admin.tenant.view' },
+      { label: 'Licences', href: '/admin/licenses', icon: KeyRound, permission: 'admin.tenant.view' },
+      { label: 'Pitch guide', href: '/admin/pitch', icon: Handshake, permission: 'admin.tenant.view' },
+      { label: 'Storefronts & domains', href: '/admin/storefronts', icon: Store, permission: 'admin.tenant.view' },
+      { label: 'Tickets', href: '/admin/tickets', icon: Ticket, permission: 'admin.tenant.view' },
     ],
   },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
@@ -282,12 +296,32 @@ const iceCrestNav: typeof nav = [
   ]},
 ];
 
+/** Dine-in only — waiter / kitchen / cashier / floor admin. No stock aisle chrome. */
+const restaurantFloorNav: typeof nav = [
+  { label: 'Waiter', href: '/pos/waiter', icon: UtensilsCrossed, module: 'sales', permission: 'sales.order.create' },
+  { label: 'Kitchen', href: '/pos/kitchen', icon: ChefHat, module: 'sales', permission: 'sales.order.view' },
+  { label: 'POS / Cashier', href: '/pos', icon: Store, module: 'sales', permission: 'sales.invoice.create' },
+  { label: 'Restaurant admin', href: '/pos/floor', icon: LayoutDashboard, module: 'sales', permission: 'sales.order.view' },
+  { label: 'Bills', href: '/sales/invoices', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'Setup', href: '/onboarding', icon: Settings, module: 'onboarding' },
+  { label: 'Help', href: '/help', icon: CircleHelp, module: 'help' },
+  { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
+    { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
+    { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
+    { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+    { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
+    { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
+  ]},
+];
+
+/** Retail / mobile shop / kirana — counter + products. No waiter/kitchen. */
 const posNav: typeof nav = [
   { label: 'Billing counter', href: '/pos', icon: Store, module: 'sales', permission: 'sales.invoice.create' },
   { label: 'Manage shop', href: '/pos/manage', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Bills', href: '/sales/invoices', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Categories', href: '/inventory/categories', icon: Layers, module: 'inventory', permission: 'inventory.item.view' },
-  { label: 'Menu & items', href: '/inventory/items', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Products', href: '/inventory/items', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Stock', href: '/inventory/stock', icon: Package, module: 'inventory', permission: 'inventory.stock.view' },
   { label: 'Customers', href: '/crm/customers', icon: Users, module: 'crm', permission: 'crm.customer.view' },
   { label: 'Printers', href: '/organization/printers', icon: Printer, module: 'organization', permission: 'org.company.view' },
@@ -298,6 +332,8 @@ const posNav: typeof nav = [
     { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
     { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
     { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+    { label: 'Public website', href: '/website', icon: Store, permission: 'org.company.update' },
+    { label: 'Channels', href: '/organization/channels', icon: Wallet, permission: 'org.company.update' },
     { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
     { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
   ]},
@@ -390,6 +426,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isStarIce = tenant?.slug === 'star-ice';
   const isIceCrest = tenant?.slug === 'ice-crest' || tenant?.settings?.business_type === 'ice_crest';
   const isPosTenant = isPosBusinessType(tenant?.settings?.business_type);
+  const isFloorTenant = isFloorBusinessType(tenant?.settings?.business_type);
   const isPublicIceCrestSite = pathname === '/ice-crest';
   const branding = parseTenantBranding(tenant?.settings);
   const shopTheme = useMemo(() => resolveWorkspaceTheme(tenant?.settings ?? null), [tenant?.settings]);
@@ -398,7 +435,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     ? `${getStaticUrl(branding.logo_url)}${branding.updated_at ? `?t=${encodeURIComponent(branding.updated_at)}` : ''}`
     : null;
   const enabledModules = resolveEnabledModules(tenant?.settings ?? null, user?.allowed_modules);
-  const baseNav = isIceCrest ? iceCrestNav : isStarIce ? starIceNav : isPosTenant ? posNav : nav;
+  const baseNav = isIceCrest
+    ? iceCrestNav
+    : isStarIce
+      ? starIceNav
+      : isFloorTenant
+        ? restaurantFloorNav
+        : isPosTenant
+          ? posNav
+          : nav;
   let visibleNav = filterNavByAccess(baseNav, user?.permissions ?? [], enabledModules);
   if (user?.isSuperAdmin && !visibleNav.some((i) => i.label === 'Admin')) {
     const adminItem = nav.find((i) => i.label === 'Admin');
@@ -651,8 +696,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isSalesActive = pathname.startsWith('/sales') || pathname.startsWith('/pos');
   const isCrmActive = pathname.startsWith('/crm');
   const isStockActive = pathname.startsWith('/ice-crest/stock') || pathname.startsWith('/inventory') || pathname.startsWith('/ice-crest/production');
-  const homeHref = isIceCrest ? '/ice-crest/dashboard' : isPosTenant ? '/pos' : '/dashboard';
+  const homeHref = isIceCrest
+    ? '/ice-crest/dashboard'
+    : isFloorTenant
+      ? '/pos/floor'
+      : isPosTenant
+        ? '/pos'
+        : '/dashboard';
   const isHomeActive = pathname === homeHref || (isIceCrest && pathname.startsWith('/ice-crest/dashboard'));
+  const homeTabLabel = isFloorTenant ? 'Floor' : isPosTenant ? 'POS' : 'Home';
   const moreActive = isIceCrest
     ? !isHomeActive && !isSalesActive && !isStockActive
     : !isSalesActive && !isCrmActive && !isHomeActive;
@@ -761,8 +813,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               isHomeActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
             }`}
           >
-            {isPosTenant ? <Store className="h-6 w-6 shrink-0" /> : <LayoutDashboard className="h-6 w-6 shrink-0" />}
-            <span className="text-xs mt-0.5 font-medium">{isPosTenant ? 'POS' : 'Home'}</span>
+            {isFloorTenant || isPosTenant ? <Store className="h-6 w-6 shrink-0" /> : <LayoutDashboard className="h-6 w-6 shrink-0" />}
+            <span className="text-xs mt-0.5 font-medium">{homeTabLabel}</span>
           </Link>
           <Link
             href="/sales/invoices"

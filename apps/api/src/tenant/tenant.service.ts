@@ -6,6 +6,7 @@ import { Company } from './entities/company.entity';
 import { User } from '../auth/entities/user.entity';
 import { TenantContext } from '../common/tenant-context';
 import { AuthService } from '../auth/auth.service';
+import { getClientPack } from '../growth/client-packs';
 
 export interface CreateTenantDto {
   name: string;
@@ -86,7 +87,16 @@ export class TenantService {
     if (dto.plan !== undefined) tenant.plan = dto.plan;
     if (dto.is_active !== undefined) tenant.is_active = dto.is_active;
     if (dto.settings !== undefined) {
-      tenant.settings = { ...(tenant.settings ?? {}), ...dto.settings };
+      const next = { ...(tenant.settings ?? {}), ...dto.settings };
+      const type = typeof next.business_type === 'string' ? next.business_type : '';
+      const pack = type ? getClientPack(type) : undefined;
+      // When platform admin sets business type, shape modules/features to that shop only.
+      if (pack && dto.settings.business_type !== undefined) {
+        next.enabled_modules = pack.modules;
+        const features = new Set([...(tenant.features ?? []), ...pack.features]);
+        tenant.features = [...features];
+      }
+      tenant.settings = next;
     }
     return this.tenantRepo.save(tenant);
   }

@@ -4,13 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
 import { useToast } from '../components/ToastContext';
-import { businessTypeMeta, isPosBusinessType, posSellingRate } from '@/lib/business-types';
+import { businessTypeMeta, isFloorBusinessType, isStockTrackedPos, posSellingRate } from '@/lib/business-types';
 import { Minus, Plus, Search, Trash2, Banknote, Smartphone, CreditCard } from 'lucide-react';
 import PosSwitcher from '../components/PosSwitcher';
+import FloorSwitcher from '../components/FloorSwitcher';
 import BarcodeCapture from '../components/BarcodeCapture';
 import { useHidBarcode } from '@/lib/use-hid-barcode';
 import { playScanBeep } from '@/lib/pos-beep';
 import { limitDecimalPlaces, round2 } from '@/lib/money';
+import { KITCHEN_LABEL, statusClass, type FloorSnapshot, type FloorTicket } from '@/lib/floor';
 
 interface PosItem {
   id: string;
@@ -70,9 +72,13 @@ export default function PosPage() {
   const [short, setShort] = useState<{ item_id: string; name: string; current_stock: number }[]>([]);
   const [todayBills, setTodayBills] = useState<{ id: string; number: string; total?: string | number }[]>([]);
   const [scanHint, setScanHint] = useState<string | null>(null);
+  const [floor, setFloor] = useState<FloorSnapshot | null>(null);
+  const [billBusy, setBillBusy] = useState<string | null>(null);
+  const [showTakeaway, setShowTakeaway] = useState(false);
   const itemsRef = useRef<PosItem[]>([]);
 
   const meta = businessTypeMeta(businessType);
+  const floorMode = isFloorBusinessType(businessType);
   itemsRef.current = items;
 
   const loadCatalog = async () => {
@@ -97,6 +103,9 @@ export default function PosPage() {
         .then((d) => {
           const t = d?.tenant?.settings?.business_type;
           if (typeof t === 'string') setBusinessType(t);
+          if (isFloorBusinessType(t)) {
+            apiGet<FloorSnapshot>('sales/floor').then((r) => { if (r.data) setFloor(r.data); });
+          }
         })
         .catch(() => undefined);
     }
@@ -292,10 +301,32 @@ export default function PosPage() {
     void applyCode(q);
   };
 
+  const billTable = async (ticket: FloorTicket, mode: PayMode) => {
+    setBillBusy(ticket.id);
+    try {
+      const { data, error } = await apiPost<{ invoice?: { id: string; number: string; total: string | number } }>(
+        `sales/floor/tickets/${ticket.id}/bill`,
+        { mode },
+      );
+      if (error) {
+        showError(error);
+        return;
+      }
+      const inv = data?.invoice;
+      success(`${ticket.table_no} billed${inv?.number ? ` · ${inv.number}` : ''}`);
+      if (inv?.id) setLastBill({ id: inv.id, number: inv.number, total: Number(inv.total ?? ticket.total) });
+      const floorRes = await apiGet<FloorSnapshot>('sales/floor');
+      if (floorRes.data) setFloor(floorRes.data);
+      loadCatalog();
+    } finally {
+      setBillBusy(null);
+    }
+  };
+
   return (
     <div className="flex flex-col lg:flex-row gap-4 min-h-[calc(100vh-8rem)]">
       <div className="flex-1 min-w-0">
-        <PosSwitcher />
+      {floorMode ? <FloorSwitcher role="POS / Cashier" /> : <PosSwitcher />}
         <div
           className="rounded-2xl p-4 sm:p-5 mb-4 text-white"
           style={{ background: 'linear-gradient(135deg, var(--tenant-hero-from, #075985), var(--tenant-hero-to, #0284c7))' }}
@@ -305,20 +336,75 @@ export default function PosPage() {
               <p className="text-xs font-semibold uppercase tracking-wide text-white/80">Counter</p>
               <h1 className="text-xl sm:text-2xl font-bold">{meta.counterLabel}</h1>
               <p className="text-sm text-white/90">
-                Scan with a USB/Bluetooth reader, use the phone camera, or tap {meta.itemLabel}s. Cash, UPI or card.
+                {floorMode
+                  ? 'Settle open tables from the kitchen tickets, or bill a walk-in at the counter.'
+                  : `Scan with a USB/Bluetooth reader, use the phone camera, or tap ${meta.itemLabel}s. Cash, UPI or card.`}
               </p>
               {scanHint && <p className="mt-1 text-xs font-medium text-emerald-100">Last scan: {scanHint}</p>}
             </div>
             <Link
-              href="/pos/manage"
+              href={floorMode ? '/pos/floor' : '/pos/manage'}
               className="rounded-xl bg-white/95 px-4 py-2.5 text-sm font-semibold hover:bg-white min-h-[44px] inline-flex items-center justify-center"
               style={{ color: 'var(--tenant-accent)' }}
             >
-              Manage shop
+              {floorMode ? 'Restaurant admin' : 'Manage shop'}
             </Link>
           </div>
         </div>
 
+        {floorMode && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <p className="text-xs font-semibold uppercase text-amber-900">Open tables — settle here (no menu needed)</p>
+              <button
+                type="button"
+                onClick={() => setShowTakeaway((v) => !v)}
+                className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-950"
+              >
+                {showTakeaway ? 'Hide takeaway menu' : 'Show takeaway / walk-in menu'}
+              </button>
+            </div>
+            {(floor?.open?.length ?? 0) === 0 ? (
+              <p className="text-sm text-amber-900/80">No open tables. Waiter sends food to kitchen first — or open takeaway menu above.</p>
+            ) : (
+              <div className="mt-2 grid sm:grid-cols-2 gap-2">
+                {floor!.open.map((t) => (
+                  <div key={t.id} className="rounded-lg bg-white border border-amber-100 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-bold text-slate-900">{t.table_no}</p>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusClass(t.kitchen_status)}`}>
+                        {KITCHEN_LABEL[t.kitchen_status]}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">{t.lines.map((l) => `${l.qty}× ${l.name}`).join(', ')}</p>
+                    <p className="mt-1 font-semibold">₹{t.total.toFixed(0)}</p>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        type="button"
+                        disabled={billBusy === t.id}
+                        onClick={() => void billTable(t, 'upi')}
+                        className="flex-1 rounded-lg bg-brand-600 text-white py-2 text-xs font-semibold disabled:opacity-50"
+                      >
+                        UPI
+                      </button>
+                      <button
+                        type="button"
+                        disabled={billBusy === t.id}
+                        onClick={() => void billTable(t, 'cash')}
+                        className="flex-1 rounded-lg border border-slate-200 py-2 text-xs font-semibold disabled:opacity-50"
+                      >
+                        Cash
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {(!floorMode || showTakeaway) && (
+        <>
         <div className="flex gap-2 mb-3">
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -327,18 +413,20 @@ export default function PosPage() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onSearchKey}
               autoComplete="off"
-              autoFocus
-              placeholder={`Search or scan barcode / SKU`}
+              autoFocus={!floorMode}
+              placeholder={floorMode ? 'Search takeaway items' : 'Search or scan barcode / SKU'}
               className="w-full rounded-xl border border-slate-300 pl-10 pr-3 py-3 text-base min-h-[48px]"
             />
           </div>
-          <BarcodeCapture onDetected={applyCode} label="Scan" />
+          {!floorMode && <BarcodeCapture onDetected={applyCode} label="Scan" />}
         </div>
-        <p className="text-xs text-slate-500 -mt-2 mb-3">
-          Hardware reader: click the search box and scan. Phone: tap Scan and point the camera at the barcode.
-        </p>
+        {!floorMode && (
+          <p className="text-xs text-slate-500 -mt-2 mb-3">
+            Hardware reader: click the search box and scan. Phone: tap Scan and point the camera at the barcode.
+          </p>
+        )}
 
-        {items.some((i) => i.barcode) && (
+        {!floorMode && items.some((i) => i.barcode) && (
           <details className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
             <summary className="cursor-pointer font-semibold text-slate-800">Try these barcodes (type + Enter, or camera)</summary>
             <ul className="mt-2 space-y-1 font-mono">
@@ -371,9 +459,16 @@ export default function PosPage() {
         {visibleItems.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
             <p className="font-semibold text-slate-900">No {meta.itemsLabel.toLowerCase()} yet</p>
-            <p className="mt-1 text-sm text-slate-600">Add what you sell. They appear here as a menu for the counter.</p>
-            <Link href="/pos/manage" className="mt-4 inline-flex rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-semibold">
-              Add {meta.itemLabel}
+            <p className="mt-1 text-sm text-slate-600">
+              {floorMode
+                ? 'Add dishes under Restaurant admin → Food menu.'
+                : 'Add what you sell. They appear here as a menu for the counter.'}
+            </p>
+            <Link
+              href={floorMode ? '/pos/floor' : '/pos/manage'}
+              className="mt-4 inline-flex rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-semibold"
+            >
+              {floorMode ? 'Open restaurant admin' : `Add ${meta.itemLabel}`}
             </Link>
           </div>
         ) : (
@@ -392,7 +487,7 @@ export default function PosPage() {
                 {Number(item.discount_percent ?? 0) > 0 && Number(item.mrp ?? item.sale_price ?? 0) > posSellingRate(item) && (
                   <p className="text-xs text-slate-400 line-through">MRP ₹{Number(item.mrp ?? item.sale_price ?? 0).toFixed(2)}</p>
                 )}
-                {isPosBusinessType(businessType) && businessType !== 'dine_restaurant' && item.current_stock != null && (
+                {isStockTrackedPos(businessType) && item.current_stock != null && (
                   <p className={`text-xs ${Number(item.current_stock) <= 0 ? 'text-amber-700 font-medium' : 'text-slate-500'}`}>
                     Stock {Number(item.current_stock)}
                   </p>
@@ -400,6 +495,12 @@ export default function PosPage() {
               </button>
             ))}
           </div>
+        )}
+        </>
+        )}
+
+        {floorMode && !showTakeaway && (
+          <p className="text-sm text-slate-500">Table food is ordered on Waiter. This counter only settles bills (and optional takeaway).</p>
         )}
       </div>
 

@@ -1,4 +1,4 @@
-import { isPosBusinessType, type SignupBusinessTypeId } from './business-types';
+import { isFloorBusinessType, isPosBusinessType, SIGNUP_BUSINESS_TYPES, type SignupBusinessTypeId } from './business-types';
 
 export const WORKSPACE_MODULE_OPTIONS = [
   { id: 'inventory', label: 'Items & stock', blurb: 'Products, barcodes, categories and godown quantity.' },
@@ -36,6 +36,7 @@ export function postLoginPath(data: LoginLikePayload): string {
   const settings = (data.tenant?.settings ?? {}) as Record<string, unknown>;
   if (data.tenant?.slug === 'ice-crest' || settings.business_type === 'ice_crest') return '/ice-crest/dashboard';
   if (needsWorkspaceSetup(settings)) return '/onboarding';
+  if (isFloorBusinessType(settings.business_type)) return '/pos/floor';
   if (isPosBusinessType(settings.business_type)) return '/pos';
   return '/dashboard';
 }
@@ -59,17 +60,33 @@ export function resolveEnabledModules(
 }
 
 export function defaultModulesForShop(type: string): string[] {
+  // Floor restaurants: waiter / kitchen / POS — hide purchase & accounts by default
+  if (type === 'dine_restaurant' || type === 'cafe') {
+    return ['sales', 'inventory', 'crm', 'reports'];
+  }
+  // Salon / clinic: bill services + leads; no purchase/accounts clutter
+  if (type === 'salon' || type === 'clinic') {
+    return ['sales', 'crm', 'reports'];
+  }
+  // Counter shops with stock
   if (isPosBusinessType(type)) {
     return ['sales', 'inventory', 'reports', 'crm'];
   }
-  if (type === 'services') {
+  // Desk services / lodging / coaching — no godown purchase loop
+  if (type === 'services' || type === 'coaching' || type === 'hotel') {
     return ['crm', 'sales', 'accounting', 'reports'];
   }
+  // Ice vertical
+  if (type === 'ice_crest') {
+    return ['crm', 'sales', 'inventory', 'reports'];
+  }
+  // Trading / manufacturing / HORECA wholesale — full desk
   return ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports'];
 }
 
 export function homeHrefForShop(type: string): string {
   if (type === 'ice_crest') return '/ice-crest/dashboard';
+  if (isFloorBusinessType(type)) return '/pos/floor';
   if (isPosBusinessType(type)) return '/pos';
   return '/dashboard';
 }
@@ -82,7 +99,5 @@ export function normalizeEnabledModules(selected: string[]): string[] {
 }
 
 export function shopNeedsConfirm(type: unknown): type is SignupBusinessTypeId {
-  return typeof type === 'string' && [
-    'dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop', 'department_store', 'trading', 'services',
-  ].includes(type);
+  return typeof type === 'string' && SIGNUP_BUSINESS_TYPES.some((t) => t.id === type);
 }

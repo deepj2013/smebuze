@@ -69,7 +69,9 @@ NEXT_PUBLIC_API_URL=https://api.smebuze.com
 |------|--------|-------------|
 | Super Admin | `superadmin@smebuzz.com` | *(leave empty)* |
 | Tenant Admin | `admin@demo.com` | `demo` |
-| Restaurant POS | `restaurant@smebuze.local` | `pos-restaurant` |
+| Restaurant POS / admin | `restaurant@smebuze.local` | `pos-restaurant` |
+| Restaurant waiter | `waiter@smebuze.local` | `pos-restaurant` |
+| Restaurant kitchen | `kitchen@smebuze.local` | `pos-restaurant` |
 | Sweet shop POS | `sweets@smebuze.local` | `pos-sweets` |
 | Garment POS | `garment@smebuze.local` | `pos-garment` |
 | Kirana POS | `kirana@smebuze.local` | `pos-kirana` |
@@ -96,6 +98,8 @@ You should get `access_token`. If you see `EMAIL_NOT_VERIFIED`, open `/verify-em
 ## 5. What you get in the app
 
 After login: Dashboard, CRM, Sales (quotations / orders / invoices), Purchase, Inventory, POS (when the tenant type allows it), Accounting, Reports, Organization, Admin (super admin). Ice Crest tenants also get production / stock / WhatsApp screens.
+
+**Restaurant pitch (tenant `pos-restaurant`):** Waiter `/pos/waiter` · Kitchen `/pos/kitchen` · POS `/pos` · Restaurant admin `/pos/floor`. Super admin sees every kitchen ticket at `/admin/tickets`.
 
 ---
 

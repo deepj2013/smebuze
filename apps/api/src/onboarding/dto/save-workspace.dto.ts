@@ -1,8 +1,9 @@
 import { IsArray, IsIn, IsOptional, IsString } from 'class-validator';
+import { SIGNUP_BUSINESS_TYPES } from '../../common/tenant-client-types';
 
 export class SaveWorkspaceDto {
   @IsString()
-  @IsIn(['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop', 'department_store', 'trading', 'services'])
+  @IsIn([...SIGNUP_BUSINESS_TYPES])
   businessType: string;
 
   @IsArray()

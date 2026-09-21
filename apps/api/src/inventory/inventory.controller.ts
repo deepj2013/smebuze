@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentTenant } from '../common/tenant-context';
@@ -69,6 +69,12 @@ export class InventoryController {
     return this.inventoryService.createItem(body as Parameters<InventoryService['createItem']>[0], ctx);
   }
 
+  @Post('items/deactivate-duplicates')
+  @RequirePermissions('inventory.item.create')
+  async deactivateDuplicates(@CurrentTenant() ctx: TenantContext) {
+    return this.inventoryService.deactivateDuplicateItems(ctx);
+  }
+
   @Get('items')
   @RequirePermissions('inventory.item.view')
   async getItems(
@@ -98,6 +104,12 @@ export class InventoryController {
   @RequirePermissions('inventory.item.create')
   async updateItem(@Param('id') id: string, @Body() body: Record<string, unknown>, @CurrentTenant() ctx: TenantContext) {
     return this.inventoryService.updateItem(id, body as Parameters<InventoryService['updateItem']>[1], ctx);
+  }
+
+  @Delete('items/:id')
+  @RequirePermissions('inventory.item.create')
+  async deactivateItem(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
+    return this.inventoryService.deactivateItem(id, ctx);
   }
 
   @Get('stock')

@@ -6,6 +6,7 @@ import { WhatsappInboundMessage } from './entities/whatsapp-inbound-message.enti
 import { Tenant } from '../tenant/entities/tenant.entity';
 import { Lead } from '../crm/entities/lead.entity';
 import { TenantContext } from '../common/tenant-context';
+import { whatsappCredentialsForTenant } from '../growth/channel-settings';
 
 export type WhatsappTemplates = {
   reminder: string;
@@ -44,10 +45,14 @@ export class WhatsappService {
 
   async getStatus(ctx?: TenantContext) {
     const templates = await this.readTemplates(ctx?.tenantId);
+    const tenant = ctx?.tenantId ? await this.tenantRepo.findOne({ where: { id: ctx.tenantId } }) : null;
+    const creds = whatsappCredentialsForTenant(tenant?.settings);
+    const configured = Boolean(creds.license && creds.apiKey);
     return {
-      configured: this.configured(),
+      configured,
       provider: 'ameerait',
-      mode: this.configured() ? 'live' : 'pending',
+      mode: configured ? 'live' : 'pending',
+      channel_mode: creds.mode,
       templates,
     };
   }
@@ -88,11 +93,16 @@ export class WhatsappService {
     const to = this.normalizePhone(body.to);
     if (!to) return { sent: false, message: 'Enter a 10-digit mobile number.' };
 
-    if (!this.configured()) {
+    const tenant = ctx?.tenantId ? await this.tenantRepo.findOne({ where: { id: ctx.tenantId } }) : null;
+    const creds = whatsappCredentialsForTenant(tenant?.settings);
+    if (!creds.license || !creds.apiKey) {
       return {
         sent: false,
         mode: 'pending',
-        message: 'WhatsApp is not connected yet. Ask your admin to finish setup.',
+        message:
+          creds.mode === 'private'
+            ? 'Private WhatsApp keys are missing. Add them under Organization → Channels.'
+            : 'WhatsApp is not connected yet. Ask your admin to finish setup, or switch to private keys.',
         to,
       };
     }
@@ -119,10 +129,10 @@ export class WhatsappService {
       body.text?.trim() ||
       '';
 
-    const endpoint = process.env.WHATSAPP_AMEERA_URL || 'https://login.ameerait.com/api/sendtemplate.php';
+    const endpoint = creds.url || process.env.WHATSAPP_AMEERA_URL || 'https://login.ameerait.com/api/sendtemplate.php';
     const url = new URL(endpoint);
-    url.searchParams.set('LicenseNumber', process.env.WHATSAPP_AMEERA_LICENSE || '');
-    url.searchParams.set('APIKey', process.env.WHATSAPP_AMEERA_API_KEY || '');
+    url.searchParams.set('LicenseNumber', creds.license);
+    url.searchParams.set('APIKey', creds.apiKey);
     url.searchParams.set('Contact', to);
     url.searchParams.set('Template', templateName);
     if (param) url.searchParams.set('Param', param);

@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter, Plus_Jakarta_Sans } from 'next/font/google';
+import { Source_Sans_3, Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import CookieNotice from './components/CookieNotice';
-import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/site';
+import { SITE_DESCRIPTION, SITE_KEYWORDS, SITE_NAME, SITE_URL } from '@/lib/site';
 
-const inter = Inter({
+const sourceSans = Source_Sans_3({
   subsets: ['latin'],
   variable: '--font-sans',
   display: 'swap',
@@ -20,43 +20,41 @@ const plusJakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${SITE_NAME} — GST ERP for MSMEs | 7-day free trial`,
+    default: `${SITE_NAME} — GST Billing Software for Indian MSMEs | 7-day free trial`,
     template: `%s | ${SITE_NAME}`,
   },
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
-  keywords: [
-    'GST software',
-    'GST invoice',
-    'MSME ERP',
-    'billing software India',
-    'inventory software',
-    'SMEBUZE',
-    'smebuze',
-    'smebuzz',
-  ],
+  keywords: [...SITE_KEYWORDS],
   authors: [{ name: SITE_NAME, url: SITE_URL }],
   creator: SITE_NAME,
-  alternates: { canonical: '/' },
+  publisher: SITE_NAME,
+  alternates: { canonical: SITE_URL },
   openGraph: {
     type: 'website',
     locale: 'en_IN',
     url: SITE_URL,
     siteName: SITE_NAME,
-    title: `${SITE_NAME} — GST ERP for MSMEs`,
+    title: `${SITE_NAME} — GST billing for Indian MSMEs`,
     description: SITE_DESCRIPTION,
     images: [{ url: '/icons/icon-512.png', width: 512, height: 512, alt: SITE_NAME }],
   },
   twitter: {
-    card: 'summary',
-    title: `${SITE_NAME} — GST ERP for MSMEs`,
+    card: 'summary_large_image',
+    title: `${SITE_NAME} — GST billing for Indian MSMEs`,
     description: SITE_DESCRIPTION,
     images: ['/icons/icon-512.png'],
   },
   robots: {
     index: true,
     follow: true,
-    googleBot: { index: true, follow: true },
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
   },
   manifest: '/manifest.webmanifest',
   appleWebApp: {
@@ -72,6 +70,9 @@ export const metadata: Metadata = {
     ],
   },
   category: 'business',
+  other: {
+    'geo.region': 'IN',
+  },
 };
 
 export const viewport: Viewport = {
@@ -89,7 +90,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en-IN" className={`${inter.variable} ${plusJakarta.variable}`}>
+    <html lang="en-IN" className={`${sourceSans.variable} ${plusJakarta.variable}`}>
+      <head>
+        <meta name="format-detection" content="telephone=no" />
+        <link rel="alternate" hrefLang="en-IN" href={SITE_URL} />
+        <link rel="alternate" hrefLang="x-default" href={SITE_URL} />
+      </head>
       <body className="min-h-screen antialiased font-sans">
         <a
           href="#main"

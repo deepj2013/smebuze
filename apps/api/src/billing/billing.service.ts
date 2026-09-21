@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, timingSafeEqual } from 'crypto';
 import { Repository } from 'typeorm';
 import { Tenant } from '../tenant/entities/tenant.entity';
+import { User } from '../auth/entities/user.entity';
 import { TenantContext } from '../common/tenant-context';
 import { razorpayRequest, verifyRazorpaySignature } from '../common/tenant-razorpay';
 import {
@@ -26,7 +27,13 @@ import {
 import { TenantSubscriptionPayment } from './entities/tenant-subscription-payment.entity';
 import { BillingPayDto } from './dto/billing-pay.dto';
 import { CustomPlanEnquiryDto } from './dto/custom-plan-enquiry.dto';
+import {
+  AdminLicenceActivateDto,
+  AdminLicenceRemindDto,
+  AdminOfflinePaymentDto,
+} from './dto/admin-licence.dto';
 import { MailService } from '../mail/mail.service';
+import { licenceRenewalHtml } from '../mail/templates';
 
 const SUPPORT_EMAIL = 'support@smebuze.com';
 
@@ -53,6 +60,8 @@ export class BillingService {
     private readonly tenantRepo: Repository<Tenant>,
     @InjectRepository(TenantSubscriptionPayment)
     private readonly paymentRepo: Repository<TenantSubscriptionPayment>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly mail: MailService,
   ) {}
 
@@ -487,5 +496,212 @@ export class BillingService {
     const mailed = await this.mail.sendHtml(SUPPORT_EMAIL, subject, html, text, { replyTo: email || undefined });
     this.logger.log(`Custom plan enquiry from ${name} (${email || phone}) mailed=${mailed.sent}`);
     return { ok: true };
+  }
+
+  private assertSuperAdmin(ctx: TenantContext) {
+    if (!ctx.isSuperAdmin) {
+      throw new ForbiddenException('Only platform admin can manage licences.');
+    }
+  }
+
+  /** Universal admin: every workspace with licence status for renewals. */
+  async listLicences(ctx: TenantContext) {
+    this.assertSuperAdmin(ctx);
+    const tenants = await this.tenantRepo.find({ order: { name: 'ASC' } });
+    const now = new Date();
+    const rows = await Promise.all(
+      tenants.map(async (t) => {
+        const sub = subscriptionStatus(t.subscription_ends_at, now);
+        const users = await this.userRepo.find({
+          where: { tenant_id: t.id, is_active: true },
+          order: { created_at: 'ASC' },
+          take: 5,
+        });
+        const recentPayments = await this.paymentRepo.find({
+          where: { tenant_id: t.id },
+          order: { created_at: 'DESC' },
+          take: 5,
+        });
+        let bucket: 'expired' | 'expiring_soon' | 'active' | 'no_end' = 'no_end';
+        if (sub.days_left == null) bucket = 'no_end';
+        else if (sub.expired) bucket = 'expired';
+        else if (sub.days_left <= 14) bucket = 'expiring_soon';
+        else bucket = 'active';
+        return {
+          id: t.id,
+          name: t.name,
+          slug: t.slug,
+          plan: t.plan,
+          plan_label: PLAN_LABELS[t.plan] || t.plan,
+          is_active: t.is_active !== false,
+          business_type: (t.settings as Record<string, unknown> | null)?.business_type ?? null,
+          license_key: t.license_key,
+          ...sub,
+          bucket,
+          contacts: users.map((u) => ({ id: u.id, email: u.email, name: u.name })),
+          recent_payments: recentPayments.map((p) => ({
+            id: p.id,
+            gateway: p.gateway,
+            plan: p.plan,
+            interval: p.interval,
+            amount_rupees: Math.round(p.amount_paise / 100),
+            status: p.status,
+            reference: (p.meta as Record<string, unknown>)?.reference ?? null,
+            created_at: p.created_at,
+          })),
+        };
+      }),
+    );
+    const summary = {
+      total: rows.length,
+      expired: rows.filter((r) => r.bucket === 'expired').length,
+      expiring_soon: rows.filter((r) => r.bucket === 'expiring_soon').length,
+      active: rows.filter((r) => r.bucket === 'active').length,
+      no_end: rows.filter((r) => r.bucket === 'no_end').length,
+      paused: rows.filter((r) => !r.is_active).length,
+    };
+    return {
+      summary,
+      prices: PLAN_PRICE_RUPEES,
+      plans: Object.keys(PLAN_PRICE_RUPEES).map((id) => ({ id, label: PLAN_LABELS[id], monthly_rupees: PLAN_PRICE_RUPEES[id] })),
+      offline_methods: [
+        { id: 'cash', label: 'Cash (handed to SMEBUZE)' },
+        { id: 'cheque', label: 'Cheque (in SMEBUZE account)' },
+        { id: 'upi', label: 'UPI (to SMEBUZE account)' },
+      ],
+      note: 'Online gateway comes later. For now record cash / cheque / UPI received on the SMEBUZE account, then activate.',
+      tenants: rows,
+    };
+  }
+
+  /** Record cash / cheque / UPI received on the SMEBUZE (platform) account and extend licence. */
+  async recordOfflinePayment(ctx: TenantContext, dto: AdminOfflinePaymentDto) {
+    this.assertSuperAdmin(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: dto.tenant_id } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    if (!payablePlan(dto.plan)) {
+      throw new BadRequestException('Choose Starter, Growth or Business for offline renewal.');
+    }
+    if (!INTERVAL_MONTHS[dto.interval]) {
+      throw new BadRequestException('Interval must be monthly, quarterly or yearly.');
+    }
+    const amountPaise = Math.round(Number(dto.amount_rupees) * 100);
+    if (!Number.isFinite(amountPaise) || amountPaise < 100) {
+      throw new BadRequestException('Enter the amount received in rupees.');
+    }
+    const payment = await this.paymentRepo.save(
+      this.paymentRepo.create({
+        tenant_id: tenant.id,
+        gateway: dto.method,
+        plan: dto.plan,
+        interval: dto.interval,
+        amount_paise: amountPaise,
+        status: 'created',
+        gateway_order_id: dto.reference?.trim() || null,
+        gateway_payment_id: dto.reference?.trim() || null,
+        meta: {
+          offline: true,
+          method: dto.method,
+          reference: dto.reference?.trim() || null,
+          note: dto.note?.trim() || null,
+          recorded_by: ctx.userId,
+          tenant_slug: tenant.slug,
+        },
+      }),
+    );
+    const result = await this.markPaid(payment);
+    if (dto.activate !== false) {
+      const t = await this.tenantRepo.findOne({ where: { id: tenant.id } });
+      if (t && t.is_active === false) {
+        t.is_active = true;
+        await this.tenantRepo.save(t);
+      }
+    }
+    this.logger.log(`Offline ${dto.method} ₹${dto.amount_rupees} for ${tenant.slug} by ${ctx.userId}`);
+    return {
+      ...result,
+      payment_id: payment.id,
+      method: dto.method,
+      amount_rupees: dto.amount_rupees,
+      reference: dto.reference?.trim() || null,
+    };
+  }
+
+  /** Email workspace users a renewal reminder (activation / pay). */
+  async sendLicenceReminder(ctx: TenantContext, dto: AdminLicenceRemindDto) {
+    this.assertSuperAdmin(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: dto.tenant_id } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const users = await this.userRepo.find({
+      where: { tenant_id: tenant.id, is_active: true },
+      order: { created_at: 'ASC' },
+      take: 10,
+    });
+    if (!users.length) {
+      throw new BadRequestException('No active users on this workspace to remind.');
+    }
+    const sub = subscriptionStatus(tenant.subscription_ends_at);
+    const billingUrl = `${this.frontendUrl()}/billing`;
+    const planLabel = PLAN_LABELS[tenant.plan] || tenant.plan;
+    let sent = 0;
+    const failures: string[] = [];
+    for (const u of users) {
+      const html = licenceRenewalHtml({
+        name: u.name || u.email,
+        workspaceName: tenant.name,
+        planLabel,
+        endsAt: sub.ends_at,
+        daysLeft: sub.days_left,
+        billingUrl,
+        supportEmail: SUPPORT_EMAIL,
+      });
+      const noteLine = dto.note?.trim() ? `\n\nNote from SMEBUZE: ${dto.note.trim()}` : '';
+      const text = `Renew SMEBUZE for ${tenant.name}. Plan: ${planLabel}. Open ${billingUrl}.${noteLine}`;
+      const r = await this.mail.sendHtml(
+        u.email,
+        `Renew your SMEBUZE licence — ${tenant.name}`,
+        html,
+        text,
+      );
+      if (r.sent) sent += 1;
+      else failures.push(u.email);
+    }
+    const settings = { ...(tenant.settings || {}) } as Record<string, unknown>;
+    const billing = { ...((settings.billing as Record<string, unknown>) || {}) };
+    billing.last_reminder_at = new Date().toISOString();
+    billing.last_reminder_by = ctx.userId;
+    settings.billing = billing;
+    tenant.settings = settings;
+    await this.tenantRepo.save(tenant);
+    return { ok: true, sent, failed: failures, total: users.length, days_left: sub.days_left };
+  }
+
+  /** Manually set end date / plan / active without a payment (trial or goodwill). */
+  async activateLicence(ctx: TenantContext, dto: AdminLicenceActivateDto) {
+    this.assertSuperAdmin(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: dto.tenant_id } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    if (dto.plan) tenant.plan = dto.plan;
+    if (dto.is_active !== undefined) tenant.is_active = dto.is_active;
+    if (dto.subscription_ends_at !== undefined) {
+      tenant.subscription_ends_at = dto.subscription_ends_at ? new Date(dto.subscription_ends_at) : null;
+    } else if (dto.interval && INTERVAL_MONTHS[dto.interval]) {
+      tenant.subscription_ends_at = extendSubscriptionFrom(new Date(), tenant.subscription_ends_at, dto.interval);
+      const settings = { ...(tenant.settings || {}) };
+      const billing = this.billingSettings(settings);
+      settings.billing = { ...billing, interval: dto.interval, last_activated_at: new Date().toISOString() };
+      tenant.settings = settings;
+    }
+    if (dto.is_active !== false && tenant.is_active === false && (dto.subscription_ends_at || dto.interval)) {
+      tenant.is_active = true;
+    }
+    await this.tenantRepo.save(tenant);
+    const sub = subscriptionStatus(tenant.subscription_ends_at);
+    return {
+      id: tenant.id,
+      plan: tenant.plan,
+      is_active: tenant.is_active,
+      ...sub,
+    };
   }
 }

@@ -1,6 +1,5 @@
 /**
- * Seed every SMEBUZE business-type variant for local checking:
- * restaurant POS, sweet shop, garment, kirana, department store, trading (demo), services.
+ * Seed every SMEBUZE business-type variant for local checking.
  * Idempotent. Password for all: Password123
  *
  * Usage (from repo root, after migrate + seed:demo):
@@ -44,14 +43,33 @@ const ADMIN_PERMS = [
   'accounting.coa.view', 'accounting.journal.create', 'accounting.journal.view', 'reports.view',
 ];
 
+const FLOOR_STAFF_PERMS = [
+  'sales.order.create', 'sales.order.view', 'sales.invoice.view',
+  'inventory.item.view', 'crm.customer.view', 'reports.view',
+];
+
 const FEATURES = JSON.stringify(['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports']);
 
 const THEMES = {
   dine_restaurant: { primary: '#c2410c', accent: '#9a3412' },
+  cafe: { primary: '#78350f', accent: '#92400e' },
   sweet_shop: { primary: '#db2777', accent: '#be185d' },
+  bakery: { primary: '#d97706', accent: '#b45309' },
   garment_shop: { primary: '#7c3aed', accent: '#6d28d9' },
   retail_shop: { primary: '#15803d', accent: '#166534' },
   department_store: { primary: '#0f766e', accent: '#115e59' },
+  pharmacy: { primary: '#047857', accent: '#065f46' },
+  hardware_shop: { primary: '#57534e', accent: '#44403c' },
+  electronics_shop: { primary: '#2563eb', accent: '#1d4ed8' },
+  jewellery_shop: { primary: '#a16207', accent: '#854d0e' },
+  auto_parts: { primary: '#1e3a8a', accent: '#1e40af' },
+  florist: { primary: '#c026d3', accent: '#a21caf' },
+  stationery_shop: { primary: '#0ea5e9', accent: '#0284c7' },
+  salon: { primary: '#e11d48', accent: '#be123c' },
+  clinic: { primary: '#155e75', accent: '#164e63' },
+  coaching: { primary: '#4338ca', accent: '#3730a3' },
+  hotel: { primary: '#1e293b', accent: '#0f172a' },
+  manufacturing: { primary: '#3f3f46', accent: '#27272a' },
   trading: { primary: '#0284c7', accent: '#0369a1' },
   services: { primary: '#4f46e5', accent: '#3730a3' },
 };
@@ -136,6 +154,139 @@ function servicesItems() {
   ];
 }
 
+function cafeItems() {
+  return [
+    { sku: 'CAF-001', name: 'Cappuccino', category: 'Coffee', unit: 'cup', hsn_sac: '996331', mrp: 140, cost: 35, sale: 140, tax: 5, qty: 0, reorder: 0 },
+    { sku: 'CAF-002', name: 'Cold Brew', category: 'Coffee', unit: 'cup', hsn_sac: '996331', mrp: 180, cost: 40, sale: 180, tax: 5, qty: 0, reorder: 0 },
+    { sku: 'CAF-003', name: 'Veg Sandwich', category: 'Bites', unit: 'pcs', hsn_sac: '996331', mrp: 120, cost: 45, sale: 120, tax: 5, qty: 0, reorder: 0 },
+    { sku: 'CAF-004', name: 'Chocolate Muffin', category: 'Bakery', unit: 'pcs', hsn_sac: '996331', mrp: 90, cost: 30, sale: 90, tax: 5, qty: 0, reorder: 0 },
+    { sku: 'CAF-005', barcode: '8901764012345', name: 'Coke Can 300ml', category: 'Bottled', unit: 'can', hsn_sac: '22021010', mrp: 40, cost: 22, sale: 40, tax: 28, qty: 36, reorder: 12 },
+  ];
+}
+
+function bakeryItems() {
+  return [
+    { sku: 'BKY-001', barcode: '8905010001001', name: 'White Bread 400g', category: 'Bread', unit: 'loaf', hsn_sac: '1905', mrp: 45, cost: 22, sale: 42, tax: 5, qty: 40, reorder: 10 },
+    { sku: 'BKY-002', barcode: '8905010001002', name: 'Multigrain Loaf', category: 'Bread', unit: 'loaf', hsn_sac: '1905', mrp: 70, cost: 32, sale: 65, tax: 5, qty: 24, reorder: 6 },
+    { sku: 'BKY-003', barcode: '8905010001003', name: 'Croissant', category: 'Pastry', unit: 'pcs', hsn_sac: '1905', mrp: 55, cost: 18, sale: 55, tax: 5, qty: 30, reorder: 8 },
+    { sku: 'BKY-004', barcode: '8905010001004', name: 'Black Forest 500g', category: 'Cakes', unit: 'kg', hsn_sac: '1905', mrp: 450, cost: 180, sale: 420, tax: 5, qty: 8, reorder: 2 },
+    { sku: 'BKY-005', barcode: '8905010001005', name: 'Eggless Cupcake', category: 'Pastry', unit: 'pcs', hsn_sac: '1905', mrp: 40, cost: 12, sale: 40, tax: 5, qty: 48, reorder: 12 },
+  ];
+}
+
+function pharmacyItems() {
+  return [
+    { sku: 'PHR-001', barcode: '8906010001001', name: 'Paracetamol 500mg 10s', category: 'OTC', unit: 'strip', hsn_sac: '3004', mrp: 18, cost: 8, sale: 16, tax: 12, qty: 80, reorder: 20 },
+    { sku: 'PHR-002', barcode: '8906010001002', name: 'ORS Sachet', category: 'OTC', unit: 'sachet', hsn_sac: '3004', mrp: 22, cost: 10, sale: 20, tax: 12, qty: 60, reorder: 15 },
+    { sku: 'PHR-003', barcode: '8906010001003', name: 'Vitamin C 60s', category: 'Wellness', unit: 'btl', hsn_sac: '2106', mrp: 249, cost: 120, sale: 229, tax: 12, qty: 18, reorder: 4 },
+    { sku: 'PHR-004', barcode: '8906010001004', name: 'Hand Sanitizer 100ml', category: 'Wellness', unit: 'btl', hsn_sac: '3808', mrp: 55, cost: 28, sale: 49, tax: 18, qty: 36, reorder: 8 },
+    { sku: 'PHR-005', barcode: '8906010001005', name: 'Digital Thermometer', category: 'Devices', unit: 'pcs', hsn_sac: '9025', mrp: 199, cost: 90, sale: 179, tax: 18, qty: 12, reorder: 3 },
+  ];
+}
+
+function hardwareItems() {
+  return [
+    { sku: 'HDW-001', barcode: '8907010001001', name: 'PVC Pipe 1" 10ft', category: 'Plumbing', unit: 'pcs', hsn_sac: '3917', mrp: 180, cost: 95, sale: 165, tax: 18, qty: 40, reorder: 10 },
+    { sku: 'HDW-002', barcode: '8907010001002', name: 'Ball Valve 1/2"', category: 'Plumbing', unit: 'pcs', hsn_sac: '8481', mrp: 95, cost: 42, sale: 85, tax: 18, qty: 50, reorder: 12 },
+    { sku: 'HDW-003', barcode: '8907010001003', name: 'Screwdriver Set', category: 'Tools', unit: 'set', hsn_sac: '8205', mrp: 249, cost: 110, sale: 229, tax: 18, qty: 16, reorder: 4 },
+    { sku: 'HDW-004', barcode: '8907010001004', name: 'LED Bulb 9W', category: 'Electrical', unit: 'pcs', hsn_sac: '8539', mrp: 89, cost: 38, sale: 79, tax: 18, qty: 60, reorder: 15 },
+    { sku: 'HDW-005', barcode: '8907010001005', name: 'Wall Putty 1kg', category: 'Paint', unit: 'pkt', hsn_sac: '3214', mrp: 75, cost: 40, sale: 69, tax: 18, qty: 28, reorder: 6 },
+  ];
+}
+
+function electronicsItems() {
+  return [
+    { sku: 'ELC-001', barcode: '8908010001001', name: 'USB-C Cable 1m', category: 'Accessories', unit: 'pcs', hsn_sac: '8544', mrp: 299, cost: 80, sale: 199, tax: 18, qty: 40, reorder: 10 },
+    { sku: 'ELC-002', barcode: '8908010001002', name: '20W Fast Charger', category: 'Accessories', unit: 'pcs', hsn_sac: '8504', mrp: 799, cost: 280, sale: 599, tax: 18, qty: 18, reorder: 4 },
+    { sku: 'ELC-003', barcode: '8908010001003', name: 'TWS Earbuds', category: 'Audio', unit: 'pcs', hsn_sac: '8518', mrp: 2499, cost: 900, sale: 1799, tax: 18, qty: 10, reorder: 3 },
+    { sku: 'ELC-004', barcode: '8908010001004', name: 'Tempered Glass', category: 'Accessories', unit: 'pcs', hsn_sac: '7007', mrp: 199, cost: 40, sale: 149, tax: 18, qty: 50, reorder: 12 },
+    { sku: 'ELC-005', barcode: '8908010001005', name: 'Power Bank 10000mAh', category: 'Power', unit: 'pcs', hsn_sac: '8507', mrp: 1499, cost: 620, sale: 1199, tax: 18, qty: 12, reorder: 3 },
+  ];
+}
+
+function jewelleryItems() {
+  return [
+    { sku: 'JWL-001', barcode: '8909010001001', name: 'Gold Stud Earrings', category: 'Earrings', unit: 'pair', hsn_sac: '7113', mrp: 18500, cost: 14200, sale: 18500, tax: 3, qty: 6, reorder: 2 },
+    { sku: 'JWL-002', barcode: '8909010001002', name: 'Silver Chain 18"', category: 'Chains', unit: 'pcs', hsn_sac: '7113', mrp: 2499, cost: 1100, sale: 2299, tax: 3, qty: 10, reorder: 2 },
+    { sku: 'JWL-003', barcode: '8909010001003', name: 'Temple Bangle Pair', category: 'Bangles', unit: 'pair', hsn_sac: '7113', mrp: 4599, cost: 2100, sale: 4299, tax: 3, qty: 8, reorder: 2 },
+    { sku: 'JWL-004', barcode: '8909010001004', name: 'CZ Ring Size 14', category: 'Rings', unit: 'pcs', hsn_sac: '7113', mrp: 1299, cost: 420, sale: 999, tax: 3, qty: 14, reorder: 3 },
+  ];
+}
+
+function autoPartsItems() {
+  return [
+    { sku: 'AUT-001', barcode: '8910010001001', name: 'Engine Oil 1L', category: 'Fluids', unit: 'ltr', hsn_sac: '2710', mrp: 450, cost: 280, sale: 429, tax: 18, qty: 24, reorder: 6 },
+    { sku: 'AUT-002', barcode: '8910010001002', name: 'Air Filter', category: 'Filters', unit: 'pcs', hsn_sac: '8421', mrp: 320, cost: 140, sale: 289, tax: 18, qty: 16, reorder: 4 },
+    { sku: 'AUT-003', barcode: '8910010001003', name: 'Wiper Blade 20"', category: 'Body', unit: 'pcs', hsn_sac: '8512', mrp: 249, cost: 90, sale: 199, tax: 18, qty: 20, reorder: 5 },
+    { sku: 'AUT-004', barcode: '8910010001004', name: 'Brake Pad Set', category: 'Brakes', unit: 'set', hsn_sac: '8708', mrp: 1299, cost: 620, sale: 1149, tax: 18, qty: 8, reorder: 2 },
+    { sku: 'AUT-005', barcode: '8910010001005', name: 'Spark Plug', category: 'Engine', unit: 'pcs', hsn_sac: '8511', mrp: 180, cost: 70, sale: 159, tax: 18, qty: 30, reorder: 8 },
+  ];
+}
+
+function floristItems() {
+  return [
+    { sku: 'FLR-001', barcode: '8911010001001', name: 'Rose Bouquet 12', category: 'Bouquets', unit: 'pcs', hsn_sac: '0603', mrp: 799, cost: 280, sale: 749, tax: 5, qty: 12, reorder: 4 },
+    { sku: 'FLR-002', barcode: '8911010001002', name: 'Mixed Seasonal Bunch', category: 'Bouquets', unit: 'pcs', hsn_sac: '0603', mrp: 499, cost: 160, sale: 449, tax: 5, qty: 16, reorder: 4 },
+    { sku: 'FLR-003', barcode: '8911010001003', name: 'Orchid Plant', category: 'Plants', unit: 'pot', hsn_sac: '0602', mrp: 899, cost: 380, sale: 849, tax: 5, qty: 8, reorder: 2 },
+    { sku: 'FLR-004', barcode: '8911010001004', name: 'Gift Hamper', category: 'Gifts', unit: 'box', hsn_sac: '2106', mrp: 1299, cost: 520, sale: 1199, tax: 12, qty: 6, reorder: 2 },
+  ];
+}
+
+function stationeryItems() {
+  return [
+    { sku: 'STN-001', barcode: '8912010001001', name: 'Classmate Notebook 200pg', category: 'Notebooks', unit: 'pcs', hsn_sac: '4820', mrp: 80, cost: 42, sale: 75, tax: 12, qty: 60, reorder: 15 },
+    { sku: 'STN-002', barcode: '8912010001002', name: 'Ball Pen Pack 10', category: 'Pens', unit: 'pkt', hsn_sac: '9608', mrp: 50, cost: 22, sale: 45, tax: 18, qty: 40, reorder: 10 },
+    { sku: 'STN-003', barcode: '8912010001003', name: 'Geometry Box', category: 'School', unit: 'set', hsn_sac: '9017', mrp: 120, cost: 55, sale: 109, tax: 18, qty: 24, reorder: 6 },
+    { sku: 'STN-004', barcode: '8912010001004', name: 'A4 Copier 500s', category: 'Paper', unit: 'rim', hsn_sac: '4802', mrp: 310, cost: 240, sale: 299, tax: 12, qty: 18, reorder: 4 },
+    { sku: 'STN-005', barcode: '8912010001005', name: 'Highlighter Set', category: 'Pens', unit: 'set', hsn_sac: '9608', mrp: 90, cost: 35, sale: 79, tax: 18, qty: 22, reorder: 5 },
+  ];
+}
+
+function salonItems() {
+  return [
+    { sku: 'SLN-001', name: 'Haircut', category: 'Hair', unit: 'svc', hsn_sac: '9997', mrp: 350, cost: 0, sale: 350, tax: 18, qty: 0, reorder: 0 },
+    { sku: 'SLN-002', name: 'Hair Colour', category: 'Hair', unit: 'svc', hsn_sac: '9997', mrp: 1200, cost: 0, sale: 1200, tax: 18, qty: 0, reorder: 0 },
+    { sku: 'SLN-003', name: 'Cleanup', category: 'Skin', unit: 'svc', hsn_sac: '9997', mrp: 800, cost: 0, sale: 800, tax: 18, qty: 0, reorder: 0 },
+    { sku: 'SLN-004', name: 'Manicure', category: 'Nails', unit: 'svc', hsn_sac: '9997', mrp: 450, cost: 0, sale: 450, tax: 18, qty: 0, reorder: 0 },
+    { sku: 'SLN-005', name: 'Spa Package', category: 'Packages', unit: 'svc', hsn_sac: '9997', mrp: 2499, cost: 0, sale: 2499, tax: 18, qty: 0, reorder: 0 },
+  ];
+}
+
+function clinicItems() {
+  return [
+    { sku: 'CLN-001', name: 'GP Consultation', category: 'Consult', unit: 'visit', hsn_sac: '9993', mrp: 400, cost: 0, sale: 400, tax: 0, qty: 0, reorder: 0 },
+    { sku: 'CLN-002', name: 'Follow-up visit', category: 'Consult', unit: 'visit', hsn_sac: '9993', mrp: 250, cost: 0, sale: 250, tax: 0, qty: 0, reorder: 0 },
+    { sku: 'CLN-003', name: 'CBC Test', category: 'Labs', unit: 'test', hsn_sac: '9993', mrp: 350, cost: 0, sale: 350, tax: 0, qty: 0, reorder: 0 },
+    { sku: 'CLN-004', name: 'Dressing', category: 'Procedures', unit: 'svc', hsn_sac: '9993', mrp: 200, cost: 0, sale: 200, tax: 0, qty: 0, reorder: 0 },
+  ];
+}
+
+function coachingItems() {
+  return [
+    { sku: 'COA-001', name: 'Class 10 Maths — term', category: 'School', unit: 'term', hsn_sac: '9992', mrp: 12000, cost: 0, sale: 12000, tax: 18, qty: 0, reorder: 0 },
+    { sku: 'COA-002', name: 'JEE Crash Course', category: 'Entrance', unit: 'batch', hsn_sac: '9992', mrp: 28000, cost: 0, sale: 28000, tax: 18, qty: 0, reorder: 0 },
+    { sku: 'COA-003', name: 'Spoken English', category: 'Language', unit: 'month', hsn_sac: '9992', mrp: 3500, cost: 0, sale: 3500, tax: 18, qty: 0, reorder: 0 },
+  ];
+}
+
+function hotelItems() {
+  return [
+    { sku: 'HTL-001', name: 'Deluxe Room — night', category: 'Rooms', unit: 'night', hsn_sac: '9963', mrp: 3500, cost: 0, sale: 3500, tax: 12, qty: 0, reorder: 0 },
+    { sku: 'HTL-002', name: 'Suite — night', category: 'Rooms', unit: 'night', hsn_sac: '9963', mrp: 6500, cost: 0, sale: 6500, tax: 12, qty: 0, reorder: 0 },
+    { sku: 'HTL-003', name: 'Breakfast buffet', category: 'F&B', unit: 'pax', hsn_sac: '9963', mrp: 450, cost: 0, sale: 450, tax: 5, qty: 0, reorder: 0 },
+    { sku: 'HTL-004', name: 'Airport transfer', category: 'Add-on', unit: 'trip', hsn_sac: '9964', mrp: 800, cost: 0, sale: 800, tax: 18, qty: 0, reorder: 0 },
+  ];
+}
+
+function manufacturingItems() {
+  return [
+    { sku: 'MFG-001', barcode: '8913010001001', name: 'MS Fabricated Bracket', category: 'Finished', unit: 'pcs', hsn_sac: '7326', mrp: 220, cost: 90, sale: 199, tax: 18, qty: 80, reorder: 20 },
+    { sku: 'MFG-002', barcode: '8913010001002', name: 'CNC Turned Shaft', category: 'Finished', unit: 'pcs', hsn_sac: '8483', mrp: 540, cost: 210, sale: 499, tax: 18, qty: 40, reorder: 10 },
+    { sku: 'MFG-003', barcode: '8913010001003', name: 'Job work — hour', category: 'Job work', unit: 'hr', hsn_sac: '9988', mrp: 650, cost: 0, sale: 650, tax: 18, qty: 0, reorder: 0 },
+    { sku: 'MFG-004', barcode: '8913010001004', name: 'Powder Coat — sqft', category: 'Job work', unit: 'sqft', hsn_sac: '9988', mrp: 45, cost: 0, sale: 45, tax: 18, qty: 0, reorder: 0 },
+  ];
+}
+
 const VARIANTS = [
   {
     slug: 'pos-restaurant',
@@ -197,7 +348,271 @@ const VARIANTS = [
     items: servicesItems,
     pos: false,
   },
+  {
+    slug: 'pos-cafe',
+    name: 'Demo Cafe',
+    email: 'cafe@smebuze.local',
+    type: 'cafe',
+    company: 'Bean Counter',
+    warehouse: 'Bar',
+    items: cafeItems,
+    pos: true,
+  },
+  {
+    slug: 'pos-bakery',
+    name: 'Demo Bakery',
+    email: 'bakery@smebuze.local',
+    type: 'bakery',
+    company: 'Daily Crust',
+    warehouse: 'Bake house',
+    items: bakeryItems,
+    pos: true,
+  },
+  {
+    slug: 'pos-pharmacy',
+    name: 'Demo Pharmacy',
+    email: 'pharmacy@smebuze.local',
+    type: 'pharmacy',
+    company: 'Care Meds',
+    warehouse: 'Dispensary',
+    items: pharmacyItems,
+    pos: true,
+  },
+  {
+    slug: 'pos-hardware',
+    name: 'Demo Hardware',
+    email: 'hardware@smebuze.local',
+    type: 'hardware_shop',
+    company: 'Build Mart',
+    warehouse: 'Shop floor',
+    items: hardwareItems,
+    pos: true,
+  },
+  {
+    slug: 'pos-electronics',
+    name: 'Demo Electronics',
+    email: 'electronics@smebuze.local',
+    type: 'electronics_shop',
+    company: 'Gadget Hub',
+    warehouse: 'Showroom',
+    items: electronicsItems,
+    pos: true,
+  },
+  {
+    slug: 'pos-jewellery',
+    name: 'Demo Jewellery',
+    email: 'jewellery@smebuze.local',
+    type: 'jewellery_shop',
+    company: 'Gold Leaf',
+    warehouse: 'Showroom',
+    items: jewelleryItems,
+    pos: true,
+  },
+  {
+    slug: 'pos-autoparts',
+    name: 'Demo Auto Parts',
+    email: 'autoparts@smebuze.local',
+    type: 'auto_parts',
+    company: 'Spares Point',
+    warehouse: 'Parts rack',
+    items: autoPartsItems,
+    pos: true,
+  },
+  {
+    slug: 'pos-florist',
+    name: 'Demo Florist',
+    email: 'florist@smebuze.local',
+    type: 'florist',
+    company: 'Bloom & Gift',
+    warehouse: 'Cold room',
+    items: floristItems,
+    pos: true,
+  },
+  {
+    slug: 'pos-stationery',
+    name: 'Demo Stationery',
+    email: 'stationery@smebuze.local',
+    type: 'stationery_shop',
+    company: 'Page One',
+    warehouse: 'Shop counter',
+    items: stationeryItems,
+    pos: true,
+  },
+  {
+    slug: 'pos-salon',
+    name: 'Demo Salon',
+    email: 'salon@smebuze.local',
+    type: 'salon',
+    company: 'Glow Studio',
+    warehouse: 'Front desk',
+    items: salonItems,
+    pos: true,
+  },
+  {
+    slug: 'pos-clinic',
+    name: 'Demo Clinic',
+    email: 'clinic@smebuze.local',
+    type: 'clinic',
+    company: 'City Clinic',
+    warehouse: 'Reception',
+    items: clinicItems,
+    pos: true,
+  },
+  {
+    slug: 'demo-coaching',
+    name: 'Demo Coaching',
+    email: 'coaching@smebuze.local',
+    type: 'coaching',
+    company: 'Merit Classes',
+    warehouse: 'Office',
+    items: coachingItems,
+    pos: false,
+  },
+  {
+    slug: 'demo-hotel',
+    name: 'Demo Hotel',
+    email: 'hotel@smebuze.local',
+    type: 'hotel',
+    company: 'Harbour Inn',
+    warehouse: 'Front office',
+    items: hotelItems,
+    pos: false,
+  },
+  {
+    slug: 'demo-mfg',
+    name: 'Demo Manufacturing',
+    email: 'mfg@smebuze.local',
+    type: 'manufacturing',
+    company: 'Precision Works',
+    warehouse: 'Finished goods',
+    items: manufacturingItems,
+    pos: false,
+  },
 ];
+
+async function ensureStaffUser(db, hash, tenantId, companyId, branchId, email, name, roleId) {
+  let user = await db.query('SELECT id FROM users WHERE tenant_id = $1 AND lower(email) = $2 LIMIT 1', [tenantId, email]);
+  if (!user.rows.length) {
+    user = await db.query(
+      `INSERT INTO users (tenant_id, email, password_hash, name, default_company_id, default_branch_id, is_active, email_verified)
+       VALUES ($1, $2, $3, $4, $5, $6, true, true) RETURNING id`,
+      [tenantId, email, hash, name, companyId, branchId],
+    );
+  } else {
+    await db.query(
+      `UPDATE users SET password_hash = $2, name = $3, is_active = true, email_verified = true WHERE id = $1`,
+      [user.rows[0].id, hash, name],
+    );
+  }
+  const ur = await db.query('SELECT 1 FROM user_roles WHERE user_id = $1 AND role_id = $2', [user.rows[0].id, roleId]);
+  if (!ur.rows.length) {
+    await db.query(`INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`, [user.rows[0].id, roleId]);
+  }
+}
+
+async function seedRestaurantFloor(db, hash, tenantId, companyId, branchId, v) {
+  let role = await db.query(`SELECT id FROM roles WHERE tenant_id = $1 AND slug = 'floor_staff'`, [tenantId]);
+  if (!role.rows.length) {
+    role = await db.query(
+      `INSERT INTO roles (tenant_id, name, slug, is_system) VALUES ($1, 'Floor staff', 'floor_staff', false) RETURNING id`,
+      [tenantId],
+    );
+  }
+  const roleId = role.rows[0].id;
+  await db.query(
+    `INSERT INTO role_permissions (role_id, permission_id)
+     SELECT $1, id FROM permissions WHERE key = ANY($2::varchar[])
+     AND NOT EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = $1 AND rp.permission_id = permissions.id)`,
+    [roleId, FLOOR_STAFF_PERMS],
+  );
+
+  const waiterEmail = v.type === 'dine_restaurant' ? 'waiter@smebuze.local' : 'cafe-waiter@smebuze.local';
+  const kitchenEmail = v.type === 'dine_restaurant' ? 'kitchen@smebuze.local' : 'cafe-kitchen@smebuze.local';
+  await ensureStaffUser(db, hash, tenantId, companyId, branchId, waiterEmail, 'Priya (Waiter)', roleId);
+  await ensureStaffUser(db, hash, tenantId, companyId, branchId, kitchenEmail, 'Chef Kumar', roleId);
+
+  const existing = await db.query(
+    `SELECT id FROM sales_orders WHERE tenant_id = $1 AND channel = 'dine_in' LIMIT 1`,
+    [tenantId],
+  );
+  if (existing.rows.length) return;
+
+  const walk = await db.query(
+    `SELECT id FROM customers WHERE tenant_id = $1 AND (tags @> $2::jsonb OR name ILIKE '%walk%') LIMIT 1`,
+    [tenantId, JSON.stringify(['walk_in'])],
+  );
+  if (!walk.rows.length) return;
+  const customerId = walk.rows[0].id;
+
+  const skuMap = {};
+  const skus = await db.query(`SELECT id, sku, name, sale_price, unit FROM items WHERE tenant_id = $1`, [tenantId]);
+  for (const row of skus.rows) skuMap[row.sku] = row;
+
+  const tickets = [
+    {
+      table: 'T3',
+      status: 'sent',
+      minutes: 2,
+      waiter: 'Priya (Waiter)',
+      lines: [['RST-001', 1], ['RST-004', 2]],
+    },
+    {
+      table: 'T7',
+      status: 'preparing',
+      minutes: 9,
+      waiter: 'Priya (Waiter)',
+      lines: [['RST-003', 1], ['RST-002', 1]],
+    },
+    {
+      table: 'T11',
+      status: 'ready',
+      minutes: 14,
+      waiter: 'Rahul',
+      lines: [['RST-005', 2]],
+    },
+  ];
+
+  for (const t of tickets) {
+    const built = t.lines.map(([sku, qty]) => ({ item: skuMap[sku], qty })).filter((x) => x.item);
+    if (!built.length) continue;
+    const total = built.reduce((s, l) => s + Number(l.item.sale_price || 0) * l.qty, 0);
+    const order = await db.query(
+      `INSERT INTO sales_orders (
+         tenant_id, company_id, customer_id, number, order_date, status, total, tax_amount,
+         channel, requirement_given_by, requirement_channel, shipping_json, created_at
+       ) VALUES (
+         $1, $2, $3, $4, CURRENT_DATE, 'confirmed', $5, 0,
+         'dine_in', $6, 'in_person', $7::jsonb, NOW() - ($8 || ' minutes')::interval
+       ) RETURNING id`,
+      [
+        tenantId,
+        companyId,
+        customerId,
+        `KOT-${t.table}-DEMO`,
+        total.toFixed(2),
+        t.waiter,
+        JSON.stringify({
+          table_no: t.table,
+          covers: 2,
+          kitchen_status: t.status,
+          waiter_name: t.waiter,
+          note: '',
+        }),
+        String(t.minutes),
+      ],
+    );
+    const orderId = order.rows[0].id;
+    for (let i = 0; i < built.length; i++) {
+      const { item, qty } = built[i];
+      await db.query(
+        `INSERT INTO sales_order_lines (sales_order_id, item_id, description, quantity, unit, rate, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [orderId, item.id, item.name, qty, item.unit || 'plate', item.sale_price, i],
+      );
+    }
+  }
+  console.log(`    floor demo: waiter ${waiterEmail} / kitchen ${kitchenEmail}  (tables T3, T7, T11 open)`);
+}
 
 async function ensurePlatform(db) {
   await db.query(
@@ -211,8 +626,12 @@ async function seedVariant(db, hash, v) {
   const theme = THEMES[v.type] || THEMES.trading;
   const patch = {
     business_type: v.type,
+    workspace_configured: true,
     branding: { primary_color: theme.primary, accent_color: theme.accent },
   };
+  if (v.type === 'dine_restaurant' || v.type === 'cafe') {
+    patch.floor = { tables: Array.from({ length: 12 }, (_, i) => `T${i + 1}`) };
+  }
   const settings = JSON.stringify(patch);
   let t = await db.query('SELECT id FROM tenants WHERE slug = $1 LIMIT 1', [v.slug]);
   if (!t.rows.length) {
@@ -351,6 +770,10 @@ async function seedVariant(db, hash, v) {
     }
   }
 
+  if (v.type === 'dine_restaurant' || v.type === 'cafe') {
+    await seedRestaurantFloor(db, hash, tenantId, companyId, branchId, v);
+  }
+
   console.log(`  ${v.slug.padEnd(16)}  ${v.email.padEnd(28)}  type=${v.type}`);
 }
 
@@ -372,7 +795,8 @@ async function run() {
       await seedVariant(db, hash, v);
     }
     console.log('\nExisting ERP demo stays as tenant slug `demo` (admin@demo.com).');
-    console.log('POS tenants open /pos after login. Department store: dept@smebuze.local / pos-dept.');
+    console.log('POS tenants open /pos after login. New types: cafe, bakery, pharmacy, hardware, electronics, jewellery, auto parts, florist, stationery, salon, clinic.');
+    console.log('Desk types: coaching, hotel, manufacturing (dashboard + website).');
   } finally {
     await db.end();
   }

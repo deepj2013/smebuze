@@ -5,8 +5,10 @@ import SiteFooter from '../components/SiteFooter';
 import { SITE_NAME } from '@/lib/site';
 
 export const metadata: Metadata = {
-  title: 'Custom plan',
-  description: `Tell ${SITE_NAME} what seats, companies and modules you need. We will quote a custom pack.`,
+  title: 'Custom SMEBUZE plan for your shop',
+  description: `Tell ${SITE_NAME} what seats, companies and modules you need. We quote a custom GST billing pack for Indian MSMEs.`,
+  alternates: { canonical: '/custom-plan' },
+  robots: { index: true, follow: true },
 };
 
 export default function CustomPlanPage() {

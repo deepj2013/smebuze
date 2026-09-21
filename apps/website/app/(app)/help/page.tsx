@@ -76,7 +76,7 @@ function HelpBody() {
       {
         id: 'pos',
         title: 'POS / bills',
-        body: 'Scan barcode, tap the product, or search. Charge cash, UPI or card. Print the bill. Stock drops on sale for shops (not restaurants).',
+        body: 'Scan barcode, tap the product, or search. Charge cash, UPI or card. Print the bill. Stock drops on sale for shops (not restaurants). A restaurant also has Waiter (tables → kitchen ticket), Kitchen (KOT display), and Restaurant admin.',
       },
       {
         id: 'printers',
@@ -86,7 +86,7 @@ function HelpBody() {
       {
         id: 'change',
         title: 'Change shop type or menus',
-        body: 'Setup lets you pick restaurant, kirana, department store, trading or services, and which modules appear in the menu.',
+        body: 'Setup lets you pick restaurant, kirana, pharmacy, salon, trading and other shop types, and which modules appear in the menu.',
       },
     ],
     [meta.title, pos],

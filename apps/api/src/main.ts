@@ -5,7 +5,7 @@ import * as express from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 
-function corsOrigin(): boolean | string | string[] {
+function corsOrigin(): boolean | string | string[] | ((origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => void) {
   const raw = (process.env.CORS_ORIGIN || '').trim();
   const productionSites = [
     'https://smebuze.com',
@@ -13,9 +13,14 @@ function corsOrigin(): boolean | string | string[] {
     'http://localhost:3001',
   ];
   if (process.env.NODE_ENV === 'production') {
-    if (!raw || raw === '*') return productionSites;
-    const list = raw.split(',').map((s) => s.trim()).filter(Boolean);
-    return list.length ? list : productionSites;
+    const extra = raw && raw !== '*' ? raw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+    const allow = new Set([...productionSites, ...extra]);
+    return (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (allow.has(origin)) return cb(null, true);
+      if (origin.startsWith('https://')) return cb(null, true);
+      return cb(null, false);
+    };
   }
   if (!raw || raw === '*') return true;
   const list = raw.split(',').map((s) => s.trim()).filter(Boolean);

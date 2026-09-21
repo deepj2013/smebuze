@@ -19,16 +19,22 @@ import { Company } from '../tenant/entities/company.entity';
 import { Branch } from '../tenant/entities/branch.entity';
 import { Tenant } from '../tenant/entities/tenant.entity';
 import { InventoryModule } from '../inventory/inventory.module';
+import { AuditModule } from '../audit/audit.module';
 import { SalesService } from './sales.service';
 import { SalesController } from './sales.controller';
 import { StockMovement } from '../ice-crest/entities/stock-movement.entity';
 import { StockReservation } from '../inventory/entities/stock-reservation.entity';
 import { Stock } from '../inventory/entities/stock.entity';
 import { Warehouse } from '../inventory/entities/warehouse.entity';
+import { Item } from '../inventory/entities/item.entity';
+import { FloorService } from './floor.service';
+import { FloorController } from './floor.controller';
+import { AdminTicketsController } from './admin-tickets.controller';
 
 @Module({
   imports: [
     InventoryModule,
+    AuditModule,
     TypeOrmModule.forFeature([
       SalesInvoice,
       SalesInvoiceLine,
@@ -52,10 +58,11 @@ import { Warehouse } from '../inventory/entities/warehouse.entity';
       StockReservation,
       Stock,
       Warehouse,
+      Item,
     ]),
   ],
-  controllers: [SalesController],
-  providers: [SalesService],
-  exports: [SalesService],
+  controllers: [SalesController, FloorController, AdminTicketsController],
+  providers: [SalesService, FloorService],
+  exports: [SalesService, FloorService],
 })
 export class SalesModule {}

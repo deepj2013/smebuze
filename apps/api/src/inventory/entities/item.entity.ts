@@ -88,6 +88,9 @@ export class Item {
   @Column({ default: true })
   for_consume: boolean;
 
+  @Column({ default: false })
+  portal_listed: boolean;
+
   @Column({ type: 'varchar', length: 20, default: 'fifo' })
   valuation_method: string;
 

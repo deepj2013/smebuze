@@ -118,3 +118,34 @@ export function inviteHtml(opts: { inviteLink: string; roleName?: string; worksp
     `You have been invited to ${opts.workspaceName || 'a SMEBUZE workspace'} as ${opts.roleName || 'staff'}.`,
   );
 }
+
+export function licenceRenewalHtml(opts: {
+  name: string;
+  workspaceName: string;
+  planLabel: string;
+  endsAt: string | null;
+  daysLeft: number | null;
+  billingUrl: string;
+  supportEmail: string;
+}): string {
+  const name = escapeHtml(opts.name || 'there');
+  const workspace = escapeHtml(opts.workspaceName);
+  const plan = escapeHtml(opts.planLabel);
+  const when =
+    opts.daysLeft == null
+      ? 'Your SMEBUZE licence end date is not set yet.'
+      : opts.daysLeft < 0
+        ? `Your SMEBUZE licence expired ${Math.abs(opts.daysLeft)} day(s) ago${opts.endsAt ? ` (${escapeHtml(opts.endsAt.slice(0, 10))})` : ''}.`
+        : opts.daysLeft === 0
+          ? 'Your SMEBUZE licence expires today.'
+          : `Your SMEBUZE licence ends in ${opts.daysLeft} day(s)${opts.endsAt ? ` (${escapeHtml(opts.endsAt.slice(0, 10))})` : ''}.`;
+  return layout(
+    'Renew your SMEBUZE licence',
+    `<h1 style="margin:0 0 12px 0;font-size:22px;">Licence renewal — ${workspace}</h1>
+     <p style="margin:0 0 12px 0;font-size:15px;line-height:1.6;color:#334155;">Hi ${name}, ${when}</p>
+     <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#334155;">Current plan: <strong>${plan}</strong>. Pay online from Billing, or transfer by UPI / deposit cash or cheque — then reply to this mail with the reference so we can activate your next period.</p>
+     <p style="margin:0 0 8px 0;">${button(opts.billingUrl, 'Open Billing')}</p>
+     <p style="margin:20px 0 0 0;font-size:13px;color:#64748b;">Questions? Write to ${escapeHtml(opts.supportEmail)}.</p>`,
+    `Renew SMEBUZE for ${opts.workspaceName}. ${when}`,
+  );
+}

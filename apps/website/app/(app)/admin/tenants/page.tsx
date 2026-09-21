@@ -17,7 +17,7 @@ interface Tenant {
 }
 
 const PLANS = ['basic', 'advanced', 'enterprise', 'ai_pro'];
-const FEATURES = ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'bulk_upload', 'audit', 'ai', 'whatsapp'];
+const FEATURES = ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'bulk_upload', 'audit', 'ai', 'whatsapp', 'storefront', 'catalog', 'lead_hub'];
 
 export default function AdminTenantsPage() {
   const [list, setList] = useState<Tenant[]>([]);

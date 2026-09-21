@@ -1,4 +1,5 @@
 import { IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import { SIGNUP_BUSINESS_TYPES, TENANT_CLIENT_TYPES } from '../../common/tenant-client-types';
 
 export class SignupDto {
   @IsString()
@@ -41,6 +42,6 @@ export class SignupDto {
 
   /** How the shop will use SMEBUZE — shapes POS vs ERP workspace. */
   @IsOptional()
-  @IsIn(['dine_restaurant', 'sweet_shop', 'garment_shop', 'retail_shop', 'department_store', 'trading', 'services', 'standard'])
+  @IsIn([...SIGNUP_BUSINESS_TYPES, TENANT_CLIENT_TYPES.STANDARD])
   businessType?: string;
 }

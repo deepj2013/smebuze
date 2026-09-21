@@ -88,6 +88,18 @@ export class SalesOrder {
   @Column({ type: 'varchar', length: 500, nullable: true })
   requirement_proof_ref: string | null;
 
+  @Column({ type: 'varchar', length: 40, default: 'manual' })
+  channel: string;
+
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  tracking_token: string | null;
+
+  @Column({ type: 'jsonb', default: {} })
+  shipping_json: Record<string, unknown>;
+
+  @Column('text', { nullable: true })
+  buyer_note: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 

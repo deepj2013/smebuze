@@ -84,9 +84,11 @@ export class OnboardingService {
     const homeHref =
       tenantSlug === 'ice-crest' || businessType === 'ice_crest'
         ? '/ice-crest/dashboard'
-        : isPosBusinessType(businessType)
-          ? '/pos'
-          : '/dashboard';
+        : businessType === 'dine_restaurant' || businessType === 'cafe'
+          ? '/pos/floor'
+          : isPosBusinessType(businessType)
+            ? '/pos'
+            : '/dashboard';
     const extra = {
       tenantSlug,
       businessType: businessType || undefined,
@@ -130,9 +132,15 @@ export class OnboardingService {
 
     if (isPosTenant) {
       const itemWord =
-        businessType === 'dine_restaurant' ? 'menu item' :
+        businessType === 'dine_restaurant' || businessType === 'cafe' ? 'menu item' :
         businessType === 'sweet_shop' ? 'sweet' :
-        businessType === 'garment_shop' ? 'garment' : 'product';
+        businessType === 'bakery' ? 'bake item' :
+        businessType === 'garment_shop' ? 'garment' :
+        businessType === 'pharmacy' ? 'medicine' :
+        businessType === 'salon' || businessType === 'clinic' ? 'service' :
+        businessType === 'jewellery_shop' ? 'piece' :
+        businessType === 'florist' ? 'arrangement' :
+        businessType === 'auto_parts' ? 'part' : 'product';
       const steps: ChecklistStep[] = [
         { id: 'pos_items', label: `Add your first ${itemWord}s for the counter`, done: false, href: '/inventory/items/new' },
         { id: 'pos_bill', label: 'Take your first bill at the counter', done: invoiceCount > 0, href: '/pos' },

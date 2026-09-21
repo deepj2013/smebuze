@@ -6,7 +6,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: '*',
-        allow: ['/', '/signup', '/privacy', '/terms', '/cookies', '/ice-crest'],
+        allow: ['/', '/signup', '/use-cases', '/custom-plan', '/privacy', '/terms', '/cookies', '/ice-crest', '/shop/', '/site/', '/shops'],
         disallow: [
           '/login',
           '/join',
@@ -27,6 +27,10 @@ export default function robots(): MetadataRoute.Robots {
           '/bulk-upload',
           '/hr/',
           '/service/',
+          '/catalog',
+          '/website',
+          '/billing',
+          '/help',
           '/ice-crest/dashboard',
           '/ice-crest/guide',
           '/ice-crest/whatsapp',
@@ -36,7 +40,6 @@ export default function robots(): MetadataRoute.Robots {
           '/ice-crest/production-plan',
           '/api/',
           '/pay/',
-          '/billing',
         ],
       },
     ],

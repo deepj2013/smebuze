@@ -3,12 +3,18 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { Public } from '../common/decorators/public';
 import { SkipSubscription } from '../common/decorators/skip-subscription';
+import { RequirePermissions } from '../common/decorators/require-permissions';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { CurrentTenant, TenantContext } from '../common/tenant-context';
 import { BillingService } from './billing.service';
 import { BillingPayDto, RazorpayConfirmDto } from './dto/billing-pay.dto';
 import { CustomPlanEnquiryDto } from './dto/custom-plan-enquiry.dto';
+import {
+  AdminLicenceActivateDto,
+  AdminLicenceRemindDto,
+  AdminOfflinePaymentDto,
+} from './dto/admin-licence.dto';
 
 @Controller('billing')
 @SkipSubscription()
@@ -19,6 +25,34 @@ export class BillingController {
   @UseGuards(JwtAuthGuard, TenantGuard)
   status(@CurrentTenant() ctx: TenantContext) {
     return this.billing.status(ctx);
+  }
+
+  @Get('admin/licences')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @RequirePermissions('admin.tenant.view')
+  adminLicences(@CurrentTenant() ctx: TenantContext) {
+    return this.billing.listLicences(ctx);
+  }
+
+  @Post('admin/offline-payment')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @RequirePermissions('admin.tenant.create')
+  adminOfflinePayment(@CurrentTenant() ctx: TenantContext, @Body() dto: AdminOfflinePaymentDto) {
+    return this.billing.recordOfflinePayment(ctx, dto);
+  }
+
+  @Post('admin/remind')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @RequirePermissions('admin.tenant.create')
+  adminRemind(@CurrentTenant() ctx: TenantContext, @Body() dto: AdminLicenceRemindDto) {
+    return this.billing.sendLicenceReminder(ctx, dto);
+  }
+
+  @Post('admin/activate')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @RequirePermissions('admin.tenant.create')
+  adminActivate(@CurrentTenant() ctx: TenantContext, @Body() dto: AdminLicenceActivateDto) {
+    return this.billing.activateLicence(ctx, dto);
   }
 
   @Post('razorpay/order')

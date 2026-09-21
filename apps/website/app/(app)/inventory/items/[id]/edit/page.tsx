@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { apiGet, apiPatch } from '@/lib/api';
+import { apiGet, apiPatch, apiDelete } from '@/lib/api';
 import { Barcode, ImagePlus, X } from 'lucide-react';
 import CategoryPicker from '../../../../components/CategoryPicker';
 import PosSwitcher from '../../../../components/PosSwitcher';
@@ -318,6 +318,21 @@ export default function EditItemPage() {
         <div className="sticky bottom-20 z-10 -mx-4 flex gap-2 border-t border-slate-200 bg-[var(--tenant-canvas,#f8fafc)] px-4 py-3 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0">
           <button type="submit" disabled={loading} className="min-h-[44px] flex-1 rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50 sm:flex-none">Save</button>
           <Link href="/inventory/items" className="min-h-[44px] inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</Link>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={async () => {
+              if (!window.confirm('Remove this SKU from active lists? Order history is kept.')) return;
+              setLoading(true);
+              const { error: err } = await apiDelete(`inventory/items/${id}`);
+              setLoading(false);
+              if (err) setError(err);
+              else router.push('/inventory/items');
+            }}
+            className="min-h-[44px] inline-flex items-center rounded-lg border border-red-200 px-4 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+          >
+            Delete SKU
+          </button>
         </div>
       </form>
     </div>

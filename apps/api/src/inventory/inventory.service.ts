@@ -235,6 +235,7 @@ export class InventoryService {
       sgst_rate: number;
       for_sale: boolean;
       for_consume: boolean;
+      portal_listed: boolean;
       opening_qty: number;
     }>,
     ctx: TenantContext,
@@ -267,6 +268,7 @@ export class InventoryService {
       sgst_rate: gst.sgst_rate,
       for_sale: forSale,
       for_consume: forConsume,
+      portal_listed: dto.portal_listed === true,
     });
     const saved = await this.itemRepo.save(item);
     if (dto.category?.trim()) await this.ensureCategory(dto.category, ctx);
@@ -279,10 +281,13 @@ export class InventoryService {
 
   async findItems(ctx: TenantContext, purpose?: 'sale' | 'consume') {
     const tenantId = this.assertTenantId(ctx);
-    const where: { tenant_id: string; for_sale?: boolean; for_consume?: boolean } = { tenant_id: tenantId };
+    const where: { tenant_id: string; is_active?: boolean; for_sale?: boolean; for_consume?: boolean } = {
+      tenant_id: tenantId,
+      is_active: true,
+    };
     if (purpose === 'sale') where.for_sale = true;
     if (purpose === 'consume') where.for_consume = true;
-    return this.itemRepo.find({ where, order: { created_at: 'DESC' } });
+    return this.itemRepo.find({ where, order: { name: 'ASC', created_at: 'DESC' } });
   }
 
   /** Lookup by barcode or SKU (USB scanner / camera). */
@@ -291,6 +296,7 @@ export class InventoryService {
     const items = await this.itemRepo
       .createQueryBuilder('i')
       .where('i.tenant_id = :tenantId', { tenantId })
+      .andWhere('i.is_active = true')
       .andWhere('(LOWER(COALESCE(i.barcode, \'\')) = LOWER(:code) OR LOWER(COALESCE(i.sku, \'\')) = LOWER(:code))', {
         code: code.trim(),
       })
@@ -345,6 +351,8 @@ export class InventoryService {
       sgst_rate: number;
       for_sale: boolean;
       for_consume: boolean;
+      portal_listed: boolean;
+      is_active: boolean;
     }>,
     ctx: TenantContext,
   ) {
@@ -378,7 +386,61 @@ export class InventoryService {
       item.for_sale = forSale;
       item.for_consume = forConsume;
     }
+    if (dto.portal_listed !== undefined) item.portal_listed = Boolean(dto.portal_listed);
+    if (dto.is_active !== undefined) item.is_active = Boolean(dto.is_active);
     return this.itemRepo.save(item);
+  }
+
+  /** Soft-delete: hide from sales/POS lists. Prefer this over hard delete when stock history exists. */
+  async deactivateItem(id: string, ctx: TenantContext) {
+    const item = await this.findOneItem(id, ctx);
+    item.is_active = false;
+    item.portal_listed = false;
+    return this.itemRepo.save(item);
+  }
+
+  /**
+   * Deactivate duplicate SKUs for this tenant.
+   * Groups by lower(sku) when sku present, else by lower(name).
+   * Keeps the oldest row (or the one with most stock if stock differs).
+   */
+  async deactivateDuplicateItems(ctx: TenantContext) {
+    const tenantId = this.assertTenantId(ctx);
+    const items = await this.itemRepo.find({
+      where: { tenant_id: tenantId, is_active: true },
+      order: { created_at: 'ASC' },
+    });
+    const stockList = await this.stockRepo.find({ where: { tenant_id: tenantId }, select: ['item_id', 'quantity'] });
+    const stockByItem: Record<string, number> = {};
+    for (const s of stockList) {
+      stockByItem[s.item_id] = (stockByItem[s.item_id] ?? 0) + Number(s.quantity || 0);
+    }
+    const groups = new Map<string, typeof items>();
+    for (const item of items) {
+      const key = item.sku?.trim()
+        ? `sku:${item.sku.trim().toLowerCase()}`
+        : `name:${item.name.trim().toLowerCase()}`;
+      const list = groups.get(key) ?? [];
+      list.push(item);
+      groups.set(key, list);
+    }
+    const deactivated: Array<{ id: string; sku: string | null; name: string; kept_id: string }> = [];
+    for (const [, group] of groups) {
+      if (group.length < 2) continue;
+      const ranked = [...group].sort((a, b) => {
+        const stockDiff = (stockByItem[b.id] ?? 0) - (stockByItem[a.id] ?? 0);
+        if (stockDiff !== 0) return stockDiff;
+        return a.created_at.getTime() - b.created_at.getTime();
+      });
+      const keep = ranked[0];
+      for (const dup of ranked.slice(1)) {
+        dup.is_active = false;
+        dup.portal_listed = false;
+        await this.itemRepo.save(dup);
+        deactivated.push({ id: dup.id, sku: dup.sku, name: dup.name, kept_id: keep.id });
+      }
+    }
+    return { deactivated_count: deactivated.length, deactivated };
   }
 
   async findStock(ctx: TenantContext, warehouseId?: string, batchCode?: string) {

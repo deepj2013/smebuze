@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
-import { Check, Printer, Shield } from 'lucide-react';
+import { Check, Printer, Shield, Store } from 'lucide-react';
 import { postLoginPath } from '@/lib/workspace-setup';
+import { PUBLIC_USE_CASE_TAGS } from '@/lib/public-use-cases';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -195,16 +196,32 @@ function LoginForm() {
               SMEBUZE
             </Link>
             <h1 className="mt-16 font-display text-4xl font-bold leading-tight max-w-md">
-              GST bills, stock and accounts from one login.
+              Built for every shop we can open with you.
             </h1>
             <p className="mt-4 text-sky-100/90 max-w-md text-base leading-relaxed">
-              Print on the USB, Wi-Fi or Bluetooth printer you already own. 7-day trial, no card.
+              Restaurant floor, retail counter, salon, clinic, coaching or trading desk — signup shapes the workspace to that shop only. Print on the printer you already own. 7-day trial, no card.
             </p>
-            <ul className="mt-10 space-y-3 text-sm text-sky-50">
+            <div className="mt-8 flex flex-wrap gap-1.5 max-w-lg max-h-44 overflow-y-auto pr-1">
+              {PUBLIC_USE_CASE_TAGS.map((title) => (
+                <span
+                  key={title}
+                  className="rounded-md bg-white/10 border border-white/15 px-2 py-1 text-[11px] font-medium text-sky-50"
+                >
+                  {title}
+                </span>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-sky-200/80">
+              <Link href="/#who" className="underline decoration-sky-300/50 underline-offset-2 hover:text-white">
+                See how we help each use case
+              </Link>
+            </p>
+            <ul className="mt-8 space-y-3 text-sm text-sky-50">
               {[
-                { icon: Printer, text: 'Invoices that come out of the counter printer' },
+                { icon: Store, text: 'Type-based workspace — only the menus that shop needs' },
+                { icon: Printer, text: 'Invoices on USB, Wi-Fi or Bluetooth printers you own' },
                 { icon: Shield, text: 'Roles, GSTIN and a workspace per company' },
-                { icon: Check, text: 'Leads, stock, purchase and books together' },
+                { icon: Check, text: 'Leads, stock, purchase and books when the desk needs them' },
               ].map((item) => (
                 <li key={item.text} className="flex items-center gap-3">
                   <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15">

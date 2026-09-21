@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
-import { SIGNUP_BUSINESS_TYPES, type SignupBusinessTypeId } from '@/lib/business-types';
+import { SIGNUP_BUSINESS_TYPES, SIGNUP_GROUPS, type SignupBusinessTypeId } from '@/lib/business-types';
 import { quotePlan, formatInr, monthlyOffer } from '@/lib/plans';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -147,7 +147,7 @@ function SignupForm() {
         </div>
       </header>
       <main id="main" className="flex-1 flex items-center justify-center p-4 sm:p-6" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        <div className="w-full max-w-lg bg-white rounded-2xl shadow-lg border border-slate-200 p-5 sm:p-8">
+        <div className={`w-full bg-white rounded-2xl shadow-lg border border-slate-200 p-5 sm:p-8 ${step === 1 ? 'max-w-3xl' : 'max-w-lg'}`}>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Create your workspace</h1>
           <p className="text-slate-600 text-sm mb-6">
             {step === 1 && 'How will you use SMEBUZE? We open a restaurant counter, a shop POS, or a full trading desk from this choice.'}
@@ -168,18 +168,25 @@ function SignupForm() {
             <form onSubmit={handleSubmitStep1} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">I am running a</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {SIGNUP_BUSINESS_TYPES.map((t) => (
-                    <label
-                      key={t.id}
-                      className={`rounded-xl border-2 p-3 cursor-pointer ${
-                        businessType === t.id ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <input type="radio" name="businessType" className="sr-only" checked={businessType === t.id} onChange={() => setBusinessType(t.id)} />
-                      <span className="block font-semibold text-slate-900 text-sm">{t.title}</span>
-                      <span className="block text-xs text-slate-600 mt-0.5 leading-relaxed">{t.blurb}</span>
-                    </label>
+                <div className="space-y-4 max-h-[52vh] overflow-y-auto pr-1">
+                  {SIGNUP_GROUPS.map((g) => (
+                    <div key={g.id}>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">{g.label}</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {SIGNUP_BUSINESS_TYPES.filter((t) => t.group === g.id).map((t) => (
+                          <label
+                            key={t.id}
+                            className={`rounded-xl border-2 p-3 cursor-pointer ${
+                              businessType === t.id ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-slate-300'
+                            }`}
+                          >
+                            <input type="radio" name="businessType" className="sr-only" checked={businessType === t.id} onChange={() => setBusinessType(t.id)} />
+                            <span className="block font-semibold text-slate-900 text-sm">{t.title}</span>
+                            <span className="block text-xs text-slate-600 mt-0.5 leading-relaxed">{t.blurb}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>

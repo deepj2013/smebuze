@@ -64,6 +64,16 @@ export class SalesController {
     return this.salesService.updateInvoice(id, dto, ctx);
   }
 
+  @Post('invoices/:id/delete')
+  @RequirePermissions('sales.invoice.create')
+  async deleteInvoice(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.salesService.deleteInvoice(id, ctx, { reason: body?.reason });
+  }
+
   @Post('invoices/:id/payment')
   @RequirePermissions('sales.invoice.create')
   async recordPayment(
@@ -135,9 +145,10 @@ export class SalesController {
   async listSalesOrders(
     @Query('status') status: string | undefined,
     @Query('customer_id') customer_id: string | undefined,
+    @Query('channel') channel: string | undefined,
     @CurrentTenant() ctx: TenantContext,
   ) {
-    return this.salesService.findSalesOrders(ctx, status, customer_id);
+    return this.salesService.findSalesOrders(ctx, status, customer_id, channel);
   }
 
   @Get('orders/:id')

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPatch } from '@/lib/api';
-import { SIGNUP_BUSINESS_TYPES } from '@/lib/business-types';
+import { SIGNUP_BUSINESS_TYPES, SIGNUP_GROUPS } from '@/lib/business-types';
 import { VARIANT_THEMES } from '@/lib/variant-theme';
 import {
   WORKSPACE_MODULE_OPTIONS,
@@ -131,7 +131,7 @@ export default function OnboardingWizardPage() {
         ))}
       </ol>
       <p className="mt-3 text-sm text-slate-500">
-        {step === 1 && 'Choose restaurant, kirana, department store, trading or services.'}
+        {step === 1 && 'Choose restaurant, kirana, pharmacy, salon, trading or another type.'}
         {step === 2 && 'Tick only what this shop needs. Unticked items stay hidden in the menu.'}
         {step === 3 && 'A short tutorial, a written manual, or jump straight in. Help stays in the menu.'}
       </p>
@@ -139,28 +139,35 @@ export default function OnboardingWizardPage() {
       {error && <div className="mt-4 rounded-xl bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
 
       {step === 1 && (
-        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {SIGNUP_BUSINESS_TYPES.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setShopType(t.id)}
-              className={`text-left rounded-2xl border p-4 transition-all ${
-                shopType === t.id ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-200' : 'border-slate-200 bg-white hover:border-brand-300'
-              }`}
-            >
-              <span className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-2">
-                  <span
-                    className="h-3 w-3 rounded-full shrink-0"
-                    style={{ background: VARIANT_THEMES[t.id]?.primary ?? '#0284c7' }}
-                  />
-                  <span className="font-semibold text-slate-900">{t.title}</span>
-                </span>
-                {shopType === t.id && <Check className="h-4 w-4 text-brand-700" />}
-              </span>
-              <span className="mt-1 block text-sm text-slate-600 leading-relaxed">{t.blurb}</span>
-            </button>
+        <div className="mt-6 space-y-5">
+          {SIGNUP_GROUPS.map((g) => (
+            <div key={g.id}>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">{g.label}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {SIGNUP_BUSINESS_TYPES.filter((t) => t.group === g.id).map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setShopType(t.id)}
+                    className={`text-left rounded-2xl border p-4 transition-all ${
+                      shopType === t.id ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-200' : 'border-slate-200 bg-white hover:border-brand-300'
+                    }`}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="h-3 w-3 rounded-full shrink-0"
+                          style={{ background: VARIANT_THEMES[t.id]?.primary ?? '#0284c7' }}
+                        />
+                        <span className="font-semibold text-slate-900">{t.title}</span>
+                      </span>
+                      {shopType === t.id && <Check className="h-4 w-4 text-brand-700" />}
+                    </span>
+                    <span className="mt-1 block text-sm text-slate-600">{t.blurb}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}

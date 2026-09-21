@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { apiGet, apiPatch } from '@/lib/api';
+import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import NumberField from '@/app/(app)/components/NumberField';
 import InvoiceItemSearchCell from '@/app/(app)/components/InvoiceItemSearchCell';
 import { invoiceLinePatchFromItem, lookupCustomerRate, type PricedItem } from '@/lib/item-pricing';
@@ -74,8 +74,10 @@ export default function EditInvoicePage() {
   const [lines, setLines] = useState<LineRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [defaultGst, setDefaultGst] = useState({ cgst: 9, sgst: 9 });
+  const [paidAmount, setPaidAmount] = useState(0);
 
   useEffect(() => {
     apiGet<{ tenant?: { slug?: string; settings?: { business_type?: string } } }>('auth/me').then(({ data }) => {
@@ -99,6 +101,8 @@ export default function EditInvoicePage() {
           number: string;
           invoice_date: string;
           due_date?: string | null;
+          paid_amount?: string | number;
+          status?: string;
           lines?: InvoiceLine[];
         }>(`sales/invoices/${id}`),
         apiGet<Company[] | { data: Company[] }>('organization/companies'),
@@ -113,11 +117,17 @@ export default function EditInvoicePage() {
       setCustomers(custList);
       setVendors(vList);
       if (inv) {
+        if (inv.status === 'deleted') {
+          setError('This invoice was deleted. A full copy is in Audit logs.');
+          setLoading(false);
+          return;
+        }
         setCompanyId(inv.company_id);
         setBranchId(inv.branch_id || '');
         setCustomerId(inv.customer_id || '');
         setVendorId(inv.vendor_id || '');
         setNumber(inv.number);
+        setPaidAmount(Number(inv.paid_amount ?? 0));
         setInvoiceDate(typeof inv.invoice_date === 'string' ? inv.invoice_date.slice(0, 10) : '');
         const due = inv.due_date ? (typeof inv.due_date === 'string' ? inv.due_date.slice(0, 10) : '') : '';
         setDueDate(due);
@@ -398,8 +408,31 @@ export default function EditInvoicePage() {
         </div>
 
         <div className="flex gap-2">
-          <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50">Save changes</button>
+          <button type="submit" disabled={saving || deleting} className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50">Save changes</button>
           <Link href="/sales/invoices" className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</Link>
+          <button
+            type="button"
+            disabled={saving || deleting || paidAmount > 0}
+            title={paidAmount > 0 ? 'Reverse payments before deleting' : 'Soft-delete; keeps audit log'}
+            onClick={async () => {
+              const reason = window.prompt(
+                `Delete invoice ${number}? It leaves the list but a full copy stays in Audit logs.\n\nOptional reason:`,
+                'Entered by mistake',
+              );
+              if (reason === null) return;
+              setDeleting(true);
+              setError(null);
+              const { error: err } = await apiPost(`sales/invoices/${id}/delete`, {
+                reason: reason.trim() || undefined,
+              });
+              setDeleting(false);
+              if (err) setError(err);
+              else router.push('/sales/invoices');
+            }}
+            className="rounded-lg border border-red-200 px-4 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+          >
+            {deleting ? 'Deleting…' : 'Delete invoice'}
+          </button>
           <Link href={`/sales/invoices/${id}/print`} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Print</Link>
         </div>
       </form>

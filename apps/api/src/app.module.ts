@@ -26,6 +26,7 @@ import { HrModule } from './hr/hr.module';
 import { ServiceModule } from './service/service.module';
 import { IceCrestModule } from './ice-crest/ice-crest.module';
 import { BillingModule } from './billing/billing.module';
+import { GrowthModule } from './growth/growth.module';
 import { SubscriptionGuard } from './common/guards/subscription.guard';
 
 @Module({
@@ -69,6 +70,7 @@ import { SubscriptionGuard } from './common/guards/subscription.guard';
     ServiceModule,
     IceCrestModule,
     BillingModule,
+    GrowthModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

@@ -24,6 +24,24 @@ Use these agents to complete pending work in **auto mode** (no user input requir
 
 ---
 
+## SMEBUZE Product Owner Agent
+
+**Trigger:** User says "run product owner", "product owner agent", "next product TODO", "plan growth platform", "client type packs", or "complete growth platform".
+
+**Behavior:**
+1. Read **`docs/GROWTH_PLATFORM.md`**, **`docs/CLIENT_TYPE_PACKS.md`**, then **`docs/TODO.md`** (Growth platform / Tier 7).
+2. Implement the next unchecked numbered item. Do not ask for design choices — use the defaults in the growth platform doc.
+3. Tenant isolation is mandatory. Public catalog and orders always belong to one seller tenant.
+4. Super-admin owns custom domains and shared WhatsApp/campaign providers. Tenant admins own catalog, website copy, private keys, and payment keys.
+5. Portal orders are existing **sales orders** with `channel = buyer_portal`. Lead hub records `source` on every inbound event.
+6. After finishing an item, mark it `[x]` in `docs/TODO.md` and continue if the user asked to keep going.
+
+**Skill:** `.cursor/skills/smebuze-product-owner/SKILL.md`
+
+**Say one of:** "Run the product owner agent" · "Next product TODO" · "Complete growth platform"
+
+---
+
 ## How to run (no input needed)
 
 Say one of these in Cursor to start the agent in **auto mode**:
@@ -42,3 +60,4 @@ The AI will read `docs/TODO.md` and `.cursor/skills/smebuzz-auto-complete/SKILL.
 | Agent | Purpose |
 |-------|--------|
 | **SMEBUZE Auto-Completion Agent** | Implements pending items in `docs/TODO.md` in order, with no user input. |
+| **SMEBUZE Product Owner Agent** | Sequences growth-platform features (catalog, public site, domains, shared/private channels, lead hub, payment gateways, one-click client packs) and implements the next TODO. |

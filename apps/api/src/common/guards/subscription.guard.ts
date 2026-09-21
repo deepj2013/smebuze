@@ -36,7 +36,8 @@ export class SubscriptionGuard implements CanActivate {
       path.includes('/billing') ||
       path.includes('/pay/') ||
       path.includes('/webhook') ||
-      path.includes('website-leads')
+      path.includes('website-leads') ||
+      path.includes('/api/v1/public/')
     ) {
       return true;
     }

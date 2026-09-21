@@ -6,15 +6,11 @@ import { apiGet, apiPatch, apiUploadFile, getStaticUrl } from '@/lib/api';
 import { DEFAULT_BRANDING, parseTenantBranding, type TenantBranding } from '@/lib/branding';
 import { VARIANT_THEMES } from '@/lib/variant-theme';
 
-const PRESETS = [
-  { name: 'Restaurant', primary: VARIANT_THEMES.dine_restaurant.primary, accent: VARIANT_THEMES.dine_restaurant.accent },
-  { name: 'Sweets', primary: VARIANT_THEMES.sweet_shop.primary, accent: VARIANT_THEMES.sweet_shop.accent },
-  { name: 'Garments', primary: VARIANT_THEMES.garment_shop.primary, accent: VARIANT_THEMES.garment_shop.accent },
-  { name: 'Kirana', primary: VARIANT_THEMES.retail_shop.primary, accent: VARIANT_THEMES.retail_shop.accent },
-  { name: 'Department', primary: VARIANT_THEMES.department_store.primary, accent: VARIANT_THEMES.department_store.accent },
-  { name: 'Trading', primary: VARIANT_THEMES.trading.primary, accent: VARIANT_THEMES.trading.accent },
-  { name: 'Services', primary: VARIANT_THEMES.services.primary, accent: VARIANT_THEMES.services.accent },
-];
+const PRESETS = Object.values(VARIANT_THEMES).map((t) => ({
+  name: t.label,
+  primary: t.primary,
+  accent: t.accent,
+}));
 
 export default function BrandingPage() {
   const [branding, setBranding] = useState<TenantBranding>(DEFAULT_BRANDING);

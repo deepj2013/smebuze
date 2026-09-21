@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { apiGet } from '@/lib/api';
+import { apiGet, apiDelete, apiPost } from '@/lib/api';
 import PosSwitcher from '../../components/PosSwitcher';
 import { PageHeader } from '../../components/PageHeader';
 import { ResponsiveDataList, type Column } from '../../components/ResponsiveDataList';
@@ -34,16 +34,47 @@ export default function ItemsPage() {
   const [list, setList] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    const { data, error: err } = await apiGet<Item[] | { data: Item[] }>('inventory/items?with_stock=1');
+    if (err) setError(err);
+    else if (Array.isArray(data)) setList(data);
+    else if (data && typeof data === 'object' && Array.isArray((data as { data?: Item[] }).data)) setList((data as { data: Item[] }).data);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    (async () => {
-      const { data, error: err } = await apiGet<Item[] | { data: Item[] }>('inventory/items?with_stock=1');
-      if (err) setError(err);
-      else if (Array.isArray(data)) setList(data);
-      else if (data && typeof data === 'object' && Array.isArray((data as { data?: Item[] }).data)) setList((data as { data: Item[] }).data);
-      setLoading(false);
-    })();
+    void load();
   }, []);
+
+  const deactivate = async (item: Item) => {
+    if (!window.confirm(`Remove “${item.name}” from active SKUs? Past orders keep history.`)) return;
+    setBusy(item.id);
+    setError(null);
+    const { error: err } = await apiDelete(`inventory/items/${item.id}`);
+    setBusy(null);
+    if (err) setError(err);
+    else {
+      setNotice(`Removed ${item.name}`);
+      void load();
+    }
+  };
+
+  const removeDuplicates = async () => {
+    if (!window.confirm('Deactivate duplicate SKUs (same code or same name)? The copy with more stock is kept.')) return;
+    setBusy('dup');
+    setError(null);
+    const { data, error: err } = await apiPost<{ deactivated_count: number }>('inventory/items/deactivate-duplicates', {});
+    setBusy(null);
+    if (err) setError(err);
+    else {
+      setNotice(`Deactivated ${data?.deactivated_count ?? 0} duplicate SKU(s).`);
+      void load();
+    }
+  };
 
   const columns: Column<Item>[] = [
     {
@@ -91,9 +122,19 @@ export default function ItemsPage() {
       key: 'actions',
       label: 'Actions',
       render: (item) => (
-        <Link href={`/inventory/items/${item.id}/edit`} className="text-brand-600 hover:underline text-sm font-medium">
-          Edit
-        </Link>
+        <span className="inline-flex flex-wrap gap-2 items-center">
+          <Link href={`/inventory/items/${item.id}/edit`} className="text-brand-600 hover:underline text-sm font-medium">
+            Edit
+          </Link>
+          <button
+            type="button"
+            disabled={busy === item.id}
+            onClick={() => void deactivate(item)}
+            className="text-sm text-red-600 hover:underline disabled:opacity-50"
+          >
+            Delete
+          </button>
+        </span>
       ),
     },
   ];
@@ -102,6 +143,14 @@ export default function ItemsPage() {
     <div>
       <PosSwitcher />
       <PageHeader title="Items">
+        <button
+          type="button"
+          disabled={busy === 'dup'}
+          onClick={() => void removeDuplicates()}
+          className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 min-h-[44px] inline-flex items-center justify-center disabled:opacity-50"
+        >
+          Remove duplicate SKUs
+        </button>
         <Link href="/inventory/categories" className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 min-h-[44px] inline-flex items-center justify-center">
           Categories
         </Link>
@@ -110,6 +159,7 @@ export default function ItemsPage() {
         </Link>
       </PageHeader>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
+      {notice && <div className="mb-4 rounded-lg bg-emerald-50 text-emerald-800 p-3 text-sm">{notice}</div>}
       {loading && <p className="text-slate-600">Loading…</p>}
       {!loading && (
         <ResponsiveDataList<Item>

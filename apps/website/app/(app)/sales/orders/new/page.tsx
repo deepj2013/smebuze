@@ -5,14 +5,24 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
 import NumberField from '@/app/(app)/components/NumberField';
+import InvoiceItemSearchCell from '@/app/(app)/components/InvoiceItemSearchCell';
 import { defaultItemRate, lookupCustomerRate, type PricedItem } from '@/lib/item-pricing';
 
 interface Company { id: string; name: string }
 interface Branch { id: string; name: string }
 interface Customer { id: string; name: string }
 interface Quotation { id: string; number: string; customer_id?: string | null; lead_id?: string | null; customer?: { name: string }; lead?: { name: string } }
-interface Item extends PricedItem {}
-interface OrderLine { item_id:string; qty:number; rate:number; unit:string; description:string; customer_rate?: boolean }
+interface OrderLine {
+  item_id: string;
+  item_name?: string;
+  item_sku?: string | null;
+  item_image_url?: string | null;
+  qty: number;
+  rate: number;
+  unit: string;
+  description: string;
+  customer_rate?: boolean;
+}
 
 export default function NewSalesOrderPage() {
   const router = useRouter();
@@ -29,16 +39,14 @@ export default function NewSalesOrderPage() {
   const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [items,setItems]=useState<Item[]>([]);
-  const [lines,setLines]=useState<OrderLine[]>([{item_id:'',qty:1,rate:0,unit:'pcs',description:''}]);
+  const [lines, setLines] = useState<OrderLine[]>([{ item_id: '', qty: 1, rate: 0, unit: 'pcs', description: '' }]);
 
   useEffect(() => {
     (async () => {
-      const [cRes, custRes, qRes,itemRes] = await Promise.all([
+      const [cRes, custRes, qRes] = await Promise.all([
         apiGet<Company[] | { data: Company[] }>('organization/companies'),
         apiGet<Customer[] | { data: Customer[] }>('crm/customers'),
         apiGet<Quotation[] | { data: Quotation[] }>('sales/quotations'),
-        apiGet<Item[]>('inventory/items?purpose=sale'),
       ]);
       const cList = Array.isArray(cRes.data) ? cRes.data : (cRes.data as { data?: Company[] })?.data ?? [];
       const custList = Array.isArray(custRes.data) ? custRes.data : (custRes.data as { data?: Customer[] })?.data ?? [];
@@ -46,7 +54,6 @@ export default function NewSalesOrderPage() {
       setCompanies(cList);
       setCustomers(custList);
       setQuotations(qList);
-      setItems(itemRes.data||[]);
       if (cList.length) setCompanyId(cList[0].id);
     })();
   }, []);
@@ -89,12 +96,42 @@ export default function NewSalesOrderPage() {
     return () => { cancelled = true; };
   }, [customerId]);
 
+  const applyItem = async (index: number, item: PricedItem) => {
+    // Set SKU immediately so the picker stays selected (do not wait on rate API).
+    setLines((v) =>
+      v.map((x, j) =>
+        j === index
+          ? {
+              ...x,
+              item_id: item.id,
+              item_name: item.name,
+              item_sku: item.sku ?? null,
+              item_image_url: Array.isArray(item.image_urls) && item.image_urls[0] ? item.image_urls[0] : null,
+              description: item.name || x.description,
+              unit: item.unit || 'pcs',
+              rate: defaultItemRate(item),
+              customer_rate: false,
+            }
+          : x,
+      ),
+    );
+    try {
+      const custom = await lookupCustomerRate(customerId, item.id);
+      if (custom == null) return;
+      setLines((v) =>
+        v.map((x, j) => (j === index && x.item_id === item.id ? { ...x, rate: custom, customer_rate: true } : x)),
+      );
+    } catch {
+      /* keep default rate */
+    }
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
-      if (!l.item_id) { setError(`Line ${i + 1}: select an item`); return; }
+      if (!l.item_id) { setError(`Line ${i + 1}: select an SKU`); return; }
       if (!Number.isFinite(l.qty) || l.qty <= 0) { setError(`Line ${i + 1}: quantity must be greater than 0`); return; }
       if (!Number.isFinite(l.rate) || l.rate < 0) { setError(`Line ${i + 1}: rate must be a number 0 or greater`); return; }
     }
@@ -105,7 +142,13 @@ export default function NewSalesOrderPage() {
       customer_id: customerId || undefined,
       quotation_id: quotationId || undefined,
       order_date: orderDate,
-      lines,
+      lines: lines.map((l) => ({
+        item_id: l.item_id,
+        qty: l.qty,
+        rate: l.rate,
+        unit: l.unit,
+        description: l.description || l.item_name || '',
+      })),
     };
     const { data, error: err } = await apiPost<{ id: string }>('sales/orders', body);
     setLoading(false);
@@ -141,38 +184,46 @@ export default function NewSalesOrderPage() {
         <div className="sm:col-span-2">
           <div className="flex items-center justify-between">
             <label className="block text-sm font-medium text-slate-700">Order items — stock is reserved immediately</label>
-            <button type="button" onClick={()=>setLines(v=>[...v,{item_id:'',qty:1,rate:0,unit:'pcs',description:''}])} className="text-sm text-brand-600">+ Add line</button>
+            <button
+              type="button"
+              onClick={() => setLines((v) => [...v, { item_id: '', qty: 1, rate: 0, unit: 'pcs', description: '' }])}
+              className="text-sm text-brand-600"
+            >
+              + Add line
+            </button>
           </div>
+          <p className="mt-1 text-xs text-slate-500">Click the SKU field and pick an item from the list (search by name or code).</p>
           <div className="mt-2 space-y-2">
-            {lines.map((line,i)=>(
-              <div key={i} className="grid gap-2 rounded border p-3 sm:grid-cols-5">
-                <select
-                  required
-                  value={line.item_id}
-                  onChange={async (e) => {
-                    const item = items.find((x) => x.id === e.target.value);
-                    const custom = item ? await lookupCustomerRate(customerId, item.id) : null;
-                    const rate = custom ?? (item ? defaultItemRate(item) : 0);
-                    setLines((v) => v.map((x, j) => j === i ? {
-                      ...x,
-                      item_id: e.target.value,
-                      description: item?.name || '',
-                      unit: item?.unit || 'pcs',
-                      rate,
-                      customer_rate: custom != null,
-                    } : x));
-                  }}
-                  className="rounded border border-slate-300 bg-white px-2 py-2 text-slate-900 sm:col-span-2 min-h-[44px]"
-                >
-                  <option value="">Select SKU</option>
-                  {items.map((x) => <option key={x.id} value={x.id}>{x.name} {x.sku ? `(${x.sku})` : ''}</option>)}
-                </select>
-                <NumberField aria-label="Quantity" required whole min={1} value={line.qty} onNumber={(n)=>setLines(v=>v.map((x,j)=>j===i?{...x,qty:n}:x))} />
+            {lines.map((line, i) => (
+              <div key={i} className="grid gap-2 rounded border p-3 sm:grid-cols-5 items-start overflow-visible">
+                <div className="sm:col-span-2 min-w-0 overflow-visible">
+                  <InvoiceItemSearchCell
+                    line={{
+                      item_id: line.item_id || undefined,
+                      item_name: line.item_name,
+                      item_sku: line.item_sku,
+                      item_image_url: line.item_image_url,
+                    }}
+                    onSelectItem={(item) => applyItem(i, item)}
+                    onClearItem={() =>
+                      setLines((v) =>
+                        v.map((x, j) =>
+                          j === i
+                            ? { item_id: '', item_name: undefined, item_sku: null, item_image_url: null, qty: x.qty, rate: 0, unit: 'pcs', description: '', customer_rate: false }
+                            : x,
+                        ),
+                      )
+                    }
+                  />
+                </div>
+                <NumberField aria-label="Quantity" required whole min={1} value={line.qty} onNumber={(n) => setLines((v) => v.map((x, j) => (j === i ? { ...x, qty: n } : x)))} />
                 <div>
-                  <NumberField aria-label="Rate" required min={0} step="0.01" value={line.rate} onNumber={(n)=>setLines(v=>v.map((x,j)=>j===i?{...x,rate:n,customer_rate:false}:x))} />
+                  <NumberField aria-label="Rate" required min={0} step="0.01" value={line.rate} onNumber={(n) => setLines((v) => v.map((x, j) => (j === i ? { ...x, rate: n, customer_rate: false } : x)))} />
                   {line.customer_rate && <p className="text-[10px] text-cyan-700 mt-0.5">Customer rate</p>}
                 </div>
-                <button type="button" disabled={lines.length===1} onClick={()=>setLines(v=>v.filter((_,j)=>j!==i))} className="text-sm text-red-600 disabled:opacity-30">Remove</button>
+                <button type="button" disabled={lines.length === 1} onClick={() => setLines((v) => v.filter((_, j) => j !== i))} className="text-sm text-red-600 disabled:opacity-30 py-2">
+                  Remove
+                </button>
               </div>
             ))}
           </div>
