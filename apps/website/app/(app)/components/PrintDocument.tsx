@@ -12,8 +12,10 @@ import {
 import {
   PrinterProfile,
   ReceiptPayload,
+  bluetoothSupported,
   getDefaultPrinter,
   injectPaperCss,
+  isAppleMobile,
   isThermalPaper,
   loadPrinters,
   paperLabel,
@@ -115,7 +117,17 @@ export default function PrintDocument({ title, fetchPath, receipt }: PrintDocume
       const mode = await printViaProfile(profile, html, receipt ?? undefined);
       if (mode === 'bluetooth') setStatus('Sent to the Bluetooth printer.');
       else if (mode === 'serial') setStatus('Sent to the USB thermal printer.');
-      else setStatus('Choose your printer in the system dialog — USB, Wi-Fi, AirPrint or Bluetooth.');
+      else if (isAppleMobile()) {
+        setStatus(
+          profile.connection === 'bluetooth'
+            ? 'Opened print preview — pick your AirPrint or paired Bluetooth printer. Allow pop-ups if nothing appeared.'
+            : 'Opened print preview — choose your Wi‑Fi / AirPrint printer. Allow pop-ups if the sheet did not open.',
+        );
+      } else if (profile.connection === 'bluetooth' && !bluetoothSupported()) {
+        setStatus('This browser cannot print Bluetooth directly. Use the system print dialog and pick your paired printer.');
+      } else {
+        setStatus('Choose your printer in the system dialog — USB, Wi‑Fi, AirPrint or Bluetooth.');
+      }
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Print failed.');
     } finally {
@@ -186,7 +198,8 @@ export default function PrintDocument({ title, fetchPath, receipt }: PrintDocume
               href="/organization/branding"
               className="min-h-[44px] inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
             >
-              Print size setup
+              <span className="sm:hidden">Size setup</span>
+              <span className="hidden sm:inline">Print size setup</span>
             </Link>
           </div>
         </div>

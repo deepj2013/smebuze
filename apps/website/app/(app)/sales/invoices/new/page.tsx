@@ -348,12 +348,87 @@ export default function NewInvoicePage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
-          <div className="flex justify-between items-center mb-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
+          <div className="flex justify-between items-center mb-4 gap-2">
             <h2 className="font-semibold text-slate-900">Line items</h2>
-            <button type="button" onClick={addLine} className="text-sm text-brand-600 hover:underline">+ Add line</button>
+            <button
+              type="button"
+              onClick={addLine}
+              className="rounded-lg bg-brand-50 text-brand-800 px-3 py-2 text-sm font-semibold min-h-[44px] shrink-0"
+            >
+              + Add line
+            </button>
           </div>
-          <div className="overflow-x-auto">
+
+          {/* Mobile: stacked cards — easy to scroll and add */}
+          <div className="md:hidden space-y-3">
+            {lines.map((line, i) => (
+              <div key={i} className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase text-slate-500">Line {i + 1}</span>
+                  <button type="button" onClick={() => removeLine(i)} className="text-sm text-red-600 font-medium min-h-[40px] px-2">Remove</button>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Item</label>
+                  <InvoiceItemSearchCell
+                    line={line}
+                    onSelectItem={(item) => setLineFromItem(i, item)}
+                    onClearItem={() => {
+                      setLines((prev) =>
+                        prev.map((ln, idx) =>
+                          idx === i
+                            ? {
+                                ...ln,
+                                item_id: undefined,
+                                item_sku: undefined,
+                                item_name: undefined,
+                                item_image_url: undefined,
+                                customer_rate: false,
+                              }
+                            : ln,
+                        ),
+                      );
+                    }}
+                  />
+                </div>
+                <label className="block text-xs font-medium text-slate-600">
+                  Description
+                  <input type="text" value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-xs font-medium text-slate-600">Qty
+                    <NumberField whole min={0} value={line.qty} onNumber={(n) => updateLine(i, 'qty', n)} className="mt-1" aria-label={`Line ${i + 1} quantity`} />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">Unit
+                    <input type="text" value={line.unit} onChange={(e) => updateLine(i, 'unit', e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600 col-span-2">Rate
+                    <NumberField min={0} step="0.01" value={line.rate} onNumber={(n) => updateLine(i, 'rate', n)} className="mt-1" aria-label={`Line ${i + 1} rate`} />
+                    {line.customer_rate && <span className="text-[10px] text-cyan-700">Customer rate</span>}
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">HSN
+                    <input type="text" value={line.hsn_sac} onChange={(e) => updateLine(i, 'hsn_sac', e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">CGST %
+                    <NumberField min={0} max={100} step="0.01" value={line.cgst_rate} onNumber={(n) => updateLine(i, 'cgst_rate', n)} className="mt-1" />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600 col-span-2">SGST %
+                    <NumberField min={0} max={100} step="0.01" value={line.sgst_rate} onNumber={(n) => updateLine(i, 'sgst_rate', n)} className="mt-1" />
+                  </label>
+                </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={addLine}
+              className="w-full rounded-xl border-2 border-dashed border-brand-300 bg-brand-50/50 py-3 text-sm font-semibold text-brand-800 min-h-[48px]"
+            >
+              + Add another line
+            </button>
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-600">
@@ -387,8 +462,8 @@ export default function NewInvoicePage() {
                                     item_image_url: undefined,
                                     customer_rate: false,
                                   }
-                                : ln
-                            )
+                                : ln,
+                            ),
                           );
                         }}
                       />
@@ -417,9 +492,11 @@ export default function NewInvoicePage() {
           <label className="text-sm text-slate-700">Other charges<NumberField min={0} step="0.01" value={otherCharges} onNumber={setOtherCharges} className="mt-1" /></label>
           <label className="text-sm text-slate-700">Discount<NumberField min={0} step="0.01" value={discountAmount} onNumber={setDiscountAmount} className="mt-1" /></label>
         </div>
-        <div className="flex gap-2">
-          <button type="submit" disabled={loading} className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50">Create invoice</button>
-          <Link href="/sales/invoices" className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</Link>
+        <div className="flex flex-col-reverse sm:flex-row gap-2 sticky bottom-20 lg:bottom-4 z-10 bg-slate-50/95 backdrop-blur py-2 -mx-1 px-1">
+          <Link href="/sales/invoices" className="rounded-lg border border-slate-300 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 text-center min-h-[48px] inline-flex items-center justify-center">Cancel</Link>
+          <button type="submit" disabled={loading} className="rounded-lg bg-brand-600 text-white px-4 py-3 text-sm font-semibold hover:bg-brand-700 disabled:opacity-50 min-h-[48px] flex-1 sm:flex-none">
+            {loading ? 'Saving…' : 'Create invoice'}
+          </button>
         </div>
       </form>
     </div>

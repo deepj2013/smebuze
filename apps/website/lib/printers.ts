@@ -154,6 +154,21 @@ export function serialSupported(): boolean {
   return typeof navigator !== 'undefined' && 'serial' in navigator;
 }
 
+/** iPhone / iPad / iPadOS (desktop UA) — no Web Bluetooth; use AirPrint / system sheet. */
+export function isAppleMobile(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPod|iPad/i.test(ua)) return true;
+  // iPadOS 13+ can report as Macintosh
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+}
+
+export function isAndroidChrome(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /Android/i.test(ua) && /Chrome/i.test(ua) && !/EdgA/i.test(ua);
+}
+
 const BLE_SERVICES = [
   '000018f0-0000-1000-8000-00805f9b34fb',
   'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
@@ -384,9 +399,15 @@ export function buildTestEscPos(printerName: string, paper: PaperSize): Uint8Arr
 }
 
 export async function printViaProfile(profile: PrinterProfile, html: string, receipt?: ReceiptPayload): Promise<'system' | 'bluetooth' | 'serial'> {
-  if (profile.connection === 'bluetooth' && isThermalPaper(profile.paper) && receipt && bluetoothSupported()) {
-    await sendBluetoothBytes(buildReceiptEscPos(receipt, profile.paper), profile.bluetoothId);
-    return 'bluetooth';
+  // Direct BLE ESC/POS — Chrome on Android only (Safari / iPad / iPhone have no Web Bluetooth).
+  if (profile.connection === 'bluetooth' && isThermalPaper(profile.paper) && receipt) {
+    if (bluetoothSupported()) {
+      await sendBluetoothBytes(buildReceiptEscPos(receipt, profile.paper), profile.bluetoothId);
+      return 'bluetooth';
+    }
+    // iPhone / iPad: open system sheet so AirPrint / paired Bluetooth printers appear.
+    openSystemPrint(html, profile.paper);
+    return 'system';
   }
   if (profile.connection === 'local' && isThermalPaper(profile.paper) && receipt && serialSupported()) {
     const useSerial = window.confirm('Print over USB serial to this thermal printer? Click Cancel to use the normal print dialog instead.');
@@ -395,11 +416,38 @@ export async function printViaProfile(profile: PrinterProfile, html: string, rec
       return 'serial';
     }
   }
+  // Wi-Fi / LAN / AirPrint / USB inkjet-laser: always the OS print picker (works on phone + iPad).
   openSystemPrint(html, profile.paper);
   return 'system';
 }
 
 export function openSystemPrint(html: string, paper: PaperSize): void {
+  const css = paperCss(paper);
+  const injected = html.includes('</head>')
+    ? html.replace('</head>', `<style id="smebuzz-paper">${css}</style></head>`)
+    : `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body>${html}</body></html>`;
+
+  // Safari on iPhone/iPad often blocks or ignores iframe.print() — open a real window instead.
+  if (isAppleMobile()) {
+    const w = window.open('', '_blank', 'noopener,noreferrer');
+    if (w) {
+      w.document.open();
+      w.document.write(injected);
+      w.document.close();
+      const run = () => {
+        try {
+          w.focus();
+          w.print();
+        } catch {
+          /* user can use Share → Print */
+        }
+      };
+      if (w.document.readyState === 'complete') setTimeout(run, 350);
+      else w.onload = () => setTimeout(run, 350);
+      return;
+    }
+  }
+
   const frame = document.createElement('iframe');
   frame.setAttribute('aria-hidden', 'true');
   frame.style.position = 'fixed';
@@ -414,19 +462,18 @@ export function openSystemPrint(html: string, paper: PaperSize): void {
     document.body.removeChild(frame);
     throw new Error('Could not open a print window.');
   }
-  const css = paperCss(paper);
-  const injected = html.includes('</head>')
-    ? html.replace('</head>', `<style id="smebuzz-paper">${css}</style></head>`)
-    : `<style>${css}</style>${html}`;
   doc.open();
   doc.write(injected);
   doc.close();
   const run = () => {
-    frame.contentWindow?.focus();
-    frame.contentWindow?.print();
-    setTimeout(() => {
-      if (frame.parentNode) document.body.removeChild(frame);
-    }, 1500);
+    try {
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+    } finally {
+      setTimeout(() => {
+        if (frame.parentNode) document.body.removeChild(frame);
+      }, 1500);
+    }
   };
   if (frame.contentDocument?.readyState === 'complete') setTimeout(run, 250);
   else frame.onload = () => setTimeout(run, 250);

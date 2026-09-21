@@ -220,7 +220,7 @@ export default function PosManagePage() {
           <section className="rounded-2xl border border-slate-200 bg-white p-4">
             <h2 className="font-semibold text-slate-900 mb-1">Add item{selected !== 'all' && selected !== 'uncat' ? ` in ${selected}` : ''}</h2>
             <p className="text-xs text-slate-500 mb-3">Sale price is what the counter charges. Discount is optional. Cost stays in the shop, not on the bill.</p>
-            <form onSubmit={addItem} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <form onSubmit={addItem} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-20 lg:pb-0">
               <label className="text-xs font-medium text-slate-600 sm:col-span-2 lg:col-span-1">
                 Name
                 <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
@@ -274,8 +274,8 @@ export default function PosManagePage() {
                 Alert when stock ≤
                 <input type="text" inputMode="numeric" min={0} value={form.reorder_level} onChange={(e) => setForm({ ...form, reorder_level: limitInteger(e.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
               </label>
-              <div className="sm:col-span-2 lg:col-span-3">
-                <button type="submit" disabled={savingItem} className="rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-50 min-h-[44px]">
+              <div className="sm:col-span-2 lg:col-span-3 sticky bottom-20 lg:static z-10 -mx-1 px-1 py-2 bg-white/95 backdrop-blur border-t border-slate-100 lg:border-0">
+                <button type="submit" disabled={savingItem} className="w-full sm:w-auto rounded-lg bg-brand-600 text-white px-4 py-3 text-sm font-semibold disabled:opacity-50 min-h-[48px]">
                   {savingItem ? 'Saving…' : 'Save item'}
                 </button>
               </div>

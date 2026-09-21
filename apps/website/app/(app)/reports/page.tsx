@@ -62,22 +62,22 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'gr
   const toneCls =
     tone === 'green' ? 'text-green-700' : tone === 'amber' ? 'text-amber-700' : 'text-slate-900';
   return (
-    <div className="rounded-lg bg-slate-100 p-3">
-      <span className="text-xs text-slate-600">{label}</span>
-      <div className={`mt-0.5 font-semibold ${toneCls}`}>{value}</div>
+    <div className="rounded-lg bg-slate-100 p-2.5 sm:p-3 min-w-0">
+      <span className="text-[11px] sm:text-xs text-slate-600 block truncate">{label}</span>
+      <div className={`mt-0.5 text-sm sm:text-base font-semibold tabular-nums break-all ${toneCls}`}>{value}</div>
     </div>
   );
 }
 
 function Empty({ message }: { message: string }) {
-  return <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">{message}</p>;
+  return <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 sm:p-6 text-sm text-slate-600">{message}</p>;
 }
 
 function DataTable({ headers, rows }: { headers: string[]; rows: (string | number)[][] }) {
   if (!rows.length) return <Empty message="No rows for this period. Try a wider date range or create invoices first." />;
   return (
-    <div className="overflow-x-auto border border-slate-200 rounded-lg">
-      <table className="w-full text-sm">
+    <div className="overflow-x-auto -mx-1 sm:mx-0 border border-slate-200 rounded-lg">
+      <table className="w-full text-sm min-w-[480px]">
         <thead className="bg-slate-100">
           <tr>
             {headers.map((h) => (
@@ -89,7 +89,7 @@ function DataTable({ headers, rows }: { headers: string[]; rows: (string | numbe
           {rows.map((r, i) => (
             <tr key={i} className="border-t border-slate-100">
               {r.map((c, j) => (
-                <td key={j} className={`p-2 whitespace-nowrap ${typeof c === 'number' || (typeof c === 'string' && c.startsWith('₹')) ? 'text-right' : ''}`}>
+                <td key={j} className={`p-2 whitespace-nowrap ${typeof c === 'number' || (typeof c === 'string' && c.startsWith('₹')) ? 'text-right tabular-nums' : ''}`}>
                   {c}
                 </td>
               ))}
@@ -529,161 +529,211 @@ export default function ReportsPage() {
     URL.revokeObjectURL(blobUrl);
   };
 
-  return (
-    <div>
-      <h1 className="text-2xl font-bold text-slate-900 mb-1">Reports</h1>
-      <p className="text-sm text-slate-500 mb-4">
-        Live numbers for this workspace only. Pick a report — filters default to the current month.
-      </p>
-      <div className="grid gap-4 sm:grid-cols-2 mb-6">
-        <Link href="/reports/gstr-1" className="rounded-xl border-2 border-brand-200 bg-brand-50 p-6 hover:border-brand-400">
-          <h2 className="font-semibold text-slate-900 mb-1">GSTR-1</h2>
-          <p className="text-sm text-slate-600">Filing-ready outward supplies from all sales — B2B, B2C, HSN and credit notes. Export CSV.</p>
-        </Link>
-        <Link href="/reports/gstr-2a" className="rounded-xl border-2 border-slate-200 bg-white p-6 hover:border-brand-300">
-          <h2 className="font-semibold text-slate-900 mb-1">GSTR-2A reconciliation</h2>
-          <p className="text-sm text-slate-600">Match GST vendor bills in your books with the portal 2A download. See matched, mismatch and missing invoices.</p>
-        </Link>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-8">
-        {REPORTS.map((r) => (
-          <button
-            key={r.id}
-            type="button"
-            onClick={() => selectReport(r.id)}
-            className={`rounded-xl border-2 p-6 text-left transition ${
-              selected === r.id ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:border-brand-300'
-            }`}
-          >
-            <h2 className="font-semibold text-slate-900 mb-1">{r.label}</h2>
-            <p className="text-sm text-slate-500">{r.description}</p>
-          </button>
-        ))}
-      </div>
+  // Open a useful report by default so the mid pane is never empty.
+  useEffect(() => {
+    selectReport('sales-summary');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once on mount
+  }, []);
 
-      {selected && selected !== 'dashboard' && (
-        <div className="rounded-xl border border-slate-200 bg-white p-6 mb-6">
-          <h2 className="font-semibold text-slate-900 mb-4">
-            {REPORTS.find((r) => r.id === selected)?.label}
-          </h2>
-          <div className="flex flex-wrap gap-4 items-end mb-4">
-            {selected === 'ageing' && (
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
-                <select
-                  value={ageingType}
-                  onChange={(e) => setAgeingType(e.target.value as 'receivables' | 'payables')}
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[40px]"
-                >
-                  <option value="receivables">Receivables</option>
-                  <option value="payables">Payables</option>
-                </select>
+  const selectedMeta = REPORTS.find((r) => r.id === selected);
+
+  const filterControls = selected && selected !== 'dashboard' ? (
+    <div className="flex flex-wrap gap-3 items-end">
+      {selected === 'ageing' && (
+        <div className="min-w-[140px] flex-1 sm:flex-none">
+          <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
+          <select
+            value={ageingType}
+            onChange={(e) => setAgeingType(e.target.value as 'receivables' | 'payables')}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]"
+          >
+            <option value="receivables">Receivables</option>
+            <option value="payables">Payables</option>
+          </select>
+        </div>
+      )}
+      {selected === 'vendor-ledger' && (
+        <div className="min-w-[160px] flex-1 sm:flex-none">
+          <label className="block text-xs font-medium text-slate-600 mb-1">Vendor</label>
+          <select
+            value={vendorId}
+            onChange={(e) => setVendorId(e.target.value)}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]"
+          >
+            <option value="">All vendors</option>
+            {vendors.map((v) => (
+              <option key={v.id} value={v.id}>{v.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {selected !== 'ageing' && selected !== 'health-score' && selected !== 'vendor-ledger' && (
+        <>
+          {selected !== 'invoice-vs-payment' && (
+            <>
+              <div className="min-w-[140px] flex-1 sm:flex-none">
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  {selected === 'trial-balance' || selected === 'balance-sheet' ? 'As of' : 'From'}
+                </label>
+                {selected === 'trial-balance' || selected === 'balance-sheet' ? (
+                  <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                ) : (
+                  <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                )}
               </div>
-            )}
-            {selected === 'vendor-ledger' && (
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Vendor</label>
+              {selected !== 'trial-balance' && selected !== 'balance-sheet' && (
+                <div className="min-w-[140px] flex-1 sm:flex-none">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">To</label>
+                  <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+                </div>
+              )}
+            </>
+          )}
+          {(selected === 'requirement-vs-delivery' ||
+            selected === 'delivery-vs-invoiced' ||
+            selected === 'invoice-vs-payment') && (
+            <div className="min-w-[160px] flex-1 sm:flex-none">
+              <label className="block text-xs font-medium text-slate-600 mb-1">Customer</label>
+              <select
+                value={customerId}
+                onChange={(e) => setCustomerId(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]"
+              >
+                <option value="">All customers</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {selected !== 'tds-summary' &&
+            selected !== 'requirement-vs-delivery' &&
+            selected !== 'stock-vs-delivery' &&
+            selected !== 'delivery-vs-invoiced' &&
+            selected !== 'invoice-vs-payment' && (
+              <div className="min-w-[160px] flex-1 sm:flex-none">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Company</label>
                 <select
-                  value={vendorId}
-                  onChange={(e) => setVendorId(e.target.value)}
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[40px] min-w-[200px]"
+                  value={companyId}
+                  onChange={(e) => setCompanyId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]"
                 >
-                  <option value="">All vendors</option>
-                  {vendors.map((v) => (
-                    <option key={v.id} value={v.id}>{v.name}</option>
+                  <option value="">All companies</option>
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
               </div>
             )}
-            {selected !== 'ageing' && selected !== 'health-score' && selected !== 'vendor-ledger' && (
-              <>
-                {selected !== 'invoice-vs-payment' && (
-                  <>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">
-                        {selected === 'trial-balance' || selected === 'balance-sheet' ? 'As of' : 'From date'}
-                      </label>
-                      {selected === 'trial-balance' || selected === 'balance-sheet' ? (
-                        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                      ) : (
-                        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                      )}
-                    </div>
-                    {selected !== 'trial-balance' && selected !== 'balance-sheet' && (
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">To date</label>
-                        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                      </div>
-                    )}
-                  </>
-                )}
-                {(selected === 'requirement-vs-delivery' ||
-                  selected === 'delivery-vs-invoiced' ||
-                  selected === 'invoice-vs-payment') && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Customer</label>
-                    <select
-                      value={customerId}
-                      onChange={(e) => setCustomerId(e.target.value)}
-                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[40px] min-w-[200px]"
-                    >
-                      <option value="">All customers</option>
-                      {customers.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {selected !== 'tds-summary' &&
-                  selected !== 'requirement-vs-delivery' &&
-                  selected !== 'stock-vs-delivery' &&
-                  selected !== 'delivery-vs-invoiced' &&
-                  selected !== 'invoice-vs-payment' && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Company</label>
-                      <select
-                        value={companyId}
-                        onChange={(e) => setCompanyId(e.target.value)}
-                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[40px] min-w-[200px]"
-                      >
-                        <option value="">All companies</option>
-                        {companies.map((c) => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-              </>
-            )}
-            <button
-              type="button"
-              onClick={() => selected && void runReport(selected)}
-              disabled={loading}
-              className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50 min-h-[40px]"
-            >
-              {loading ? 'Loading…' : 'View report'}
-            </button>
-            {selected && REPORTS.find((r) => r.id === selected)?.hasExport && (
-              <button
-                type="button"
-                onClick={() => void handleExport()}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 min-h-[40px]"
-              >
-                Export CSV
-              </button>
-            )}
-          </div>
-          {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
-          {loading && !data ? <p className="text-sm text-slate-500">Loading…</p> : null}
-          {data != null ? <ReportResult reportId={selected} data={data} /> : null}
-        </div>
+        </>
       )}
+      <button
+        type="button"
+        onClick={() => selected && void runReport(selected)}
+        disabled={loading}
+        className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50 min-h-[44px] min-touch"
+      >
+        {loading ? 'Loading…' : 'View'}
+      </button>
+      {selectedMeta?.hasExport && (
+        <button
+          type="button"
+          onClick={() => void handleExport()}
+          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 min-h-[44px] min-touch"
+        >
+          CSV
+        </button>
+      )}
+    </div>
+  ) : null;
 
-      {selected === 'dashboard' && (
-        <p className="text-slate-600">
-          <Link href="/dashboard" className="text-brand-600 hover:underline">Open Business overview (Dashboard)</Link>
+  return (
+    <div className="flex flex-col gap-3 min-h-0">
+      <div>
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Reports</h1>
+        <p className="text-sm text-slate-500 mt-0.5">
+          This workspace only. Pick a report on the left.
         </p>
-      )}
+      </div>
+
+      <div className="flex gap-3 sm:gap-4 min-h-[min(70vh,720px)] items-stretch">
+        {/* Left: compact scrollable report list */}
+        <aside className="w-[7.25rem] sm:w-48 md:w-56 shrink-0 flex flex-col rounded-xl border border-slate-200 bg-white overflow-hidden">
+          <p className="px-2 sm:px-3 py-2 text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-100">
+            Reports
+          </p>
+          <div className="flex-1 overflow-y-auto overscroll-contain p-1.5 sm:p-2 space-y-1 max-h-[min(70vh,720px)]">
+            <Link
+              href="/reports/gstr-1"
+              className="block rounded-lg px-2 py-2 text-left text-xs sm:text-sm font-medium text-brand-800 bg-brand-50 hover:bg-brand-100 min-h-[44px] flex items-center"
+            >
+              GSTR-1
+            </Link>
+            <Link
+              href="/reports/gstr-2a"
+              className="block rounded-lg px-2 py-2 text-left text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 min-h-[44px] flex items-center"
+            >
+              GSTR-2A
+            </Link>
+            <div className="h-px bg-slate-100 my-1" />
+            {REPORTS.map((r) => {
+              const active = selected === r.id;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => selectReport(r.id)}
+                  title={r.description}
+                  className={`w-full rounded-lg px-2 py-2 text-left text-xs sm:text-sm leading-snug min-h-[44px] transition ${
+                    active
+                      ? 'bg-brand-600 text-white font-semibold shadow-sm'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {r.label}
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+
+        {/* Mid: report view */}
+        <section className="flex-1 min-w-0 rounded-xl border border-slate-200 bg-white flex flex-col overflow-hidden">
+          {!selected ? (
+            <div className="flex-1 flex items-center justify-center p-6 text-sm text-slate-500">
+              Select a report on the left.
+            </div>
+          ) : selected === 'dashboard' ? (
+            <div className="p-4 sm:p-6 space-y-3">
+              <h2 className="font-semibold text-slate-900">Business overview</h2>
+              <p className="text-sm text-slate-600">Opens the live dashboard for this workspace.</p>
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center justify-center rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white min-h-[44px]"
+              >
+                Open dashboard
+              </Link>
+            </div>
+          ) : (
+            <>
+              <div className="shrink-0 border-b border-slate-100 px-3 sm:px-5 py-3 space-y-3">
+                <div>
+                  <h2 className="font-semibold text-slate-900 text-base sm:text-lg">{selectedMeta?.label}</h2>
+                  <p className="text-xs sm:text-sm text-slate-500 mt-0.5">{selectedMeta?.description}</p>
+                </div>
+                {filterControls}
+              </div>
+              <div className="flex-1 overflow-auto p-3 sm:p-5 overscroll-contain">
+                {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
+                {loading && !data ? <p className="text-sm text-slate-500">Loading…</p> : null}
+                {data != null ? <ReportResult reportId={selected} data={data} /> : !loading ? (
+                  <p className="text-sm text-slate-500">Tap View to load this report.</p>
+                ) : null}
+              </div>
+            </>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

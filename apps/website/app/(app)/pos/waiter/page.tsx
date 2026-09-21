@@ -30,6 +30,7 @@ export default function WaiterPage() {
   const [category, setCategory] = useState('all');
   const [busy, setBusy] = useState(false);
   const [waiter, setWaiter] = useState('Waiter');
+  const [cartOpen, setCartOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [floorRes, itemRes, meRes] = await Promise.all([
@@ -94,7 +95,7 @@ export default function WaiterPage() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-8rem)]">
+    <div className="min-h-[calc(100vh-8rem)] pb-28 lg:pb-0">
       <FloorSwitcher role="Waiter" />
       <div
         className="rounded-2xl p-4 sm:p-5 mb-4 text-white"
@@ -166,7 +167,7 @@ export default function WaiterPage() {
                 min={1}
                 value={covers}
                 onChange={(e) => setCovers(Math.max(1, Number(e.target.value) || 1))}
-                className="w-20 rounded-xl border border-slate-300 px-2 text-center"
+                className="w-20 rounded-xl border border-slate-300 px-2 text-center min-h-[48px]"
                 title="Covers"
               />
             </div>
@@ -176,7 +177,7 @@ export default function WaiterPage() {
                   key={c}
                   type="button"
                   onClick={() => setCategory(c)}
-                  className={`shrink-0 rounded-full px-3 py-2 text-sm font-medium ${
+                  className={`shrink-0 rounded-full px-3 py-2 text-sm font-medium min-h-[40px] ${
                     category === c ? 'bg-brand-600 text-white' : 'bg-white border border-slate-200'
                   }`}
                 >
@@ -190,7 +191,7 @@ export default function WaiterPage() {
                   key={item.id}
                   type="button"
                   onClick={() => add(item)}
-                  className="text-left rounded-xl border border-slate-200 bg-white p-3 hover:border-brand-400 min-h-[88px]"
+                  className="text-left rounded-xl border border-slate-200 bg-white p-3 hover:border-brand-400 min-h-[88px] active:scale-[0.98]"
                 >
                   <p className="font-semibold text-slate-900 line-clamp-2">{item.name}</p>
                   <p className="mt-1 font-bold text-brand-700">₹{posSellingRate(item).toFixed(0)}</p>
@@ -198,19 +199,19 @@ export default function WaiterPage() {
               ))}
             </div>
           </div>
-          <aside className="rounded-2xl border border-slate-200 bg-white p-4 h-fit sticky top-4">
+          <aside className="hidden lg:block rounded-2xl border border-slate-200 bg-white p-4 h-fit sticky top-4">
             <p className="text-xs font-semibold uppercase text-slate-500">Ticket · {table}</p>
             <h2 className="font-bold text-lg text-slate-900">{openTicket ? 'Add to ticket' : 'New kitchen ticket'}</h2>
             {cart.length === 0 ? (
               <p className="mt-3 text-sm text-slate-500">Tap dishes to build this round.</p>
             ) : (
-              <ul className="mt-3 space-y-2">
+              <ul className="mt-3 space-y-2 max-h-64 overflow-y-auto">
                 {cart.map((l) => (
                   <li key={l.item_id} className="flex items-center gap-2 text-sm">
                     <span className="flex-1 min-w-0 truncate">{l.name}</span>
-                    <button type="button" className="rounded-md border p-1" onClick={() => setCart((p) => p.map((x) => x.item_id === l.item_id ? { ...x, qty: x.qty - 1 } : x).filter((x) => x.qty > 0))}><Minus className="h-3 w-3" /></button>
+                    <button type="button" className="rounded-md border p-1 min-touch" onClick={() => setCart((p) => p.map((x) => x.item_id === l.item_id ? { ...x, qty: x.qty - 1 } : x).filter((x) => x.qty > 0))}><Minus className="h-3 w-3" /></button>
                     <span className="w-6 text-center font-semibold">{l.qty}</span>
-                    <button type="button" className="rounded-md border p-1" onClick={() => setCart((p) => p.map((x) => x.item_id === l.item_id ? { ...x, qty: x.qty + 1 } : x))}><Plus className="h-3 w-3" /></button>
+                    <button type="button" className="rounded-md border p-1 min-touch" onClick={() => setCart((p) => p.map((x) => x.item_id === l.item_id ? { ...x, qty: x.qty + 1 } : x))}><Plus className="h-3 w-3" /></button>
                   </li>
                 ))}
               </ul>
@@ -224,6 +225,61 @@ export default function WaiterPage() {
               <Send className="h-4 w-4" /> Send to kitchen
             </button>
           </aside>
+        </div>
+      )}
+
+      {table && (
+        <div
+          className="lg:hidden fixed left-0 right-0 z-40 border-t border-slate-200 bg-white shadow-[0_-8px_24px_rgba(15,23,42,0.12)]"
+          style={{ bottom: 'calc(3.75rem + var(--safe-area-bottom, 0px))' }}
+        >
+          {!cartOpen ? (
+            <button
+              type="button"
+              onClick={() => setCartOpen(true)}
+              className="w-full flex items-center justify-between gap-3 px-4 py-3 min-h-[56px]"
+            >
+              <span className="text-sm font-semibold text-slate-900">
+                {table} · {cart.length === 0 ? 'Tap dishes to add' : `${cart.reduce((s, l) => s + l.qty, 0)} dishes`}
+              </span>
+              <span className="rounded-lg bg-brand-600 text-white px-3 py-2 text-sm font-bold inline-flex items-center gap-1">
+                <Send className="h-4 w-4" /> Send
+              </span>
+            </button>
+          ) : (
+            <div className="max-h-[65dvh] flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                <h2 className="font-semibold">Ticket · {table}</h2>
+                <button type="button" onClick={() => setCartOpen(false)} className="text-sm font-medium text-brand-700 min-h-[44px] px-2">Close</button>
+              </div>
+              <div className="overflow-y-auto px-4 py-3 flex-1">
+                {cart.length === 0 ? (
+                  <p className="text-sm text-slate-500">Tap dishes above, then send.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {cart.map((l) => (
+                      <li key={l.item_id} className="flex items-center gap-2 text-sm">
+                        <span className="flex-1 min-w-0 truncate">{l.name}</span>
+                        <button type="button" className="rounded-md border p-2 min-touch" onClick={() => setCart((p) => p.map((x) => x.item_id === l.item_id ? { ...x, qty: x.qty - 1 } : x).filter((x) => x.qty > 0))}><Minus className="h-4 w-4" /></button>
+                        <span className="w-7 text-center font-semibold">{l.qty}</span>
+                        <button type="button" className="rounded-md border p-2 min-touch" onClick={() => setCart((p) => p.map((x) => x.item_id === l.item_id ? { ...x, qty: x.qty + 1 } : x))}><Plus className="h-4 w-4" /></button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="p-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={busy || !cart.length}
+                  onClick={() => void send().then(() => setCartOpen(false))}
+                  className="w-full rounded-xl bg-brand-600 text-white py-3.5 font-semibold min-h-[52px] inline-flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Send className="h-4 w-4" /> Send to kitchen
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -778,11 +778,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             >
               <Menu className="h-6 w-6" />
             </button>
-            <BrandMark href={homeHref} name={isIceCrest && !branding.display_name ? 'ICE CREST' : brandName} logoSrc={logoSrc} compact className="lg:hidden" />
+            <BrandMark href={homeHref} name={isIceCrest && !branding.display_name ? 'ICE CREST' : brandName} logoSrc={logoSrc} compact className="hidden sm:flex lg:hidden" />
             <button
               type="button"
               onClick={() => typeof window !== 'undefined' && window.dispatchEvent(new CustomEvent('smebuzz-open-search'))}
-              className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 sm:px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 min-h-[44px] min-touch"
+              className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 sm:px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 min-h-[44px] min-touch flex-1 sm:flex-none max-w-full"
               title="Search (⌘K)"
             >
               <Search className="h-5 w-5 shrink-0" />
@@ -802,7 +802,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </button>
           </div>
         </header>
-        <main id="main" className="flex-1 overflow-auto p-4 sm:p-6 pb-24 lg:pb-6">
+        <main id="main" className="flex-1 overflow-auto p-3 sm:p-6 pb-24 lg:pb-6">
           {children}
         </main>
       </div>

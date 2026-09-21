@@ -75,7 +75,12 @@ export default function InvoiceItemSearchCell({
     const update = () => {
       if (!wrapperRef.current) return;
       const rect = wrapperRef.current.getBoundingClientRect();
-      setDropdownRect({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 240) });
+      const width = Math.min(Math.max(rect.width, 260), Math.max(240, window.innerWidth - 24));
+      const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUp = spaceBelow < 220 && rect.top > spaceBelow;
+      const top = openUp ? Math.max(8, rect.top - Math.min(224, spaceBelow > 80 ? 200 : 224) - 4) : rect.bottom + 4;
+      setDropdownRect({ top, left, width });
     };
     update();
     window.addEventListener('scroll', update, true);
@@ -147,8 +152,8 @@ export default function InvoiceItemSearchCell({
             if (!catalog.length) loadCatalog();
           }}
           onFocus={() => loadCatalog()}
-          placeholder="Click or search by SKU / name..."
-          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+          placeholder="Tap to search SKU / name…"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm min-h-[44px]"
           autoComplete="off"
         />
       )}
@@ -159,7 +164,7 @@ export default function InvoiceItemSearchCell({
         createPortal(
           <ul
             ref={dropdownRef}
-            className="max-h-56 overflow-auto rounded border border-slate-200 bg-white py-1 shadow-lg"
+            className="max-h-56 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
             style={{
               position: 'fixed',
               top: dropdownRect.top,
@@ -176,9 +181,9 @@ export default function InvoiceItemSearchCell({
               </li>
             )}
             {loading ? (
-              <li className="px-3 py-2 text-slate-500 text-sm">Loading...</li>
+              <li className="px-3 py-3 text-slate-500 text-sm">Loading...</li>
             ) : results.length === 0 ? (
-              <li className="px-3 py-2 text-slate-500 text-sm">
+              <li className="px-3 py-3 text-slate-500 text-sm">
                 {catalog.length === 0 ? 'No items yet. Add items in Inventory.' : 'No items found'}
               </li>
             ) : (
@@ -186,10 +191,14 @@ export default function InvoiceItemSearchCell({
                 <li key={it.id}>
                   <button
                     type="button"
-                    className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                    className="flex w-full flex-col items-start gap-0.5 px-3 py-3 text-left text-sm hover:bg-slate-50 min-h-[48px]"
                     onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
+                      void pick(it);
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
                       void pick(it);
                     }}
                   >

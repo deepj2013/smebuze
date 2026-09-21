@@ -27,6 +27,7 @@ import {
   buildTestEscPos,
   connectionLabel,
   deletePrinter,
+  isAppleMobile,
   kindLabel,
   loadPrinters,
   openSystemPrint,
@@ -84,8 +85,11 @@ export default function PrintersPage() {
 
   const mobile = useMemo(() => {
     if (typeof navigator === 'undefined') return false;
-    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || isAppleMobile();
   }, []);
+
+  const onIos = useMemo(() => isAppleMobile(), []);
+  const canBle = useMemo(() => bluetoothSupported(), []);
 
   const startAdd = (connection?: PrinterConnection) => {
     const conn = connection ?? (mobile ? 'bluetooth' : 'local');
@@ -151,7 +155,11 @@ export default function PrintersPage() {
     try {
       if (p.connection === 'bluetooth') {
         if (!bluetoothSupported()) {
-          throw new Error('Open this page in Chrome on Android to send a Bluetooth test slip. On iPhone, pair the printer in Settings, then use Print and pick it from the share sheet.');
+          throw new Error(
+            onIos
+              ? 'On iPhone/iPad, pair the printer in Settings, then use Print and choose it from the share sheet (AirPrint / Bluetooth). Direct Bluetooth from Safari is not supported by Apple.'
+              : 'Open this page in Chrome on Android to send a Bluetooth test slip. Otherwise use Print and pick the printer from the system dialog.',
+          );
         }
         await sendBluetoothBytes(buildTestEscPos(p.name, p.paper), p.bluetoothId);
         success('Test slip sent to the Bluetooth printer.');
@@ -191,13 +199,28 @@ export default function PrintersPage() {
       </PageHeader>
 
       {mobile && (
-        <div className="mb-6 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-slate-700">
+        <div className="mb-6 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-slate-700 space-y-2">
           <p className="font-semibold text-brand-800 flex items-center gap-2">
-            <Smartphone className="h-4 w-4" /> You are on a phone
+            <Smartphone className="h-4 w-4" /> You are on a phone or tablet
           </p>
-          <p className="mt-1">
-            Pair a Bluetooth thermal printer here (Chrome on Android), or use the phone’s own print sheet for AirPrint / Wi-Fi printers. The setup is stored on this device so the counter phone and the office PC can each have their own printer.
-          </p>
+          {onIos ? (
+            <>
+              <p>
+                <strong>iPhone / iPad:</strong> Wi‑Fi and AirPrint work from the system Print sheet after you tap Print.
+                Pair the printer once in <strong>Settings → Bluetooth</strong> or add it under Printers &amp; Scanners.
+                Safari cannot send raw Bluetooth thermal data from the browser — use Print and pick the printer there.
+              </p>
+              <p className="text-xs text-slate-600">Allow pop-ups for smebuze.com so the print preview can open.</p>
+            </>
+          ) : (
+            <p>
+              <strong>Android:</strong> Wi‑Fi printers appear in the system print sheet. Pocket Bluetooth thermal printers
+              can pair here in Chrome for a direct test slip and bill print. Setup is stored only on this device.
+            </p>
+          )}
+          {!canBle && !onIos && (
+            <p className="text-xs text-amber-800">This browser has no Web Bluetooth — use the system Print dialog for Wi‑Fi printers.</p>
+          )}
         </div>
       )}
 

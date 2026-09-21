@@ -75,6 +75,7 @@ export default function PosPage() {
   const [floor, setFloor] = useState<FloorSnapshot | null>(null);
   const [billBusy, setBillBusy] = useState<string | null>(null);
   const [showTakeaway, setShowTakeaway] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
   const itemsRef = useRef<PosItem[]>([]);
 
   const meta = businessTypeMeta(businessType);
@@ -287,6 +288,7 @@ export default function PosPage() {
       setLastBill({ id: invoice.id, number: invoice.number, total });
       setCart([]);
       setCashTendered('');
+      setCartOpen(false);
       loadCatalog();
     } finally {
       setBusy(false);
@@ -324,7 +326,7 @@ export default function PosPage() {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-4 min-h-[calc(100vh-8rem)]">
+    <div className="flex flex-col lg:flex-row gap-4 min-h-[calc(100vh-8rem)] pb-28 lg:pb-0">
       <div className="flex-1 min-w-0">
       {floorMode ? <FloorSwitcher role="POS / Cashier" /> : <PosSwitcher />}
         <div
@@ -504,7 +506,7 @@ export default function PosPage() {
         )}
       </div>
 
-      <aside className="lg:w-96 shrink-0 rounded-2xl border border-slate-200 bg-white p-4 flex flex-col">
+      <aside className="hidden lg:flex lg:w-96 shrink-0 rounded-2xl border border-slate-200 bg-white p-4 flex-col">
         <h2 className="font-semibold text-slate-900">This bill</h2>
         <label className="mt-3 text-xs font-medium text-slate-600">Customer</label>
         <select
@@ -645,6 +647,111 @@ export default function PosPage() {
           </div>
         )}
       </aside>
+
+      {/* Mobile: sticky cart bar + expandable sheet */}
+      <div
+        className="lg:hidden fixed left-0 right-0 z-40 border-t border-slate-200 bg-white shadow-[0_-8px_24px_rgba(15,23,42,0.12)]"
+        style={{ bottom: 'calc(3.75rem + var(--safe-area-bottom, 0px))' }}
+      >
+        {!cartOpen ? (
+          <button
+            type="button"
+            onClick={() => setCartOpen(true)}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 min-h-[56px] text-left"
+          >
+            <span className="text-sm font-semibold text-slate-900">
+              {cart.length === 0 ? 'Bill empty — tap items to add' : `${cart.reduce((s, l) => s + l.qty, 0)} items`}
+            </span>
+            <span className="rounded-lg bg-brand-600 text-white px-3 py-2 text-sm font-bold tabular-nums">
+              ₹{totals.total.toFixed(2)}
+            </span>
+          </button>
+        ) : (
+          <div className="max-h-[70dvh] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+              <h2 className="font-semibold text-slate-900">This bill</h2>
+              <button type="button" onClick={() => setCartOpen(false)} className="text-sm font-medium text-brand-700 min-h-[44px] px-2">
+                Close
+              </button>
+            </div>
+            <div className="overflow-y-auto overscroll-contain px-4 py-3 space-y-3 flex-1">
+              <label className="block text-xs font-medium text-slate-600">Customer</label>
+              <select
+                value={customerId}
+                onChange={(e) => setCustomerId(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm min-h-[44px]"
+              >
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <ul className="space-y-2">
+                {cart.length === 0 && <li className="text-sm text-slate-500">Tap items above to add.</li>}
+                {cart.map((l) => (
+                  <li key={l.item_id} className="flex items-center gap-2 text-sm">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-slate-900 truncate">{l.name}</p>
+                      <p className="text-xs text-slate-500">₹{l.rate.toFixed(2)}</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button type="button" onClick={() => setQty(l.item_id, l.qty - 1)} className="rounded border p-2 min-touch"><Minus className="h-4 w-4" /></button>
+                      <span className="w-7 text-center font-semibold">{l.qty}</span>
+                      <button type="button" onClick={() => setQty(l.item_id, l.qty + 1)} className="rounded border p-2 min-touch"><Plus className="h-4 w-4" /></button>
+                    </div>
+                    <button type="button" onClick={() => setQty(l.item_id, 0)} className="text-slate-400 p-2"><Trash2 className="h-4 w-4" /></button>
+                  </li>
+                ))}
+              </ul>
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                {([
+                  { id: 'cash' as const, label: 'Cash', icon: Banknote },
+                  { id: 'upi' as const, label: 'UPI', icon: Smartphone },
+                  { id: 'card' as const, label: 'Card', icon: CreditCard },
+                ]).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setPayMode(m.id)}
+                    className={`rounded-lg border py-2 text-xs font-semibold flex flex-col items-center gap-1 min-h-[52px] ${
+                      payMode === m.id ? 'border-brand-500 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    <m.icon className="h-4 w-4" />
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              {payMode === 'cash' && (
+                <label className="block text-xs font-medium text-slate-600">
+                  Cash received
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={cashTendered}
+                    onChange={(e) => setCashTendered(limitDecimalPlaces(e.target.value))}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm min-h-[44px]"
+                  />
+                </label>
+              )}
+            </div>
+            <div className="border-t border-slate-100 p-3 safe-bottom">
+              <button
+                type="button"
+                onClick={() => void charge()}
+                disabled={busy || cart.length === 0}
+                className="w-full rounded-xl bg-brand-600 text-white py-3.5 font-semibold disabled:opacity-50 min-h-[52px]"
+              >
+                {busy ? 'Saving…' : `Charge ₹${totals.total.toFixed(2)}`}
+              </button>
+              {lastBill && (
+                <Link href={`/sales/invoices/${lastBill.id}/print`} className="mt-2 block text-center text-sm font-medium text-brand-700">
+                  Print {lastBill.number}
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
