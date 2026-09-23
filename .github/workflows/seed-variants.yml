@@ -1,7 +1,7 @@
 name: Seed demo variants
 
-# One-shot / repeatable: create restaurant and other demo tenants on the VPS.
-# Idempotent. Password for seeded users: Password123
+# Creates restaurant and other demo tenants on the VPS (idempotent).
+# Password for seeded users: Password123
 on:
   workflow_dispatch:
 
@@ -27,7 +27,7 @@ jobs:
             exit 1
           fi
 
-      - name: SSH and run seed:demo + seed:variants
+      - name: SSH and run seed-on-vps.sh
         env:
           HOST: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
           SSH_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
@@ -46,23 +46,18 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 \
-            "${SSH_USER}@${HOST}" bash -s << 'EOF'
+            "${SSH_USER}@${HOST}" bash -s << EOF
           set -euo pipefail
-          cd /var/www/smebuze
-          export PATH="/usr/local/bin:/usr/bin:${PATH}"
-          if [ -s "${HOME}/.nvm/nvm.sh" ]; then . "${HOME}/.nvm/nvm.sh"; fi
-          if [ -s /home/smebuze/.nvm/nvm.sh ]; then . /home/smebuze/.nvm/nvm.sh; fi
-          run_as() {
-            if [ "$(id -un)" = "root" ] && id smebuze >/dev/null 2>&1; then
-              sudo -u smebuze -H env PATH="$PATH" HOME=/home/smebuze bash -lc "cd /var/www/smebuze && $*"
-            else
-              bash -lc "cd /var/www/smebuze && $*"
-            fi
-          }
-          # Seed scripts parse .env themselves — do not `source` it (breaks on multiline values).
-          echo "Seeding demo users..."
-          run_as "npm run seed:demo"
-          echo "Seeding business variants (restaurant, sweets, …)..."
-          run_as "npm run seed:variants"
-          echo "Done."
+          export APP_DIR=/var/www/smebuze
+          if [ ! -f /var/www/smebuze/scripts/seed-on-vps.sh ]; then
+            echo "Missing scripts/seed-on-vps.sh — pull latest production first."
+            exit 1
+          fi
+          chmod +x /var/www/smebuze/scripts/seed-on-vps.sh
+          if [ "\$(id -un)" = "root" ] && id smebuze >/dev/null 2>&1; then
+            echo "running seed as user smebuze"
+            sudo -u smebuze -H env APP_DIR=/var/www/smebuze bash /var/www/smebuze/scripts/seed-on-vps.sh
+          else
+            bash /var/www/smebuze/scripts/seed-on-vps.sh
+          fi
           EOF
