@@ -1,0 +1,71 @@
+name: Seed demo variants
+
+# One-shot / repeatable: create restaurant and other demo tenants on the VPS.
+# Idempotent. Password for seeded users: Password123
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: smebuze-production-seed
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    name: SSH and seed variants
+    runs-on: ubuntu-latest
+    environment: smebuze
+    timeout-minutes: 20
+    steps:
+      - name: Require environment secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$VPS_SSH_KEY" ]; then
+            echo "::error::Environment smebuze needs secrets VPS_HOST, VPS_USER, VPS_SSH_KEY."
+            exit 1
+          fi
+
+      - name: SSH and run seed:demo + seed:variants
+        env:
+          HOST: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
+          SSH_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          HOST="$(printf '%s' "$HOST" | tr -d '\r' | xargs)"
+          SSH_USER="$(printf '%s' "$SSH_USER" | tr -d '\r' | xargs)"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          python3 - << 'PY'
+          import os
+          key = os.environ["KEY"].replace("\r", "").strip() + "\n"
+          open(os.path.expanduser("~/.ssh/deploy_key"), "w").write(key)
+          PY
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 \
+            "${SSH_USER}@${HOST}" bash -s << 'EOF'
+          set -euo pipefail
+          cd /var/www/smebuze
+          if [ "$(id -un)" = "root" ] && id smebuze >/dev/null 2>&1; then
+            RUN="sudo -u smebuze -H"
+          else
+            RUN=""
+          fi
+          $RUN bash -lc '
+            set -euo pipefail
+            cd /var/www/smebuze
+            set -a
+            . ./.env
+            set +a
+            export PATH="/usr/local/bin:/usr/bin:${PATH}"
+            if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh"; fi
+            echo "Seeding demo users..."
+            npm run seed:demo
+            echo "Seeding business variants (restaurant, sweets, …)..."
+            npm run seed:variants
+            echo "Done."
+          '
+          EOF
