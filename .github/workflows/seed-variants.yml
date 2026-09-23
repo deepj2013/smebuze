@@ -49,23 +49,20 @@ jobs:
             "${SSH_USER}@${HOST}" bash -s << 'EOF'
           set -euo pipefail
           cd /var/www/smebuze
-          if [ "$(id -un)" = "root" ] && id smebuze >/dev/null 2>&1; then
-            RUN="sudo -u smebuze -H"
-          else
-            RUN=""
-          fi
-          $RUN bash -lc '
-            set -euo pipefail
-            cd /var/www/smebuze
-            set -a
-            . ./.env
-            set +a
-            export PATH="/usr/local/bin:/usr/bin:${PATH}"
-            if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh"; fi
-            echo "Seeding demo users..."
-            npm run seed:demo
-            echo "Seeding business variants (restaurant, sweets, …)..."
-            npm run seed:variants
-            echo "Done."
-          '
+          export PATH="/usr/local/bin:/usr/bin:${PATH}"
+          if [ -s "${HOME}/.nvm/nvm.sh" ]; then . "${HOME}/.nvm/nvm.sh"; fi
+          if [ -s /home/smebuze/.nvm/nvm.sh ]; then . /home/smebuze/.nvm/nvm.sh; fi
+          run_as() {
+            if [ "$(id -un)" = "root" ] && id smebuze >/dev/null 2>&1; then
+              sudo -u smebuze -H env PATH="$PATH" HOME=/home/smebuze bash -lc "cd /var/www/smebuze && $*"
+            else
+              bash -lc "cd /var/www/smebuze && $*"
+            fi
+          }
+          # Seed scripts parse .env themselves — do not `source` it (breaks on multiline values).
+          echo "Seeding demo users..."
+          run_as "npm run seed:demo"
+          echo "Seeding business variants (restaurant, sweets, …)..."
+          run_as "npm run seed:variants"
+          echo "Done."
           EOF
