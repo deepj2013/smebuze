@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import GlobalSearch from './components/GlobalSearch';
 import IceCrestTutorial from './components/IceCrestTutorial';
 import { ToastProvider } from './components/ToastContext';
@@ -475,6 +475,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const drawerRef = useRef<HTMLElement>(null);
   const [showIceCrestTutorial, setShowIceCrestTutorial] = useState(false);
   const isStarIce = tenant?.slug === 'star-ice';
   const isIceCrest = tenant?.slug === 'ice-crest' || tenant?.settings?.business_type === 'ice_crest';
@@ -517,6 +518,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const cat = getCategoryForPath(pathname, baseNav);
     if (cat) setExpanded((prev) => new Set(prev).add(cat));
   }, [pathname, baseNav]);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    const drawer = drawerRef.current;
+    if (drawer) {
+      if (mobileMenuOpen) drawer.removeAttribute('inert');
+      else drawer.setAttribute('inert', '');
+    }
+    if (!mobileMenuOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [mobileMenuOpen, ready]);
 
   const toggleCategory = (label: string) => {
     setExpanded((prev) => {
@@ -647,8 +671,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (pathname.startsWith('/onboarding')) {
     return (
       <ToastProvider>
-        <div className="min-h-dvh bg-slate-50 flex flex-col">
-          <header className="border-b border-slate-200 bg-white/90 backdrop-blur" style={{ paddingTop: 'var(--safe-area-top)' }}>
+        <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-slate-50">
+          <header className="shrink-0 border-b border-slate-200 bg-white/90 backdrop-blur" style={{ paddingTop: 'var(--safe-area-top)' }}>
             <div className="h-14 flex items-center justify-between px-4 max-w-4xl mx-auto w-full">
               <span className="font-bold text-brand-700 truncate">{brandName}</span>
               <div className="flex items-center gap-4">
@@ -659,7 +683,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </div>
           </header>
-          <main id="main" className="flex-1">{children}</main>
+          <main id="main" className="min-h-0 flex-1 overflow-y-auto overscroll-contain" style={{ paddingBottom: 'var(--safe-area-bottom)' }}>{children}</main>
         </div>
       </ToastProvider>
     );
@@ -676,8 +700,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (paywalled && pathname === '/billing') {
     return (
       <ToastProvider>
-        <div className="min-h-dvh bg-slate-50 flex flex-col">
-          <header className="border-b border-slate-200 bg-white" style={{ paddingTop: 'var(--safe-area-top)' }}>
+        <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-slate-50">
+          <header className="shrink-0 border-b border-slate-200 bg-white" style={{ paddingTop: 'var(--safe-area-top)' }}>
             <div className="h-14 flex items-center justify-between px-4">
               <span className="font-bold text-brand-700">SMEBUZE</span>
               <button type="button" onClick={logout} className="text-sm text-slate-600 hover:text-brand-600">
@@ -685,7 +709,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           </header>
-          <main id="main" className="flex-1 p-4 sm:p-6">{children}</main>
+          <main id="main" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6" style={{ paddingBottom: 'max(1.5rem, var(--safe-area-bottom))' }}>{children}</main>
         </div>
       </ToastProvider>
     );
@@ -730,7 +754,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         }`}
                       >
                         {Icon && <Icon className="h-4 w-4 shrink-0 opacity-80" />}
-                        {c.label}
+                        <span className="min-w-0 flex-1 leading-snug">{c.label}</span>
                       </Link>
                     );
                   })}
@@ -748,7 +772,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               }`}
             >
               {item.icon && <item.icon className="h-4 w-4 shrink-0 opacity-70" />}
-              {item.label}
+              <span className="min-w-0 flex-1 leading-snug">{item.label}</span>
             </Link>
           )}
         </div>
@@ -777,44 +801,50 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     {isIceCrest && showIceCrestTutorial && (
       <IceCrestTutorial mode="modal" onDismiss={() => setShowIceCrestTutorial(false)} onComplete={() => setShowIceCrestTutorial(false)} />
     )}
-    <div className="min-h-dvh flex" style={{ background: 'var(--tenant-canvas, #f8fafc)' }}>
+    <div className="flex h-dvh max-h-dvh overflow-hidden" style={{ background: 'var(--tenant-canvas, #f8fafc)' }}>
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-56 border-r border-slate-200 flex-col shrink-0" style={{ background: 'var(--tenant-sidebar, #ffffff)' }}>
-        <div className="p-4 border-b border-slate-200">
+      <aside className="hidden lg:flex h-dvh w-56 shrink-0 flex-col border-r border-slate-200" style={{ background: 'var(--tenant-sidebar, #ffffff)' }}>
+        <div className="shrink-0 border-b border-slate-200 p-4">
           <BrandMark href={homeHref} name={brandName} logoSrc={logoSrc} />
         </div>
-        <nav className="p-2 flex-1 overflow-y-auto">{renderNavContent(false)}</nav>
+        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2" aria-label="Workspace">{renderNavContent(false)}</nav>
       </aside>
 
       {/* Mobile drawer overlay */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 z-40 lg:hidden bg-black/40"
+          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
           onClick={closeDrawer}
           aria-hidden
         />
       )}
-      {/* Mobile drawer panel */}
+      {/* Mobile drawer panel — own scroll, so every item stays reachable on a phone */}
       <aside
-        className={`fixed top-0 left-0 z-50 h-full w-[min(320px,85vw)] max-w-full border-r border-slate-200 shadow-xl transform transition-transform duration-200 ease-out lg:hidden ${
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        ref={drawerRef}
+        id="mobile-nav"
+        className={`fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh w-[min(20rem,88vw)] max-w-full flex-col overflow-hidden border-r border-slate-200 shadow-xl transition-transform duration-200 ease-out lg:hidden ${
+          mobileMenuOpen ? 'translate-x-0' : 'pointer-events-none -translate-x-full'
         }`}
         style={{ paddingTop: 'var(--safe-area-top)', background: 'var(--tenant-sidebar, #ffffff)' }}
+        role="dialog"
+        aria-modal={mobileMenuOpen}
+        aria-hidden={!mobileMenuOpen}
+        aria-label="Menu"
       >
-        <div className="flex items-center justify-between p-4 border-b border-slate-200">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-200 p-4">
           <BrandMark href={homeHref} name={brandName} logoSrc={logoSrc} onClick={closeDrawer} />
-          <button type="button" onClick={closeDrawer} className="p-2 -m-2 rounded-lg text-slate-600 hover:bg-slate-100 min-touch" aria-label="Close menu">
+          <button type="button" onClick={closeDrawer} className="min-touch -m-2 rounded-lg p-2 text-slate-600 hover:bg-slate-100" aria-label="Close menu">
             <X className="h-6 w-6" />
           </button>
         </div>
-        <nav className="p-3 flex-1 overflow-y-auto">{renderNavContent(true)}</nav>
-        <div className="p-3 border-t border-slate-200" style={{ paddingBottom: 'max(0.75rem, var(--safe-area-bottom))' }}>
-          <p className="text-xs text-slate-500 truncate px-2">{user?.name || user?.email || 'User'}</p>
-          <button type="button" onClick={() => { closeDrawer(); logout(); }} className="w-full mt-2 text-sm text-slate-600 hover:text-brand-600 py-2 min-touch">Logout</button>
+        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3" aria-label="Workspace menu">{renderNavContent(true)}</nav>
+        <div className="shrink-0 border-t border-slate-200 p-3" style={{ paddingBottom: 'max(0.75rem, var(--safe-area-bottom))' }}>
+          <p className="truncate px-2 text-xs text-slate-500">{user?.name || user?.email || 'User'}</p>
+          <button type="button" onClick={() => { closeDrawer(); logout(); }} className="min-touch mt-2 w-full py-2 text-sm text-slate-600 hover:text-brand-600">Logout</button>
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col min-w-0 min-h-dvh">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <GlobalSearch />
         <header className="border-b border-slate-200 bg-white shrink-0" style={{ paddingTop: 'var(--safe-area-top)' }}>
           {typeof tenant?.days_left === 'number' && !tenant.subscription_expired && tenant.days_left <= 3 && (
@@ -839,11 +869,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => typeof window !== 'undefined' && window.dispatchEvent(new CustomEvent('smebuzz-open-search'))}
-              className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 sm:px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 min-h-[44px] min-touch flex-1 sm:flex-none max-w-full"
+              className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 sm:max-w-xs sm:flex-none"
               title="Search (⌘K)"
             >
               <Search className="h-5 w-5 shrink-0" />
-              <span className="hidden sm:inline">Search…</span>
+              <span className="truncate">Search</span>
               <kbd className="hidden sm:inline rounded bg-white px-1.5 py-0.5 text-xs border border-slate-200">⌘K</kbd>
             </button>
             <span className="hidden md:inline text-sm text-slate-600 truncate ml-2">
@@ -859,21 +889,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </button>
           </div>
         </header>
-        <main id="main" className="flex-1 overflow-auto p-3 sm:p-6 pb-24 lg:pb-6">
+        <main id="main" className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-3 pb-[calc(5.25rem+var(--safe-area-bottom))] sm:p-6 sm:pb-[calc(5.25rem+var(--safe-area-bottom))] lg:pb-6">
           {children}
         </main>
       </div>
 
       {/* Mobile bottom navigation — app-like */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-30 lg:hidden bg-white border-t border-slate-200"
+        className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white shadow-[0_-4px_16px_rgba(15,23,42,0.06)] lg:hidden"
         style={{ paddingBottom: 'var(--safe-area-bottom)' }}
+        aria-label="Primary"
       >
         <div className="grid grid-cols-4 gap-1 px-2 py-1.5">
           <Link
             href={homeHref}
-            className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
-              isHomeActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+            className={`flex min-h-[52px] flex-col items-center justify-center rounded-xl px-1 py-1.5 ${
+              isHomeActive ? 'bg-brand-50 font-semibold text-brand-700' : 'text-slate-500'
             }`}
           >
             {isFloorTenant || isPosTenant ? <Store className="h-6 w-6 shrink-0" /> : <LayoutDashboard className="h-6 w-6 shrink-0" />}
@@ -881,8 +912,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Link>
           <Link
             href="/sales/invoices"
-            className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
-              isSalesActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+            className={`flex min-h-[52px] flex-col items-center justify-center rounded-xl px-1 py-1.5 ${
+              isSalesActive ? 'bg-brand-50 font-semibold text-brand-700' : 'text-slate-500'
             }`}
           >
             <Receipt className="h-6 w-6 shrink-0" />
@@ -891,8 +922,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {isIceCrest ? (
             <Link
               href="/ice-crest/stock-movements"
-              className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
-                isStockActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+              className={`flex min-h-[52px] flex-col items-center justify-center rounded-xl px-1 py-1.5 ${
+                isStockActive ? 'bg-brand-50 font-semibold text-brand-700' : 'text-slate-500'
               }`}
             >
               <Package className="h-6 w-6 shrink-0" />
@@ -901,8 +932,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           ) : (
             <Link
               href="/crm/customers"
-              className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
-                isCrmActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+              className={`flex min-h-[52px] flex-col items-center justify-center rounded-xl px-1 py-1.5 ${
+                isCrmActive ? 'bg-brand-50 font-semibold text-brand-700' : 'text-slate-500'
               }`}
             >
               <Users className="h-6 w-6 shrink-0" />
@@ -912,8 +943,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             onClick={() => setMobileMenuOpen(true)}
-            className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg min-touch ${
-              moreActive ? 'text-brand-600 bg-brand-50' : 'text-slate-600'
+            className={`flex min-h-[52px] flex-col items-center justify-center rounded-xl px-1 py-1.5 ${
+              moreActive ? 'bg-brand-50 font-semibold text-brand-700' : 'text-slate-500'
             }`}
           >
             <MoreHorizontal className="h-6 w-6 shrink-0" />

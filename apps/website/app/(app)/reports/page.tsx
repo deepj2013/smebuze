@@ -766,7 +766,7 @@ export default function ReportsPage() {
         type="button"
         onClick={() => selected && void runReport(selected)}
         disabled={loading}
-        className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50 min-h-[44px] min-touch"
+        className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
       >
         {loading ? 'Loading…' : 'View'}
       </button>
@@ -774,7 +774,7 @@ export default function ReportsPage() {
         <button
           type="button"
           onClick={() => void handleExport()}
-          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 min-h-[44px] min-touch"
+          className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
         >
           CSV
         </button>
@@ -787,17 +787,43 @@ export default function ReportsPage() {
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Reports</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          This workspace only. Pick a report on the left.
+          This workspace only. Pick a report, then view it.
         </p>
       </div>
 
-      <div className="flex gap-3 sm:gap-4 min-h-[min(70vh,720px)] items-stretch">
-        {/* Left: compact scrollable report list */}
-        <aside className="w-[7.25rem] sm:w-48 md:w-56 shrink-0 flex flex-col rounded-xl border border-slate-200 bg-white overflow-hidden">
-          <p className="px-2 sm:px-3 py-2 text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-100">
+      <div className="flex min-h-0 flex-col gap-3 md:min-h-[min(70vh,720px)] md:flex-row md:items-stretch md:gap-4">
+        <div className="space-y-2 md:hidden">
+          <label htmlFor="report-picker" className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Report
+          </label>
+          <select
+            id="report-picker"
+            value={selected ?? ''}
+            onChange={(e) => {
+              const id = e.target.value as ReportId;
+              if (id) selectReport(id);
+            }}
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900"
+          >
+            <option value="" disabled>Choose a report</option>
+            {REPORTS.map((r) => (
+              <option key={r.id} value={r.id}>{r.label}</option>
+            ))}
+          </select>
+          <div className="grid grid-cols-2 gap-2">
+            <Link href="/reports/gstr-1" className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-brand-50 px-3 text-sm font-semibold text-brand-800">
+              GSTR-1
+            </Link>
+            <Link href="/reports/gstr-2a" className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+              GSTR-2A
+            </Link>
+          </div>
+        </div>
+        <aside className="hidden max-h-[min(70vh,720px)] w-56 shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white md:flex">
+          <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-100">
             Reports
           </p>
-          <div className="flex-1 overflow-y-auto overscroll-contain p-1.5 sm:p-2 space-y-1 max-h-[min(70vh,720px)]">
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain p-2">
             <Link
               href="/reports/gstr-1"
               className="block rounded-lg px-2 py-2 text-left text-xs sm:text-sm font-medium text-brand-800 bg-brand-50 hover:bg-brand-100 min-h-[44px] flex items-center"
@@ -835,8 +861,8 @@ export default function ReportsPage() {
         {/* Mid: report view */}
         <section className="flex-1 min-w-0 rounded-xl border border-slate-200 bg-white flex flex-col overflow-hidden">
           {!selected ? (
-            <div className="flex-1 flex items-center justify-center p-6 text-sm text-slate-500">
-              Select a report on the left.
+            <div className="flex flex-1 items-center justify-center p-6 text-sm text-slate-500">
+              Select a report above.
             </div>
           ) : selected === 'dashboard' ? (
             <div className="p-4 sm:p-6 space-y-3">

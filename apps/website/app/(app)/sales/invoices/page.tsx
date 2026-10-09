@@ -239,7 +239,7 @@ export default function InvoicesPage() {
             key={key}
             type="button"
             onClick={() => setPayFilter(key)}
-            className={`rounded-full px-3 py-1.5 text-sm ${payFilter === key ? 'bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-700'}`}
+            className={`inline-flex min-h-[40px] items-center rounded-full px-3.5 text-sm font-medium ${payFilter === key ? 'bg-brand-600 text-white' : 'border border-slate-300 bg-white text-slate-700'}`}
           >
             {key === 'all' ? 'All' : standingLabel(key)} ({counts[key]})
           </button>
@@ -286,10 +286,10 @@ export default function InvoicesPage() {
                     {isOverdue(inv.due_date, standing.status) ? ' · Overdue' : ''}
                   </p>
                 </Link>
-                <div className="mt-3 flex flex-wrap gap-3 text-sm">
-                  <Link href={`/sales/invoices/${inv.id}/edit`} className="text-brand-600 font-medium">Edit</Link>
-                  <a href={`/sales/invoices/${inv.id}/print`} target="_blank" rel="noopener noreferrer" className="text-brand-600 font-medium">Print</a>
-                  <button type="button" disabled={deletingId === inv.id} onClick={() => void deleteInvoice(inv)} className="text-red-600 font-medium disabled:opacity-50">Delete</button>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <Link href={`/sales/invoices/${inv.id}/edit`} className="inline-flex min-h-[40px] items-center justify-center rounded-lg bg-brand-50 text-sm font-semibold text-brand-800">Edit</Link>
+                  <a href={`/sales/invoices/${inv.id}/print`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[40px] items-center justify-center rounded-lg bg-slate-100 text-sm font-semibold text-slate-800">Print</a>
+                  <button type="button" disabled={deletingId === inv.id} onClick={() => void deleteInvoice(inv)} className="inline-flex min-h-[40px] items-center justify-center rounded-lg bg-red-50 text-sm font-semibold text-red-700 disabled:opacity-50">Delete</button>
                 </div>
               </div>
             );

@@ -168,9 +168,36 @@ input[type='number'] {
   }
 }
 
+h1,
+h2,
+h3 {
+  font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
 :focus-visible {
-  outline: 2px solid #0284c7;
+  outline: 2px solid var(--tenant-primary, #0284c7);
   outline-offset: 2px;
+}
+
+/* One control style for the whole product: easy to see, easy to tap. */
+button,
+[type='button'],
+[type='submit'],
+[role='button'] {
+  touch-action: manipulation;
+}
+
+@media (max-width: 1023px) {
+  main a[class*='bg-brand'],
+  main button[class*='bg-brand'],
+  main a[class*='border'],
+  main button[class*='border'],
+  header button,
+  nav a,
+  nav button {
+    min-height: 44px;
+  }
 }
 
 /* Responsive tables: horizontal scroll on small screens with shadow hint */
@@ -187,14 +214,22 @@ input[type='number'] {
 }
 
 /* List pages that wrap a table in overflow-hidden: allow swipe to reach Edit/Actions on phones */
-@media (max-width: 767px) {
-  main .overflow-hidden:has(table) {
+@media (max-width: 1023px) {
+  main .overflow-hidden:has(table),
+  main .overflow-x-auto:has(table) {
     overflow-x: auto !important;
-    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
+    max-width: 100%;
   }
-  main .overflow-hidden:has(table) table {
-    min-width: 640px;
+  main img,
+  main video,
+  main canvas,
+  main svg {
+    max-width: 100%;
+  }
+  main pre {
+    max-width: 100%;
+    overflow-x: auto;
   }
 }
