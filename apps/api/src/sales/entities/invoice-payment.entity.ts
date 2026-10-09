@@ -32,6 +32,10 @@ export class InvoicePayment {
   @Column({ type: 'varchar', length: 255, nullable: true })
   reference: string | null;
 
+  /** Same id on every invoice line of one clubbed receipt. */
+  @Column('uuid', { nullable: true })
+  receipt_group: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 }

@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { SalesInvoice } from './entities/sales-invoice.entity';
@@ -711,6 +712,75 @@ export class SalesService {
       status: newPaid >= net - 0.05 ? 'paid' : 'partial',
     });
     return this.findOneInvoice(invoiceId, ctx);
+  }
+
+  /**
+   * One receipt from a customer, split across their open invoices.
+   * Each invoice still keeps its own payment row so pending and paid stay correct.
+   */
+  async receiveClubPayment(
+    dto: { payment_date: string; mode?: string; reference?: string; allocations: { invoice_id: string; amount: number }[] },
+    ctx: TenantContext,
+  ): Promise<{
+    receipt_group: string;
+    total: number;
+    invoices: Array<{ invoice_id: string; number: string; amount: number; status: string }>;
+  }> {
+    const tenantId = this.assertTenantId(ctx);
+    const seen = new Set<string>();
+    const lines = dto.allocations.map((line) => {
+      if (seen.has(line.invoice_id)) throw new BadRequestException('Each invoice can appear only once on a receipt.');
+      seen.add(line.invoice_id);
+      return { invoice_id: line.invoice_id, amount: round2(Number(line.amount)) };
+    }).filter((line) => line.amount >= 0.01);
+    if (!lines.length) throw new BadRequestException('Enter an amount on at least one invoice.');
+
+    return this.dataSource.transaction(async (manager) => {
+      const invoices = await manager
+        .getRepository(SalesInvoice)
+        .createQueryBuilder('inv')
+        .where('inv.tenant_id = :tenantId', { tenantId })
+        .andWhere('inv.id IN (:...ids)', { ids: lines.map((line) => line.invoice_id) })
+        .setLock('pessimistic_write')
+        .getMany();
+      if (invoices.length !== lines.length) throw new NotFoundException('One of these invoices was not found.');
+      const partyOf = (inv: SalesInvoice) => (inv.customer_id ? `c:${inv.customer_id}` : inv.vendor_id ? `v:${inv.vendor_id}` : '');
+      const parties = new Set(invoices.map(partyOf));
+      if (parties.size !== 1 || parties.has('')) {
+        throw new BadRequestException('Put only one customer’s invoices on the same receipt.');
+      }
+
+      const receiptGroup = randomUUID();
+      const applied: Array<{ invoice_id: string; number: string; amount: number; status: string }> = [];
+      for (const line of lines) {
+        const invoice = invoices.find((row) => row.id === line.invoice_id);
+        if (!invoice) throw new NotFoundException('Invoice not found');
+        if (invoice.status === 'deleted') throw new ForbiddenException(`Invoice ${invoice.number} is deleted.`);
+        const notes = await this.noteTotals(invoice.id);
+        const net = round2(parseFloat(invoice.total || '0') + notes.debit - notes.credit);
+        const paid = round2(parseFloat(invoice.paid_amount || '0'));
+        const due = round2(net - paid);
+        if (line.amount > due + 0.009) {
+          throw new ForbiddenException(`₹${line.amount.toFixed(2)} is more than ₹${Math.max(0, due).toFixed(2)} still due on ${invoice.number}.`);
+        }
+        const newPaid = round2(paid + line.amount);
+        const status = newPaid >= net - 0.05 ? 'paid' : 'partial';
+        await manager.save(
+          manager.create(InvoicePayment, {
+            invoice_id: invoice.id,
+            amount: line.amount.toFixed(2),
+            payment_date: dto.payment_date,
+            mode: dto.mode ?? 'cash',
+            reference: dto.reference?.trim() || null,
+            receipt_group: receiptGroup,
+          }),
+        );
+        await manager.update(SalesInvoice, invoice.id, { paid_amount: newPaid.toFixed(2), status });
+        applied.push({ invoice_id: invoice.id, number: invoice.number, amount: line.amount, status });
+      }
+      const total = round2(applied.reduce((sum, row) => sum + row.amount, 0));
+      return { receipt_group: receiptGroup, total, invoices: applied };
+    });
   }
 
   async createPaymentLink(invoiceId: string, ctx: TenantContext): Promise<{ enabled: boolean; url?: string }> {

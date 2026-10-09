@@ -11,7 +11,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
-import { RecordPaymentDto } from './dto/record-payment.dto';
+import { ReceivePaymentDto, RecordPaymentDto } from './dto/record-payment.dto';
 
 @Controller('sales')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -103,6 +103,12 @@ export class SalesController {
     @CurrentTenant() ctx: TenantContext,
   ) {
     return this.salesService.deleteInvoice(id, ctx, { reason: body?.reason });
+  }
+
+  @Post('payments/receive')
+  @RequirePermissions('sales.invoice.create')
+  async receiveClubPayment(@Body() dto: ReceivePaymentDto, @CurrentTenant() ctx: TenantContext) {
+    return this.salesService.receiveClubPayment(dto, ctx);
   }
 
   @Post('invoices/:id/payment')

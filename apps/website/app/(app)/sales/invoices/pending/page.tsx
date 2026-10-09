@@ -44,8 +44,7 @@ export default function PendingReceivablesPage() {
 
   const openPay = (row: PendingRow) => {
     setPayModal(row);
-    const due = Number(row.total) - Number(row.paid_amount ?? 0);
-    setAmount(due.toFixed(2));
+    setAmount(invoiceStanding(row).balance.toFixed(2));
     setPaymentDate(new Date().toISOString().slice(0, 10));
     setMode('cash');
     setReference('');
@@ -81,7 +80,10 @@ export default function PendingReceivablesPage() {
           <h1 className="text-2xl font-bold text-slate-900">Pending receivables</h1>
           <p className="mt-1 text-sm text-slate-600">Unpaid and partly paid invoices, earliest due date first. A credit note lowers the due amount. A debit note raises it.</p>
         </div>
-        <Link href="/sales/invoices/parties" className="text-sm text-brand-700 hover:underline">Party-wise</Link>
+        <div className="flex flex-wrap gap-3">
+          <Link href="/sales/invoices/receive" className="inline-flex min-h-[44px] items-center rounded-xl bg-brand-600 px-4 text-sm font-semibold text-white">Receive payment</Link>
+          <Link href="/sales/invoices/parties" className="inline-flex min-h-[44px] items-center text-sm text-brand-700 hover:underline">Party-wise</Link>
+        </div>
       </div>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
       {loading && <p className="text-slate-600">Loading…</p>}
