@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Vendor } from './entities/vendor.entity';
@@ -9,6 +9,8 @@ import { GrnLine } from './entities/grn-line.entity';
 import { DebitNote } from './entities/debit-note.entity';
 import { TenantContext } from '../common/tenant-context';
 import { RecordVendorPaymentDto } from './dto/record-vendor-payment.dto';
+import { allocateDocumentNumber, PURCHASE_DEBIT_NOTE_REASONS } from '../common/document-series';
+import { moneyStr, round2 } from '../common/money';
 
 @Injectable()
 export class PurchaseService {
@@ -257,14 +259,38 @@ export class PurchaseService {
       number?: string;
       note_date: string;
       amount: number;
+      taxable_amount?: number;
+      cgst_amount?: number;
+      sgst_amount?: number;
+      igst_amount?: number;
       reason?: string;
+      reason_code?: string;
     },
     ctx: TenantContext,
   ): Promise<DebitNote> {
     const tenantId = this.assertTenantId(ctx);
     const po = await this.orderRepo.findOne({ where: { id: dto.purchase_order_id, tenant_id: tenantId } });
     if (!po) throw new NotFoundException('Purchase order not found');
-    const number = dto.number ?? `DN-${Date.now()}`;
+    const amount = round2(Number(dto.amount));
+    if (!(amount > 0)) throw new BadRequestException('Amount must be greater than zero.');
+    const taxable = round2(Number(dto.taxable_amount ?? 0));
+    const cgst = round2(Number(dto.cgst_amount ?? 0));
+    const sgst = round2(Number(dto.sgst_amount ?? 0));
+    const igst = round2(Number(dto.igst_amount ?? 0));
+    if (igst > 0 && (cgst > 0 || sgst > 0)) throw new BadRequestException('Use CGST and SGST, or IGST, not both.');
+    if ((taxable > 0 || cgst > 0 || sgst > 0 || igst > 0) && Math.abs(round2(taxable + cgst + sgst + igst) - amount) > 0.05) {
+      throw new BadRequestException('Taxable value plus GST must equal the note amount.');
+    }
+    const picked = PURCHASE_DEBIT_NOTE_REASONS.find((item) => item.code === dto.reason_code);
+    const reasonText = (dto.reason || '').trim() || picked?.label || null;
+    const number = await this.debitNoteRepo.manager.transaction((tx) => allocateDocumentNumber(tx, {
+      tenantId,
+      companyId: po.company_id,
+      kind: 'purchase_debit_note',
+      explicit: dto.number,
+      isoDate: dto.note_date,
+      fallbackPrefix: 'DN',
+    }));
     const note = this.debitNoteRepo.create({
       tenant_id: tenantId,
       company_id: po.company_id,
@@ -272,9 +298,14 @@ export class PurchaseService {
       purchase_order_id: dto.purchase_order_id,
       number,
       note_date: new Date(dto.note_date),
-      amount: String(dto.amount),
-      reason: dto.reason ?? null,
-      status: 'draft',
+      amount: moneyStr(amount),
+      taxable_amount: moneyStr(taxable),
+      cgst_amount: moneyStr(cgst),
+      sgst_amount: moneyStr(sgst),
+      igst_amount: moneyStr(igst),
+      reason: reasonText,
+      reason_code: picked?.code ?? null,
+      status: 'issued',
       created_by: ctx.userId,
     });
     return this.debitNoteRepo.save(note);

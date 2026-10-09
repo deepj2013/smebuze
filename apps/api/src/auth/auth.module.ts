@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PassportModule } from '@nestjs/passport';
@@ -21,6 +21,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AuditModule } from '../audit/audit.module';
+import { PartnersModule } from '../partners/partners.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { AuditModule } from '../audit/audit.module';
       EmailOtp,
     ]),
     AuditModule,
+    forwardRef(() => PartnersModule),
   ],
   providers: [AuthService, JwtStrategy, JwtAuthGuard],
   controllers: [AuthController],

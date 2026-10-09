@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from '../auth/auth.module';
+import { TenantModule } from '../tenant/tenant.module';
 import { Tenant } from '../tenant/entities/tenant.entity';
 import { Company } from '../tenant/entities/company.entity';
 import { Item } from '../inventory/entities/item.entity';
@@ -15,9 +17,12 @@ import { GrowthService } from './growth.service';
 import { GrowthController } from './growth.controller';
 import { PublicStorefrontController } from './public-storefront.controller';
 import { AdminStorefrontController } from './admin-storefront.controller';
+import { LeadsGateway } from './leads.gateway';
 
 @Module({
   imports: [
+    AuthModule,
+    TenantModule,
     TypeOrmModule.forFeature([
       Tenant,
       Company,
@@ -33,7 +38,7 @@ import { AdminStorefrontController } from './admin-storefront.controller';
     ]),
   ],
   controllers: [GrowthController, PublicStorefrontController, AdminStorefrontController],
-  providers: [GrowthService],
-  exports: [GrowthService],
+  providers: [GrowthService, LeadsGateway],
+  exports: [GrowthService, LeadsGateway],
 })
 export class GrowthModule {}

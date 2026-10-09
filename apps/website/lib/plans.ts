@@ -20,6 +20,8 @@ export const INTERVAL_MONTHS: Record<string, number> = {
 
 export const YEARLY_DISCOUNT_PERCENT = 15;
 
+export const MIN_PACKAGE_INTERVAL = 'quarterly';
+
 export function formatInr(n: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 }

@@ -27,6 +27,9 @@ import { ServiceModule } from './service/service.module';
 import { IceCrestModule } from './ice-crest/ice-crest.module';
 import { BillingModule } from './billing/billing.module';
 import { GrowthModule } from './growth/growth.module';
+import { TransportModule } from './transport/transport.module';
+import { PartnersModule } from './partners/partners.module';
+import { SupportModule } from './support/support.module';
 import { SubscriptionGuard } from './common/guards/subscription.guard';
 
 @Module({
@@ -45,7 +48,8 @@ import { SubscriptionGuard } from './common/guards/subscription.guard';
         password: process.env.DB_PASSWORD || 'postgres',
         database: process.env.DB_NAME || 'smebuze',
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: process.env.NODE_ENV !== 'production',
+        // Never auto-sync schema in production. Opt-in only for local throwaway DBs.
+        synchronize: process.env.TYPEORM_SYNC === 'true',
         logging: process.env.DB_LOGGING === 'true',
       }),
     }),
@@ -71,6 +75,9 @@ import { SubscriptionGuard } from './common/guards/subscription.guard';
     IceCrestModule,
     BillingModule,
     GrowthModule,
+    TransportModule,
+    PartnersModule,
+    SupportModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

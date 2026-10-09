@@ -25,6 +25,7 @@ export const TENANT_CLIENT_TYPES = {
   COACHING: 'coaching',
   HOTEL: 'hotel',
   MANUFACTURING: 'manufacturing',
+  TRANSPORT: 'transport',
   RESTAURANT_WHOLESALE: 'restaurant_wholesale',
   ICE_CREST: 'ice_crest',
 } as const;
@@ -88,6 +89,7 @@ export const SIGNUP_BUSINESS_TYPES = [
   TENANT_CLIENT_TYPES.HOTEL,
   TENANT_CLIENT_TYPES.MANUFACTURING,
   TENANT_CLIENT_TYPES.TRADING,
+  TENANT_CLIENT_TYPES.TRANSPORT,
   TENANT_CLIENT_TYPES.SERVICES,
 ] as const;
 

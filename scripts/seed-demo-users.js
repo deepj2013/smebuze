@@ -30,6 +30,8 @@ const path = require('path');
 
 const PLATFORM_ORG_ID = 'a0000000-0000-0000-0000-000000000001';
 const DEMO_PASSWORD = 'Password123';
+/** When unset, existing passwords are left alone (safe for production). */
+const RESET = process.env.SEED_RESET_PASSWORDS === '1' || process.env.SEED_RESET_PASSWORDS === 'true';
 
 const tenantAdminPerms = [
   'org.company.create','org.company.view','org.company.update','org.branch.create','org.branch.view','org.branch.update',
@@ -75,7 +77,7 @@ async function run() {
     }
     const tenantId = tenantRow.rows[0].id;
     await client.query(
-      `UPDATE tenants SET settings = COALESCE(settings, '{}'::jsonb) || $2::jsonb WHERE id = $1`,
+      `UPDATE tenants SET settings = COALESCE(settings, '{}'::jsonb) || $2::jsonb WHERE id = $1 AND slug = 'demo'`,
       [tenantId, JSON.stringify({ business_type: 'trading', branding: { primary_color: '#0284c7', accent_color: '#0369a1' } })],
     );
 
@@ -123,12 +125,12 @@ async function run() {
     const suExists = await client.query('SELECT id FROM users WHERE email = $1 AND tenant_id IS NULL', ['superadmin@smebuzz.com']);
     if (suExists.rows.length === 0) {
       await client.query(
-        `INSERT INTO users (tenant_id, email, password_hash, name, is_super_admin, is_active)
-         VALUES (NULL, $1, $2, $3, true, true)`,
+        `INSERT INTO users (tenant_id, email, password_hash, name, is_super_admin, is_active, email_verified)
+         VALUES (NULL, $1, $2, $3, true, true, true)`,
         ['superadmin@smebuzz.com', passwordHash, 'Super Admin']);
-    } else {
+    } else if (RESET) {
       await client.query(
-        `UPDATE users SET password_hash = $2, name = $3 WHERE email = $1 AND tenant_id IS NULL`,
+        `UPDATE users SET password_hash = $2, name = $3, is_super_admin = true, email_verified = true WHERE email = $1 AND tenant_id IS NULL`,
         ['superadmin@smebuzz.com', passwordHash, 'Super Admin']);
     }
     const suId = (await client.query('SELECT id FROM users WHERE email = $1 AND tenant_id IS NULL', ['superadmin@smebuzz.com'])).rows[0].id;
@@ -144,13 +146,18 @@ async function run() {
       const uExists = await client.query('SELECT id FROM users WHERE tenant_id = $1 AND email = $2', [tenantId, u.email]);
       if (uExists.rows.length === 0) {
         await client.query(
-          `INSERT INTO users (tenant_id, email, password_hash, name, default_company_id, is_active)
-           VALUES ($1, $2, $3, $4, $5, true)`,
+          `INSERT INTO users (tenant_id, email, password_hash, name, default_company_id, is_active, email_verified)
+           VALUES ($1, $2, $3, $4, $5, true, true)`,
           [tenantId, u.email, passwordHash, u.name, companyId]);
+      } else if (RESET) {
+        await client.query(
+          `UPDATE users SET password_hash = $2, name = $3, default_company_id = $4, email_verified = true WHERE tenant_id = $1 AND email = $5`,
+          [tenantId, passwordHash, u.name, companyId, u.email]);
       } else {
         await client.query(
-          `UPDATE users SET password_hash = $2, name = $3, default_company_id = $4 WHERE tenant_id = $1 AND email = $5`,
-          [tenantId, passwordHash, u.name, companyId, u.email]);
+          `UPDATE users SET name = COALESCE(name, $2), default_company_id = COALESCE(default_company_id, $3), email_verified = true
+           WHERE tenant_id = $1 AND email = $4`,
+          [tenantId, u.name, companyId, u.email]);
       }
       const uid = (await client.query('SELECT id FROM users WHERE tenant_id = $1 AND email = $2', [tenantId, u.email])).rows[0].id;
       const urExists = await client.query('SELECT 1 FROM user_roles WHERE user_id = $1 AND role_id = $2', [uid, roleIds[u.role]]);
@@ -247,7 +254,11 @@ async function run() {
     console.log('Demo users seeded successfully.');
     console.log('Super Admin: superadmin@smebuzz.com (login WITHOUT tenant slug)');
     console.log('Tenant users (login WITH tenant slug: demo): admin@demo.com, sales@demo.com, purchase@demo.com, staff@demo.com, viewer@demo.com');
-    console.log('Password for all: ' + DEMO_PASSWORD);
+    if (RESET) {
+      console.log('Passwords reset to ' + DEMO_PASSWORD + ' (SEED_RESET_PASSWORDS=1)');
+    } else {
+      console.log('New users password: ' + DEMO_PASSWORD + ' — existing passwords left unchanged.');
+    }
   } finally {
     await client.end();
   }

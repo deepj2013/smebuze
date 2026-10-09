@@ -67,6 +67,12 @@ export class BillingController {
     return this.billing.confirmRazorpay(ctx, dto);
   }
 
+  @Post('auto-renew')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  setAutoRenew(@CurrentTenant() ctx: TenantContext, @Body() body: { auto_renew?: boolean }) {
+    return this.billing.setAutoRenew(ctx, body.auto_renew !== false);
+  }
+
   @Post('phonepe/start')
   @UseGuards(JwtAuthGuard, TenantGuard)
   phonepeStart(@CurrentTenant() ctx: TenantContext, @Body() dto: BillingPayDto) {

@@ -45,6 +45,12 @@ export class Tenant {
   @Column({ default: true })
   is_active: boolean;
 
+  @Column('uuid', { nullable: true })
+  referred_by_partner_id: string | null;
+
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  referral_code: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 

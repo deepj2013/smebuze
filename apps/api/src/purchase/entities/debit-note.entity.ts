@@ -50,8 +50,23 @@ export class DebitNote {
   @Column('decimal', { precision: 18, scale: 2 })
   amount: string;
 
+  @Column('decimal', { precision: 18, scale: 2, default: 0 })
+  taxable_amount: string;
+
+  @Column('decimal', { precision: 18, scale: 2, default: 0 })
+  cgst_amount: string;
+
+  @Column('decimal', { precision: 18, scale: 2, default: 0 })
+  sgst_amount: string;
+
+  @Column('decimal', { precision: 18, scale: 2, default: 0 })
+  igst_amount: string;
+
   @Column({ type: 'varchar', length: 500, nullable: true })
   reason: string | null;
+
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  reason_code: string | null;
 
   @Column({ type: 'varchar', length: 50, default: 'draft' })
   status: string;

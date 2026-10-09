@@ -8,6 +8,8 @@ export interface TenantContext {
   email: string;
   name?: string | null;
   isSuperAdmin: boolean;
+  /** Platform staff role: bde | partner */
+  platformRole?: string | null;
   roleIds: string[];
   permissions: string[];
   companyId?: string;

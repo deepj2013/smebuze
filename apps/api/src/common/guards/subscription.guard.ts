@@ -43,7 +43,7 @@ export class SubscriptionGuard implements CanActivate {
     }
 
     const user = req.user;
-    if (!user?.tenantId || user.isSuperAdmin) return true;
+    if (!user?.tenantId || user.isSuperAdmin || user.platformRole) return true;
 
     const tenant = await this.tenantRepo.findOne({
       where: { id: user.tenantId },

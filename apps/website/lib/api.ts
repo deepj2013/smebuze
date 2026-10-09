@@ -82,18 +82,25 @@ export async function apiDelete<T = unknown>(path: string) {
 export async function apiUploadFile<T = { url: string }>(
   path: string,
   file: File,
-  fieldName = 'file'
+  fieldName = 'file',
+  extraFields?: Record<string, string>,
 ): Promise<{ data?: T; error?: string }> {
   const token = getToken();
   const url = getApiUrl(path);
   const form = new FormData();
   form.append(fieldName, file);
+  if (extraFields) {
+    for (const [k, v] of Object.entries(extraFields)) form.append(k, v);
+  }
   const headers: HeadersInit = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(url, { method: 'POST', body: form, headers });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    return { error: (json as { message?: string }).message || (json as { error?: string }).error || `Upload failed (${res.status})` };
+    const raw = (json as { message?: string | string[]; error?: string }).message
+      ?? (json as { error?: string }).error
+      ?? `Upload failed (${res.status})`;
+    return { error: Array.isArray(raw) ? raw.join(' ') : String(raw) };
   }
   return { data: json as T };
 }

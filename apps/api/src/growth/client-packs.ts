@@ -201,8 +201,18 @@ export const CLIENT_PACKS: ClientPack[] = [
     hero_subtitle: 'Order finished goods. We confirm MOQ, lead time and GST invoice.',
     about: 'Factory catalog for buyers. Stock and billing stay in SMEBUZE.',
   }, { list_existing_items: true }),
+  pack('transport', 'Transporter / fleet', 'Freight billing, party ledger, diesel expenses and driver payroll.', {
+    modules: ['dashboard', 'crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'hr', 'transport', 'onboarding'],
+    features: ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'storefront', 'lead_hub', 'whatsapp', 'transport'],
+    shop_checkout: false,
+    list_existing_items: true,
+  }, {
+    hero_title: 'Reliable freight. On time.',
+    hero_subtitle: 'Request a quote for local or outstation trips. We confirm vehicle, rate and LR.',
+    about: 'Transport company website — enquiries land in CRM. Billing, diesel and driver payroll stay in SMEBUZE.',
+  }),
   pack('ice_crest', 'Ice Crest / ice wholesale', 'Existing ice vertical: website enquiry, stock, billing.', {
-    modules: ['dashboard', 'crm', 'sales', 'inventory', 'reports', 'onboarding'],
+    modules: ['dashboard', 'crm', 'sales', 'inventory', 'reports', 'hr', 'onboarding'],
     features: ['crm', 'sales', 'inventory', 'reports', 'storefront', 'lead_hub', 'whatsapp'],
     shop_checkout: false,
     list_existing_items: true,

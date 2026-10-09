@@ -73,6 +73,7 @@ export default function NewInvoicePage() {
   const [showDueDate, setShowDueDate] = useState(true);
   const [dueDate, setDueDate] = useState('');
   const [number, setNumber] = useState('');
+  const [seriesHint, setSeriesHint] = useState('');
   const [lines, setLines] = useState<LineRow[]>([emptyLine()]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +97,15 @@ export default function NewInvoicePage() {
     });
   }, []);
   useEffect(()=>{const id=searchParams?.get('sales_order_id');if(id&&salesOrders.some(x=>x.id===id)){const o=salesOrders.find(x=>x.id===id)!;setSalesOrderId(id);setCustomerId(o.customer_id||'');setVendorId('');setLines((o.lines||[]).map(l=>({item_id:l.item_id||undefined,item_sku:l.item?.sku,item_name:l.item?.name,hsn_sac:l.item?.hsn_sac||'22019010',description:l.description||l.item?.name||'Item',qty:Number(l.quantity),unit:l.unit||'pcs',rate:Number(l.rate),cgst_rate:defaultGst.cgst,sgst_rate:defaultGst.sgst}))) }},[searchParams,salesOrders,defaultGst]);
+
+  useEffect(() => {
+    const q = new URLSearchParams({ kind: 'invoice', date: invoiceDate });
+    if (companyId) q.set('company_id', companyId);
+    apiGet<{ applies?: boolean; number?: string | null; message?: string }>(`sales/document-series/preview?${q}`).then((res) => {
+      if (res.data?.applies && res.data.number) setSeriesHint(`Leave blank to use ${res.data.number}. Set the series under Organization → Invoice series.`);
+      else setSeriesHint(res.data?.message || 'Leave blank for an automatic number, or set your own series under Organization → Invoice series.');
+    });
+  }, [invoiceDate, companyId]);
 
   // Derive due date from payment term and invoice date when they choose to show it
   useEffect(() => {
@@ -344,7 +354,8 @@ export default function NewInvoicePage() {
           )}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Invoice number</label>
-            <input type="text" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="Auto if empty" className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+            <input type="text" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="Auto from your series if empty" className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+            {seriesHint && <p className="mt-1 text-xs text-slate-500">{seriesHint}</p>}
           </div>
         </div>
 

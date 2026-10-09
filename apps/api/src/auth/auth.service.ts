@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Repository } from 'typeorm';
@@ -30,17 +30,25 @@ import { Warehouse } from '../inventory/entities/warehouse.entity';
 import { isPosBusinessType } from '../common/tenant-client-types';
 import { brandingForBusinessType } from '../common/variant-theme';
 import { tenantSessionFrom, TenantSession } from '../common/tenant-session';
+import { PartnersService } from '../partners/partners.service';
 
 export interface JwtPayload {
   sub: string;
   email: string;
   tenantId: string | null;
   isSuperAdmin: boolean;
+  platformRole?: string | null;
   roleIds: string[];
   permissions: string[];
 }
 
 const PLATFORM_ORG_ID = 'a0000000-0000-0000-0000-000000000001';
+
+function permissionsForPlatformRole(role: string | null | undefined): string[] {
+  if (role === 'bde') return ['admin.bde.leads'];
+  if (role === 'partner') return ['admin.partner.mine'];
+  return [];
+}
 
 const PLAN_FEATURES: Record<string, string[]> = {
   basic: ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports'],
@@ -95,6 +103,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
     private readonly auditService: AuditService,
+    @Inject(forwardRef(() => PartnersService))
+    private readonly partnersService: PartnersService,
   ) {}
 
   async login(dto: LoginDto): Promise<
@@ -119,6 +129,10 @@ export class AuthService {
     const usable: User[] = [];
     for (const user of matched) {
       if (user.is_super_admin && !user.tenant_id) {
+        usable.push(user);
+        continue;
+      }
+      if (user.platform_role && !user.tenant_id) {
         usable.push(user);
         continue;
       }
@@ -219,6 +233,10 @@ export class AuthService {
           usable.push(user);
           continue;
         }
+        if (user.platform_role && !user.tenant_id) {
+          usable.push(user);
+          continue;
+        }
         const tenant = user.tenant ?? (user.tenant_id ? await this.tenantRepo.findOne({ where: { id: user.tenant_id } }) : null);
         if (tenant?.is_active) usable.push(user);
       }
@@ -262,6 +280,10 @@ export class AuthService {
     const usable: User[] = [];
     for (const user of candidates) {
       if (user.is_super_admin && !user.tenant_id) {
+        usable.push(user);
+        continue;
+      }
+      if (user.platform_role && !user.tenant_id) {
         usable.push(user);
         continue;
       }
@@ -312,6 +334,7 @@ export class AuthService {
       email: user.email,
       tenantId: user.tenant_id,
       isSuperAdmin: false,
+      platformRole: null,
       roleIds: context.roleIds,
       permissions: context.permissions,
     };
@@ -364,14 +387,16 @@ export class AuthService {
         business_type: businessType,
         branding: brandingForBusinessType(businessType),
         billing: {
-          interval: dto.interval || 'monthly',
+          interval: dto.interval || 'quarterly',
           trial: dto.trial === 'true' || dto.trial === '1',
+          auto_renew: true,
         },
       },
       subscription_ends_at: subscriptionEndsAt,
       is_active: true,
     });
     await this.tenantRepo.save(tenant);
+    await this.partnersService.attributeSignup(tenant.id, dto.referralCode);
 
     const company = this.companyRepo.create({
       tenant_id: tenant.id,
@@ -432,6 +457,7 @@ export class AuthService {
       email: user.email,
       tenantId: user.tenant_id,
       isSuperAdmin: false,
+      platformRole: null,
       roleIds: context.roleIds,
       permissions: context.permissions,
     };
@@ -496,8 +522,14 @@ export class AuthService {
       email: user.email,
       name: user.name ?? undefined,
       isSuperAdmin: user.is_super_admin,
+      platformRole: user.platform_role ?? null,
       roleIds: payload.roleIds ?? [],
-      permissions: payload.permissions ?? [],
+      permissions: (() => {
+        const keys = new Set(payload.permissions ?? []);
+        if (user.is_super_admin) keys.add('*');
+        permissionsForPlatformRole(user.platform_role).forEach((k) => keys.add(k));
+        return Array.from(keys);
+      })(),
       companyId: user.default_company_id ?? undefined,
       branchId: user.default_branch_id ?? undefined,
       allowed_modules,
@@ -557,6 +589,7 @@ export class AuthService {
           if (perm?.key) permissionKeys.add(perm.key);
         });
       }
+      permissionsForPlatformRole(user.platform_role).forEach((k) => permissionKeys.add(k));
     }
 
     return {
@@ -564,6 +597,7 @@ export class AuthService {
       userId: user.id,
       email: user.email,
       isSuperAdmin: user.is_super_admin,
+      platformRole: user.platform_role ?? null,
       roleIds,
       permissions: Array.from(permissionKeys),
       companyId: user.default_company_id ?? undefined,
@@ -639,6 +673,7 @@ export class AuthService {
         email: fresh.email,
         tenantId: fresh.tenant_id,
         isSuperAdmin: fresh.is_super_admin,
+        platformRole: fresh.platform_role ?? null,
         roleIds: context.roleIds,
         permissions: context.permissions,
       };
@@ -732,6 +767,7 @@ export class AuthService {
       email: user.email,
       tenantId: user.tenant_id,
       isSuperAdmin: user.is_super_admin,
+      platformRole: user.platform_role ?? null,
       roleIds: context.roleIds,
       permissions: context.permissions,
     };
@@ -757,6 +793,14 @@ export class AuthService {
         workspaces.push({ slug: '', name: 'Platform admin', tenantId: null, isSuperAdmin: true });
         continue;
       }
+      if (user.platform_role === 'bde' && !user.tenant_id) {
+        workspaces.push({ slug: '', name: 'BDE sales', tenantId: null, isSuperAdmin: false });
+        continue;
+      }
+      if (user.platform_role === 'partner' && !user.tenant_id) {
+        workspaces.push({ slug: '', name: 'Partner portal', tenantId: null, isSuperAdmin: false });
+        continue;
+      }
       const tenant = user.tenant ?? (user.tenant_id ? await this.tenantRepo.findOne({ where: { id: user.tenant_id } }) : null);
       if (!tenant?.is_active) continue;
       workspaces.push({ slug: tenant.slug, name: tenant.name, tenantId: tenant.id, isSuperAdmin: false });
@@ -768,11 +812,15 @@ export class AuthService {
     const normalized = email.trim();
     const relations = ['defaultCompany', 'defaultBranch', 'tenant'] as const;
     if (platformAdmin) {
-      const user = await this.userRepo.findOne({
-        where: { email: normalized, tenant_id: IsNull(), is_super_admin: true, is_active: true },
+      const users = await this.userRepo.find({
+        where: [
+          { email: normalized, tenant_id: IsNull(), is_super_admin: true, is_active: true },
+          { email: normalized, tenant_id: IsNull(), platform_role: 'bde', is_active: true },
+          { email: normalized, tenant_id: IsNull(), platform_role: 'partner', is_active: true },
+        ],
         relations: [...relations],
       });
-      return user ? [user] : [];
+      return users;
     }
     if (tenantSlug?.trim()) {
       const tenant = await this.tenantRepo.findOne({ where: { slug: tenantSlug.trim(), is_active: true } });
@@ -908,6 +956,7 @@ export class AuthService {
       email: user.email,
       tenantId: user.tenant_id,
       isSuperAdmin: false,
+      platformRole: null,
       roleIds: context.roleIds,
       permissions: context.permissions,
     };

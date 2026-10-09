@@ -16,8 +16,7 @@ const PLANS = [
 ];
 
 const INTERVALS = [
-  { id: 'monthly', name: 'Monthly' },
-  { id: 'quarterly', name: 'Quarterly' },
+  { id: 'quarterly', name: 'Quarterly · minimum' },
   { id: 'yearly', name: 'Yearly · 15% off' },
 ];
 
@@ -25,6 +24,7 @@ function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const planFromUrl = searchParams.get('plan') || 'basic';
+  const refFromUrl = (searchParams.get('ref') || searchParams.get('coupon') || '').trim().toUpperCase();
 
   const [step, setStep] = useState(1);
   const [orgName, setOrgName] = useState('');
@@ -35,7 +35,8 @@ function SignupForm() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [plan, setPlan] = useState(planFromUrl);
-  const [interval, setInterval] = useState('monthly');
+  const [interval, setInterval] = useState('quarterly');
+  const [referralCode, setReferralCode] = useState(refFromUrl);
   const [trial, setTrial] = useState(true);
   const [businessType, setBusinessType] = useState<SignupBusinessTypeId | ''>('');
   const [error, setError] = useState<string | null>(null);
@@ -108,9 +109,10 @@ function SignupForm() {
         name: name.trim() || undefined,
         phone: phone.trim() || undefined,
         plan: plan || 'basic',
-        interval: interval || 'monthly',
+        interval: interval || 'quarterly',
         trial: trial ? 'true' : undefined,
         businessType: businessType || 'trading',
+        referralCode: referralCode.trim() || undefined,
       };
       const res = await fetch(`${API_URL}/api/v1/auth/signup`, {
         method: 'POST',
@@ -342,6 +344,19 @@ function SignupForm() {
                   </p>
                 )}
                 </>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Referral / coupon code (optional)</label>
+                <input
+                  type="text"
+                  value={referralCode}
+                  onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                  placeholder="Agency code from your partner"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-3 sm:py-2 text-slate-900 uppercase focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-base min-h-[44px]"
+                />
+                {refFromUrl && (
+                  <p className="mt-1 text-xs text-emerald-700">Partner code applied from your link.</p>
                 )}
               </div>
               {plan === 'ai_pro' ? (

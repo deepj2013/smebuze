@@ -232,6 +232,15 @@ export const SIGNUP_BUSINESS_TYPES = [
     itemsLabel: 'Finished goods',
     counterLabel: 'Sales',
   },
+  {
+    id: 'transport',
+    group: 'desk',
+    title: 'Transporter / fleet',
+    blurb: 'Freight invoices, party ledger, diesel & hire expenses, drivers on payroll — desk for transporters.',
+    itemLabel: 'freight / trip',
+    itemsLabel: 'Freight rates',
+    counterLabel: 'Freight billing',
+  },
 ] as const;
 
 export type SignupBusinessTypeId = (typeof SIGNUP_BUSINESS_TYPES)[number]['id'];

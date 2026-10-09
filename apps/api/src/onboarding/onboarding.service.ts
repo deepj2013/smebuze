@@ -180,7 +180,7 @@ export class OnboardingService {
     const tenant = await this.tenantRepo.findOne({ where: { id: ctx.tenantId } });
     if (!tenant) throw new ForbiddenException('Workspace not found');
 
-    const allowed = new Set(['inventory', 'sales', 'crm', 'purchase', 'accounting', 'reports', 'hr', 'service']);
+    const allowed = new Set(['inventory', 'sales', 'crm', 'purchase', 'accounting', 'reports', 'hr', 'service', 'transport']);
     const picked = (dto.enabledModules || []).filter((m) => allowed.has(m));
     const enabledModules = Array.from(new Set(['organization', 'onboarding', 'help', 'dashboard', ...(picked.length ? picked : ['sales', 'inventory', 'reports'])]));
 

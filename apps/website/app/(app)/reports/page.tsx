@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, getApiUrl } from '@/lib/api';
+import { standingClass, standingLabel } from '@/lib/invoice-standing';
 
 type ReportId =
   | 'dashboard'
@@ -33,7 +34,7 @@ const REPORTS: { id: ReportId; label: string; description: string; hasExport: bo
   { id: 'requirement-vs-delivery', label: 'Requirement vs delivery', description: 'Orders vs delivered/pending by line — CSV export', hasExport: true },
   { id: 'stock-vs-delivery', label: 'Stock vs delivery', description: 'Stock on hand vs delivered in period — CSV export', hasExport: true },
   { id: 'delivery-vs-invoiced', label: 'Delivery vs invoiced', description: 'Challans and whether they are invoiced — CSV export', hasExport: true },
-  { id: 'invoice-vs-payment', label: 'Invoice vs payment', description: 'Customer-wise invoiced, received, pending — CSV export', hasExport: true },
+  { id: 'invoice-vs-payment', label: 'Invoice vs payment', description: 'Customer totals. Click the invoice count for each bill’s received and pending.', hasExport: true },
   { id: 'ledger-summary', label: 'Ledger summary', description: 'Journal entries by period', hasExport: false },
   { id: 'general-ledger', label: 'General ledger', description: 'Journal entries grouped for GL view', hasExport: false },
   { id: 'trial-balance', label: 'Trial balance', description: 'Debits vs credits as of a date', hasExport: false },
@@ -97,6 +98,159 @@ function DataTable({ headers, rows }: { headers: string[]; rows: (string | numbe
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+type PaymentInvoice = {
+  id: string;
+  number: string;
+  invoice_date: string;
+  due_date: string | null;
+  payment_status: string;
+  total_invoiced: number;
+  total_received: number;
+  total_pending: number;
+};
+
+type PaymentRow = {
+  customer_id: string;
+  customer_name: string;
+  party_type?: string;
+  total_invoiced: number;
+  total_received: number;
+  total_pending: number;
+  invoice_count: number;
+  invoices?: PaymentInvoice[];
+};
+
+function InvoiceVsPayment({ data }: { data: Record<string, unknown> }) {
+  const s = (data.summary || {}) as Record<string, number>;
+  const rows = (data.rows as PaymentRow[]) || [];
+  const [openId, setOpenId] = useState<string | null>(null);
+  const today = new Date().toISOString().slice(0, 10);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-3">
+        <Stat label="Invoiced" value={money(s.total_invoiced)} />
+        <Stat label="Received" value={money(s.total_received)} tone="green" />
+        <Stat label="Pending" value={money(s.total_pending)} tone="amber" />
+      </div>
+      {!rows.length ? (
+        <Empty message="No invoices yet. Create an invoice to see received and pending amounts." />
+      ) : (
+        <div className="overflow-x-auto -mx-1 sm:mx-0 border border-slate-200 rounded-lg">
+          <table className="w-full text-sm min-w-[640px]">
+            <thead className="bg-slate-100">
+              <tr>
+                {['Customer', 'Invoices', 'Invoiced', 'Received', 'Pending'].map((h) => (
+                  <th key={h} className="text-left p-2 whitespace-nowrap font-medium text-slate-700">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const open = openId === r.customer_id;
+                const invoices = r.invoices || [];
+                const partyHref =
+                  r.party_type === 'vendor'
+                    ? `/sales/invoices?vendor_id=${encodeURIComponent(r.customer_id)}`
+                    : `/sales/invoices?customer_id=${encodeURIComponent(r.customer_id)}`;
+                return (
+                  <Fragment key={r.customer_id}>
+                    <tr className="border-t border-slate-100">
+                      <td className="p-2 whitespace-nowrap">
+                        <button
+                          type="button"
+                          className="font-medium text-slate-900 hover:underline text-left"
+                          aria-expanded={open}
+                          onClick={() => setOpenId(open ? null : r.customer_id)}
+                        >
+                          {r.customer_name || '—'}
+                        </button>
+                      </td>
+                      <td className="p-2 whitespace-nowrap">
+                        <button
+                          type="button"
+                          className="font-semibold text-teal-700 underline underline-offset-2 tabular-nums"
+                          aria-expanded={open}
+                          onClick={() => setOpenId(open ? null : r.customer_id)}
+                        >
+                          {r.invoice_count}
+                        </button>
+                      </td>
+                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(r.total_invoiced)}</td>
+                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(r.total_received)}</td>
+                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(r.total_pending)}</td>
+                    </tr>
+                    {open && (
+                      <tr className="border-t border-slate-100 bg-slate-50">
+                        <td colSpan={5} className="p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                              {r.customer_name} — invoice wise
+                            </p>
+                            {r.customer_id !== 'unknown' && (
+                              <Link href={partyHref} className="text-xs font-medium text-teal-700 hover:underline">
+                                Open in invoices
+                              </Link>
+                            )}
+                          </div>
+                          {!invoices.length ? (
+                            <p className="text-sm text-slate-600">No invoice lines for this party.</p>
+                          ) : (
+                            <table className="w-full text-sm bg-white border border-slate-200 rounded-lg">
+                              <thead className="bg-white">
+                                <tr>
+                                  {['Invoice', 'Date', 'Due', 'Status', 'Invoiced', 'Received', 'Pending'].map((h) => (
+                                    <th key={h} className="text-left p-2 whitespace-nowrap font-medium text-slate-600">{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {invoices.map((inv) => {
+                                  const overdue =
+                                    !!inv.due_date &&
+                                    inv.due_date < today &&
+                                    inv.payment_status !== 'paid' &&
+                                    inv.payment_status !== 'credit';
+                                  return (
+                                    <tr key={inv.id} className="border-t border-slate-100">
+                                      <td className="p-2 whitespace-nowrap">
+                                        <Link href={`/sales/invoices/${inv.id}`} className="font-medium text-teal-700 hover:underline">
+                                          {inv.number}
+                                        </Link>
+                                      </td>
+                                      <td className="p-2 whitespace-nowrap">{inv.invoice_date || '—'}</td>
+                                      <td className="p-2 whitespace-nowrap">
+                                        {inv.due_date || '—'}
+                                        {overdue ? <span className="ml-2 text-xs font-medium text-red-700">Overdue</span> : null}
+                                      </td>
+                                      <td className="p-2 whitespace-nowrap">
+                                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${standingClass(inv.payment_status)}`}>
+                                          {standingLabel(inv.payment_status)}
+                                        </span>
+                                      </td>
+                                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(inv.total_invoiced)}</td>
+                                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(inv.total_received)}</td>
+                                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(inv.total_pending)}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -243,26 +397,7 @@ function ReportResult({ reportId, data }: { reportId: ReportId; data: Record<str
   }
 
   if (reportId === 'invoice-vs-payment') {
-    const s = (data.summary || {}) as Record<string, number>;
-    return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-3 gap-3">
-          <Stat label="Invoiced" value={money(s.total_invoiced)} />
-          <Stat label="Received" value={money(s.total_received)} tone="green" />
-          <Stat label="Pending" value={money(s.total_pending)} tone="amber" />
-        </div>
-        <DataTable
-          headers={['Customer', 'Invoices', 'Invoiced', 'Received', 'Pending']}
-          rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
-            String(r.customer_name ?? ''),
-            Number(r.invoice_count ?? 0),
-            money(r.total_invoiced as number),
-            money(r.total_received as number),
-            money(r.total_pending as number),
-          ])}
-        />
-      </div>
-    );
+    return <InvoiceVsPayment data={data} />;
   }
 
   if (reportId === 'ledger-summary' || reportId === 'general-ledger') {

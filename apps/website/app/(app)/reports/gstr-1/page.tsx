@@ -13,6 +13,7 @@ type Gstr1 = {
     b2b_count: number;
     b2c_count: number;
     credit_note_count: number;
+    debit_note_count?: number;
     taxable_value: number;
     cgst: number;
     sgst: number;
@@ -24,7 +25,7 @@ type Gstr1 = {
   b2b: Array<{ invoice_number: string; invoice_date: string; customer: string; gstin: string; taxable_value: number; cgst: number; sgst: number; igst: number; invoice_value: number; place_of_supply: string }>;
   b2c: Array<{ invoice_number: string; invoice_date: string; customer: string; taxable_value: number; cgst: number; sgst: number; igst: number; invoice_value: number }>;
   hsn: Array<{ hsn_sac: string; qty: number; taxable: number; cgst: number; sgst: number; igst: number }>;
-  cdnr: Array<{ note_number: string; note_date: string; invoice_number: string; amount: number; reason: string }>;
+  cdnr: Array<{ note_type?: string; note_number: string; note_date: string; invoice_number: string; amount: number; reason: string }>;
 };
 
 const money = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(n || 0);
@@ -87,6 +88,7 @@ export default function Gstr1Page() {
               ['B2B (GSTIN customers)', s.b2b_count],
               ['B2C (unregistered)', s.b2c_count],
               ['Credit notes', s.credit_note_count],
+              ['Debit notes', s.debit_note_count ?? 0],
               ['Taxable value', money(s.taxable_value)],
               ['CGST', money(s.cgst)],
               ['SGST', money(s.sgst)],
@@ -98,7 +100,7 @@ export default function Gstr1Page() {
           <Table title={`4. B2B supplies (${data!.b2b.length})`} cols={['GSTIN', 'Customer', 'Invoice', 'Date', 'Taxable', 'Tax', 'Value', 'POS']} rows={data!.b2b.map((r) => [r.gstin, r.customer, r.invoice_number, r.invoice_date, money(r.taxable_value), money(r.cgst + r.sgst + r.igst), money(r.invoice_value), r.place_of_supply])} />
           <Table title={`7. B2C supplies (${data!.b2c.length})`} cols={['Customer', 'Invoice', 'Date', 'Taxable', 'Tax', 'Value']} rows={data!.b2c.map((r) => [r.customer, r.invoice_number, r.invoice_date, money(r.taxable_value), money(r.cgst + r.sgst + r.igst), money(r.invoice_value)])} />
           <Table title="12. HSN summary" cols={['HSN/SAC', 'Qty', 'Taxable', 'CGST', 'SGST', 'IGST']} rows={data!.hsn.map((r) => [r.hsn_sac, String(r.qty), money(r.taxable), money(r.cgst), money(r.sgst), money(r.igst)])} />
-          <Table title="9. Credit notes (CDNR)" cols={['Note no', 'Date', 'Against invoice', 'Amount', 'Reason']} rows={data!.cdnr.map((r) => [r.note_number, r.note_date, r.invoice_number, money(r.amount), r.reason])} />
+          <Table title="9. Credit and debit notes (CDNR)" cols={['Type', 'Note no', 'Date', 'Against invoice', 'Amount', 'Reason']} rows={data!.cdnr.map((r) => [r.note_type || 'Credit', r.note_number, r.note_date, r.invoice_number, money(r.amount), r.reason])} />
         </>
       )}
     </div>

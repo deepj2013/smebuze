@@ -324,6 +324,20 @@ export const VARIANT_THEMES: Record<string, VariantTheme> = {
     heroFrom: '#18181b',
     heroTo: '#52525b',
   },
+  transport: {
+    id: 'transport',
+    label: 'Transporter',
+    tagline: 'Freight, diesel, parties and drivers.',
+    primary: '#1d4ed8',
+    accent: '#1e40af',
+    canvas: '#eff6ff',
+    sidebar: '#f8fafc',
+    tint50: '#eff6ff',
+    tint100: '#dbeafe',
+    tint200: '#bfdbfe',
+    heroFrom: '#1e3a8a',
+    heroTo: '#2563eb',
+  },
 };
 
 const HEX = /^#[0-9a-fA-F]{6}$/;

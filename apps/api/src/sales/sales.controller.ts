@@ -30,16 +30,47 @@ export class SalesController {
     @Query('status') status: string | undefined,
     @Query('from') from: string | undefined,
     @Query('limit') limit: string | undefined,
+    @Query('customer_id') customerId: string | undefined,
+    @Query('vendor_id') vendorId: string | undefined,
     @CurrentTenant() ctx: TenantContext,
   ) {
     const take = limit ? parseInt(limit, 10) : undefined;
-    return this.salesService.findInvoices(ctx, status, undefined, from, Number.isFinite(take) ? take : undefined);
+    return this.salesService.findInvoices(ctx, status, customerId, from, Number.isFinite(take) ? take : undefined, vendorId);
   }
 
   @Get('invoices/pending')
   @RequirePermissions('sales.invoice.view')
   async pendingInvoices(@CurrentTenant() ctx: TenantContext) {
     return this.salesService.getPendingInvoices(ctx);
+  }
+
+  @Get('invoices/parties')
+  @RequirePermissions('sales.invoice.view')
+  async partyLedger(@CurrentTenant() ctx: TenantContext) {
+    return this.salesService.partyLedger(ctx);
+  }
+
+  @Get('document-series')
+  @RequirePermissions('sales.invoice.view')
+  async documentSeries(@Query('date') date: string | undefined, @CurrentTenant() ctx: TenantContext) {
+    return this.salesService.getDocumentSeries(ctx, date);
+  }
+
+  @Get('document-series/preview')
+  @RequirePermissions('sales.invoice.view')
+  async previewSeries(
+    @Query('kind') kind: string,
+    @Query('date') date: string | undefined,
+    @Query('company_id') companyId: string | undefined,
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.salesService.previewDocumentNumber(ctx, kind, date, companyId);
+  }
+
+  @Patch('document-series')
+  @RequirePermissions('org.company.update')
+  async saveDocumentSeries(@Body() body: Record<string, unknown>, @CurrentTenant() ctx: TenantContext) {
+    return this.salesService.saveDocumentSeries(ctx, body);
   }
 
   @Post('invoices/from-challans')
@@ -268,6 +299,24 @@ export class SalesController {
   @RequirePermissions('sales.invoice.view')
   async getCreditNote(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
     return this.salesService.findOneCreditNote(id, ctx);
+  }
+
+  @Post('debit-notes')
+  @RequirePermissions('sales.invoice.create')
+  async createSalesDebitNote(@Body() body: Record<string, unknown>, @CurrentTenant() ctx: TenantContext) {
+    return this.salesService.createSalesDebitNote(body as Parameters<SalesService['createSalesDebitNote']>[0], ctx);
+  }
+
+  @Get('debit-notes')
+  @RequirePermissions('sales.invoice.view')
+  async listSalesDebitNotes(@Query('status') status: string | undefined, @CurrentTenant() ctx: TenantContext) {
+    return this.salesService.findSalesDebitNotes(ctx, status);
+  }
+
+  @Get('debit-notes/:id')
+  @RequirePermissions('sales.invoice.view')
+  async getSalesDebitNote(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
+    return this.salesService.findOneSalesDebitNote(id, ctx);
   }
 
   @Get('recurring-invoices')

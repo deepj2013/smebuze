@@ -208,6 +208,32 @@ export default function AdminTenantsPage() {
                           />
                           Workspace is active (uncheck to pause login)
                         </label>
+                        <div className="sm:col-span-2 flex flex-wrap gap-2 items-center">
+                          <button
+                            type="button"
+                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+                            onClick={async () => {
+                              const on = !(editForm.features || '').includes('lead_hub');
+                              const { error: err, data } = await apiPost<{ features?: string[] }>(
+                                `admin/storefronts/${t.id}/lead-hub`,
+                                { enabled: on },
+                              );
+                              if (err) setError(err);
+                              else {
+                                setNotice(on ? 'Lead hub enabled' : 'Lead hub disabled');
+                                if (data?.features) {
+                                  setEditForm((f) => ({ ...f, features: data.features!.join(', ') }));
+                                }
+                                load();
+                              }
+                            }}
+                          >
+                            Toggle Lead hub (live feeds + ingest)
+                          </button>
+                          <span className="text-xs text-slate-500">
+                            Also include <code>lead_hub</code> in Features above, or leave Features empty for all modules.
+                          </span>
+                        </div>
                       </div>
                       <div className="mt-3 flex gap-2">
                         <button type="button" onClick={handleSave} className="rounded-lg bg-brand-600 text-white px-3 py-1.5 text-sm font-medium">Save workspace</button>

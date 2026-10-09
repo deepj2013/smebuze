@@ -662,7 +662,7 @@ export class ReportsService {
     };
   }
 
-  /** Invoice vs payment: customer-wise receivables summary. For restaurant_wholesale / Star ICE. */
+  /** Invoice vs payment: customer summary, with each invoice's received and pending amounts. */
   async getInvoiceVsPaymentReport(
     ctx: TenantContext,
     customer_id?: string,
@@ -672,38 +672,96 @@ export class ReportsService {
     rows: Array<{
       customer_id: string;
       customer_name: string;
+      party_type: 'customer' | 'vendor' | 'none';
       total_invoiced: number;
       total_received: number;
       total_pending: number;
       invoice_count: number;
+      invoices: Array<{
+        id: string;
+        number: string;
+        invoice_date: string;
+        due_date: string | null;
+        payment_status: string;
+        total_invoiced: number;
+        total_received: number;
+        total_pending: number;
+      }>;
     }>;
   }> {
-    const invoices = await this.salesService.findInvoices(ctx);
+    const day = (value: Date | string | null | undefined): string | null => {
+      if (!value) return null;
+      if (typeof value === 'string') return value.slice(0, 10);
+      const y = value.getFullYear();
+      const m = String(value.getMonth() + 1).padStart(2, '0');
+      const d = String(value.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+    const invoices = await this.salesService.findInvoices(ctx, undefined, undefined, undefined, undefined, undefined, true);
     const byCustomer: Record<
       string,
-      { customer_name: string; total_invoiced: number; total_received: number; invoice_count: number }
+      {
+        customer_name: string;
+        party_type: 'customer' | 'vendor' | 'none';
+        total_invoiced: number;
+        total_received: number;
+        total_pending: number;
+        invoices: Array<{
+          id: string;
+          number: string;
+          invoice_date: string;
+          due_date: string | null;
+          payment_status: string;
+          total_invoiced: number;
+          total_received: number;
+          total_pending: number;
+        }>;
+      }
     > = {};
     for (const inv of invoices) {
-      const cid = inv.customer_id ?? (inv as { vendor_id?: string }).vendor_id ?? 'unknown';
+      const partyType = inv.customer_id ? 'customer' : inv.vendor_id ? 'vendor' : 'none';
+      const cid = inv.customer_id ?? inv.vendor_id ?? 'unknown';
       if (customer_id && cid !== customer_id) continue;
-      const name = (inv.customer as { name?: string } | null)?.name ?? (inv.vendor as { name?: string } | null)?.name ?? '—';
-      if (!byCustomer[cid]) byCustomer[cid] = { customer_name: name, total_invoiced: 0, total_received: 0, invoice_count: 0 };
+      const name = inv.customer?.name ?? inv.vendor?.name ?? '—';
+      const view = inv as SalesInvoice & { net_amount?: string; balance_due?: string; payment_status?: string };
+      const invoiced = Math.round(Number(view.net_amount ?? inv.total) * 100) / 100;
+      const received = Math.round(parseFloat(inv.paid_amount || '0') * 100) / 100;
+      const pending = Math.round(Number(view.balance_due ?? invoiced - received) * 100) / 100;
+      const line = {
+        id: inv.id,
+        number: inv.number,
+        invoice_date: day(inv.invoice_date) ?? '',
+        due_date: day(inv.due_date),
+        payment_status:
+          view.payment_status ||
+          (pending < -0.05 ? 'credit' : pending <= 0.05 ? 'paid' : received > 0.05 ? 'partial' : 'pending'),
+        total_invoiced: invoiced,
+        total_received: received,
+        total_pending: pending,
+      };
+      if (!byCustomer[cid]) {
+        byCustomer[cid] = { customer_name: name, party_type: partyType, total_invoiced: 0, total_received: 0, total_pending: 0, invoices: [] };
+      }
       byCustomer[cid].customer_name = name;
-      byCustomer[cid].total_invoiced += parseFloat(inv.total);
-      byCustomer[cid].total_received += parseFloat(inv.paid_amount);
-      byCustomer[cid].invoice_count += 1;
+      byCustomer[cid].total_invoiced = Math.round((byCustomer[cid].total_invoiced + invoiced) * 100) / 100;
+      byCustomer[cid].total_received = Math.round((byCustomer[cid].total_received + received) * 100) / 100;
+      byCustomer[cid].total_pending = Math.round((byCustomer[cid].total_pending + pending) * 100) / 100;
+      byCustomer[cid].invoices.push(line);
     }
     const rows = Object.entries(byCustomer).map(([cid, v]) => ({
       customer_id: cid,
       customer_name: v.customer_name,
-      total_invoiced: Math.round(v.total_invoiced * 100) / 100,
-      total_received: Math.round(v.total_received * 100) / 100,
-      total_pending: Math.round((v.total_invoiced - v.total_received) * 100) / 100,
-      invoice_count: v.invoice_count,
+      party_type: v.party_type,
+      total_invoiced: v.total_invoiced,
+      total_received: v.total_received,
+      total_pending: v.total_pending,
+      invoice_count: v.invoices.length,
+      invoices: v.invoices.sort((a, b) => b.invoice_date.localeCompare(a.invoice_date)),
     }));
-    const total_invoiced = rows.reduce((s, r) => s + r.total_invoiced, 0);
-    const total_received = rows.reduce((s, r) => s + r.total_received, 0);
-    const total_pending = rows.reduce((s, r) => s + r.total_pending, 0);
+    rows.sort((a, b) => b.total_pending - a.total_pending || a.customer_name.localeCompare(b.customer_name));
+    const total_invoiced = Math.round(rows.reduce((s, r) => s + r.total_invoiced, 0) * 100) / 100;
+    const total_received = Math.round(rows.reduce((s, r) => s + r.total_received, 0) * 100) / 100;
+    const total_pending = Math.round(rows.reduce((s, r) => s + r.total_pending, 0) * 100) / 100;
     return {
       customer_id: customer_id ?? null,
       summary: { total_invoiced, total_received, total_pending },

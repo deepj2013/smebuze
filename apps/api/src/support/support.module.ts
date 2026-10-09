@@ -1,0 +1,15 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Tenant } from '../tenant/entities/tenant.entity';
+import { User } from '../auth/entities/user.entity';
+import { PlatformSupportTicket } from './entities/platform-support-ticket.entity';
+import { SupportService } from './support.service';
+import { SupportController } from './support.controller';
+
+@Module({
+  imports: [TypeOrmModule.forFeature([PlatformSupportTicket, Tenant, User])],
+  controllers: [SupportController],
+  providers: [SupportService],
+  exports: [SupportService],
+})
+export class SupportModule {}

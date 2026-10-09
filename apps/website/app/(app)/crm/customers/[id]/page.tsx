@@ -26,7 +26,7 @@ interface Customer360 {
     entity_type?: string;
     contacts?: ContactPerson[];
   };
-  last_invoices: { id: string; number: string; date: string; total: number; paid: number; status: string }[];
+  last_invoices: { id: string; number: string; date: string; total: number; paid: number; balance?: number; status: string; due_date?: string | null }[];
   follow_ups: { id: string; due_at: string; note: string | null; status: string }[];
 }
 
@@ -105,6 +105,7 @@ export default function Customer360Page() {
                 <th className="text-left p-3 font-medium text-slate-700">Date</th>
                 <th className="text-right p-3 font-medium text-slate-700">Total</th>
                 <th className="text-right p-3 font-medium text-slate-700">Paid</th>
+                <th className="text-right p-3 font-medium text-slate-700">Due</th>
                 <th className="text-left p-3 font-medium text-slate-700">Status</th>
                 <th className="p-3" />
               </tr>
@@ -116,7 +117,8 @@ export default function Customer360Page() {
                   <td className="p-3">{inv.date}</td>
                   <td className="p-3 text-right">₹{inv.total.toFixed(2)}</td>
                   <td className="p-3 text-right">₹{inv.paid.toFixed(2)}</td>
-                  <td className="p-3">{inv.status}</td>
+                  <td className="p-3 text-right">₹{Number(inv.balance ?? inv.total - inv.paid).toFixed(2)}</td>
+                  <td className="p-3 capitalize">{inv.status}</td>
                   <td className="p-3"><Link href={`/sales/invoices?id=${inv.id}`} className="text-brand-600 hover:underline">View</Link></td>
                 </tr>
               ))}

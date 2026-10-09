@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'crypto';
 import { ILike, In, Repository } from 'typeorm';
@@ -19,6 +19,7 @@ import { CLIENT_PACKS, getClientPack } from './client-packs';
 import { mergeChannelSettings, parseChannelSettings, publicChannelSettings } from './channel-settings';
 import { LEAD_SOURCES, normalizeLeadSource } from './lead-sources';
 import { PAYMENT_PROVIDERS, getPaymentProvider } from './payment-providers';
+import { LeadsGateway } from './leads.gateway';
 
 function slugify(input: string): string {
   return input
@@ -73,11 +74,31 @@ export class GrowthService {
     @InjectRepository(StorefrontSite) private readonly siteRepo: Repository<StorefrontSite>,
     @InjectRepository(LeadIngestEvent) private readonly ingestRepo: Repository<LeadIngestEvent>,
     @InjectRepository(PaymentGatewayAccount) private readonly gatewayRepo: Repository<PaymentGatewayAccount>,
+    @Optional() private readonly leadsGateway?: LeadsGateway,
   ) {}
 
   private assertTenant(ctx: TenantContext): string {
     if (!ctx.tenantId) throw new ForbiddenException('Tenant context required');
     return ctx.tenantId;
+  }
+
+  /** Empty features = all allowed (legacy live tenants). Explicit list must include lead_hub. */
+  private assertLeadHubEnabled(tenant: Tenant) {
+    const features = Array.isArray(tenant.features) ? tenant.features : [];
+    if (features.length > 0 && !features.includes('lead_hub')) {
+      throw new ForbiddenException('Lead hub is disabled for this workspace. Ask SMEBUZE admin to enable it.');
+    }
+    const hub = (tenant.settings?.lead_hub as { enabled?: boolean } | undefined) ?? {};
+    if (hub.enabled === false) {
+      throw new ForbiddenException('Lead hub is turned off for this workspace.');
+    }
+  }
+
+  private enabledLeadSources(tenant: Tenant): Array<{ id: string; label: string }> {
+    const cfg = (tenant.settings?.lead_hub as { sources?: string[] } | undefined) ?? {};
+    if (!Array.isArray(cfg.sources) || cfg.sources.length === 0) return LEAD_SOURCES.map((s) => ({ id: s.id, label: s.label }));
+    const allowed = new Set(cfg.sources);
+    return LEAD_SOURCES.filter((s) => allowed.has(s.id)).map((s) => ({ id: s.id, label: s.label }));
   }
 
   listPacks() {
@@ -287,6 +308,10 @@ export class GrowthService {
 
   async leadHub(ctx: TenantContext) {
     const tenantId = this.assertTenant(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    this.assertLeadHubEnabled(tenant);
+    const sources = this.enabledLeadSources(tenant);
     const raw = await this.ingestRepo
       .createQueryBuilder('e')
       .select('e.source', 'source')
@@ -301,10 +326,78 @@ export class GrowthService {
       take: 50,
     });
     return {
-      sources: LEAD_SOURCES.map((s) => ({ ...s, count: bySource[s.id] ?? 0 })),
+      lead_hub_enabled: true,
+      live: true,
+      sources: sources.map((s) => ({ ...s, count: bySource[s.id] ?? 0 })),
+      all_sources: LEAD_SOURCES,
       total: raw.reduce((n, r) => n + Number(r.count), 0),
       recent,
     };
+  }
+
+  async getLeadHubSettings(ctx: TenantContext) {
+    const tenantId = this.assertTenant(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const features = Array.isArray(tenant.features) ? tenant.features : [];
+    const hub = (tenant.settings?.lead_hub as { enabled?: boolean; sources?: string[] } | undefined) ?? {};
+    return {
+      feature_on_plan: features.length === 0 || features.includes('lead_hub'),
+      enabled: hub.enabled !== false && (features.length === 0 || features.includes('lead_hub')),
+      sources: hub.sources ?? LEAD_SOURCES.map((s) => s.id),
+      available: LEAD_SOURCES,
+    };
+  }
+
+  async saveLeadHubSettings(
+    ctx: TenantContext,
+    body: { enabled?: boolean; sources?: string[] },
+  ) {
+    const tenantId = this.assertTenant(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const prev = (tenant.settings?.lead_hub as Record<string, unknown>) ?? {};
+    const sources = Array.isArray(body.sources)
+      ? body.sources.filter((id) => LEAD_SOURCES.some((s) => s.id === id))
+      : (prev.sources as string[]) || LEAD_SOURCES.map((s) => s.id);
+    tenant.settings = {
+      ...(tenant.settings ?? {}),
+      lead_hub: {
+        ...prev,
+        enabled: body.enabled !== false,
+        sources,
+      },
+    };
+    await this.tenantRepo.save(tenant);
+    return this.getLeadHubSettings(ctx);
+  }
+
+  /** Super-admin: toggle lead_hub feature flag on a tenant without wiping other features. */
+  async adminSetLeadHub(ctx: TenantContext, tenantId: string, enabled: boolean) {
+    if (!ctx.isSuperAdmin) throw new ForbiddenException('Platform admin only');
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    let features = Array.isArray(tenant.features) ? [...tenant.features] : [];
+    if (features.length === 0 && enabled) {
+      // leave empty = all features (enabled)
+    } else if (enabled && !features.includes('lead_hub')) {
+      if (features.length === 0) {
+        features = ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'lead_hub'];
+      } else {
+        features.push('lead_hub');
+      }
+    } else if (!enabled) {
+      if (features.length === 0) {
+        features = ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports'];
+      } else {
+        features = features.filter((f) => f !== 'lead_hub');
+      }
+    }
+    tenant.features = features;
+    const hub = (tenant.settings?.lead_hub as Record<string, unknown>) ?? {};
+    tenant.settings = { ...(tenant.settings ?? {}), lead_hub: { ...hub, enabled } };
+    await this.tenantRepo.save(tenant);
+    return { id: tenant.id, slug: tenant.slug, features: tenant.features, lead_hub: tenant.settings.lead_hub };
   }
 
   async applyPack(ctx: TenantContext, type: string, opts?: { force?: boolean; list_existing_items?: boolean }) {
@@ -677,6 +770,12 @@ export class GrowthService {
     tenant: Tenant,
     input: { source: string; name: string; phone?: string; email?: string; message?: string; metadata?: Record<string, unknown> },
   ) {
+    this.assertLeadHubEnabled(tenant);
+    const allowed: string[] = this.enabledLeadSources(tenant).map((s) => s.id);
+    const source = normalizeLeadSource(input.source);
+    if (!allowed.includes(source)) {
+      throw new BadRequestException(`Lead source "${source}" is not enabled for this workspace`);
+    }
     const phone = input.phone ? String(input.phone).replace(/\D/g, '').slice(-10) : null;
     let lead: Lead | null = null;
     if (phone && phone.length === 10) {
@@ -692,22 +791,22 @@ export class GrowthService {
           name: input.name,
           phone,
           email: input.email?.trim() || null,
-          source: input.source,
+          source,
           stage: 'new',
           deal_stage: 'lead',
-          tags: [input.source],
+          tags: [source],
           metadata: input.metadata ?? {},
         }),
       );
     } else {
-      lead.source = input.source;
+      lead.source = source;
       if (input.email && !lead.email) lead.email = input.email;
       await this.leadRepo.save(lead);
     }
     const event = await this.ingestRepo.save(
       this.ingestRepo.create({
         tenant_id: tenant.id,
-        source: input.source,
+        source,
         name: input.name,
         email: input.email?.trim() || null,
         phone,
@@ -716,6 +815,21 @@ export class GrowthService {
         lead_id: lead.id,
       }),
     );
+    try {
+      this.leadsGateway?.emitLeadIngest({
+        tenant_id: tenant.id,
+        event_id: event.id,
+        lead_id: lead.id,
+        source,
+        name: input.name,
+        phone,
+        email: input.email?.trim() || null,
+        message: input.message ?? null,
+        created_at: event.created_at?.toISOString?.() || new Date().toISOString(),
+      });
+    } catch {
+      /* live feed is best-effort */
+    }
     return { ok: true, lead_id: lead.id, event_id: event.id };
   }
 

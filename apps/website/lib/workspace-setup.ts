@@ -7,13 +7,14 @@ export const WORKSPACE_MODULE_OPTIONS = [
   { id: 'purchase', label: 'Purchase & vendors', blurb: 'Buy stock, purchase orders and payables.' },
   { id: 'accounting', label: 'Accounts', blurb: 'Journal, GST and books.' },
   { id: 'reports', label: 'Reports', blurb: 'Sales, stock, ageing and day close.' },
-  { id: 'hr', label: 'HR', blurb: 'Employees (optional).' },
+  { id: 'hr', label: 'Staff & Payroll', blurb: 'Employees, attendance, leaves and salary slips (owner only).' },
+  { id: 'transport', label: 'Fleet & Trips', blurb: 'Vehicles, document renewals, trip register and freight profit.' },
   { id: 'service', label: 'Service', blurb: 'Tickets and AMC (optional).' },
 ] as const;
 
 export type WorkspaceModuleId = (typeof WORKSPACE_MODULE_OPTIONS)[number]['id'];
 
-const ALWAYS_ON = ['organization', 'onboarding', 'help', 'dashboard'] as const;
+const ALWAYS_ON = ['organization', 'onboarding', 'help', 'dashboard', 'hr'] as const;
 
 export type LoginLikePayload = {
   user?: { isSuperAdmin?: boolean; tenantId?: string | null };
@@ -80,9 +81,13 @@ export function defaultModulesForShop(type: string): string[] {
   if (type === 'services' || type === 'coaching' || type === 'hotel') {
     return ['crm', 'sales', 'accounting', 'reports'];
   }
+  // Transporter / fleet desk
+  if (type === 'transport') {
+    return ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'hr', 'transport'];
+  }
   // Ice vertical
   if (type === 'ice_crest') {
-    return ['crm', 'sales', 'inventory', 'reports'];
+    return ['crm', 'sales', 'inventory', 'reports', 'hr'];
   }
   // Trading / manufacturing / HORECA wholesale — full desk
   return ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports'];

@@ -49,7 +49,8 @@ export default function NewDebitNotePage() {
       purchase_order_id: poId,
       note_date: noteDate,
       amount: amt,
-      reason: reason || undefined,
+      reason_code: 'purchase_return',
+      reason: reason || 'Purchase return',
     };
     const { error: err } = await apiPost('purchase/debit-notes', body);
     setLoading(false);
@@ -79,7 +80,7 @@ export default function NewDebitNotePage() {
           <input type="date" value={noteDate} onChange={(e) => setNoteDate(e.target.value)} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Amount * (reduces payable / link to vendor ledger)</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Amount *</label>
           <input type="text" inputMode="decimal" min={0} value={amount} onChange={(e) => setAmount(limitDecimalPlaces(e.target.value))} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm" placeholder="0.00" />
           {selectedPo && <p className="text-xs text-slate-500 mt-0.5">PO total: ₹{Number(selectedPo.total).toFixed(2)}</p>}
         </div>

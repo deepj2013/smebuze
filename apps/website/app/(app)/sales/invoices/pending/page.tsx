@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
 import { limitDecimalPlaces } from '@/lib/money';
+import { invoiceStanding, isOverdue, standingClass, standingLabel } from '@/lib/invoice-standing';
 
 interface PendingRow {
   id: string;
@@ -13,7 +14,9 @@ interface PendingRow {
   vendor?: { name?: string } | null;
   total: string | number;
   paid_amount?: string | number;
-  due_date?: string;
+  due_date?: string | null;
+  balance_due?: string | number;
+  payment_status?: string;
 }
 
 export default function PendingReceivablesPage() {
@@ -68,12 +71,18 @@ export default function PendingReceivablesPage() {
   };
 
   const getBuyer = (row: PendingRow) => row.buyer ?? row.customer?.name ?? row.vendor?.name ?? '—';
-  const getDue = (row: PendingRow) => Number(row.total) - Number(row.paid_amount ?? 0);
+  const getDue = (row: PendingRow) => invoiceStanding(row).balance;
 
   return (
     <div>
       <Link href="/sales/invoices" className="text-sm text-slate-600 hover:text-slate-900 mb-4 inline-block">← Invoices</Link>
-      <h1 className="text-2xl font-bold text-slate-900 mb-4">Pending receivables</h1>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Pending receivables</h1>
+          <p className="mt-1 text-sm text-slate-600">Unpaid and partly paid invoices, earliest due date first. A credit note lowers the due amount. A debit note raises it.</p>
+        </div>
+        <Link href="/sales/invoices/parties" className="text-sm text-brand-700 hover:underline">Party-wise</Link>
+      </div>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
       {loading && <p className="text-slate-600">Loading…</p>}
       {!loading && (
@@ -83,7 +92,9 @@ export default function PendingReceivablesPage() {
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="text-left p-3 font-medium text-slate-700">Invoice</th>
-                <th className="text-left p-3 font-medium text-slate-700">Buyer</th>
+                <th className="text-left p-3 font-medium text-slate-700">Party</th>
+                <th className="text-left p-3 font-medium text-slate-700">Due date</th>
+                <th className="text-left p-3 font-medium text-slate-700">Status</th>
                 <th className="text-right p-3 font-medium text-slate-700">Total</th>
                 <th className="text-right p-3 font-medium text-slate-700">Paid</th>
                 <th className="text-right p-3 font-medium text-slate-700">Due</th>
@@ -92,12 +103,17 @@ export default function PendingReceivablesPage() {
             </thead>
             <tbody>
               {list.length === 0 ? (
-                <tr><td colSpan={6} className="p-4 text-slate-500">No pending receivables.</td></tr>
+                <tr><td colSpan={8} className="p-4 text-slate-500">No pending receivables.</td></tr>
               ) : (
                 list.map((row) => (
                   <tr key={row.id} className="border-b border-slate-100 last:border-0">
                     <td className="p-3">{row.number}</td>
                     <td className="p-3">{getBuyer(row)}</td>
+                    <td className={`p-3 ${isOverdue(row.due_date, invoiceStanding(row).status) ? 'font-medium text-red-700' : ''}`}>
+                      {row.due_date ? String(row.due_date).slice(0, 10) : '—'}
+                      {isOverdue(row.due_date, invoiceStanding(row).status) ? ' overdue' : ''}
+                    </td>
+                    <td className="p-3"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${standingClass(invoiceStanding(row).status)}`}>{standingLabel(invoiceStanding(row).status)}</span></td>
                     <td className="p-3 text-right">₹{Number(row.total).toFixed(2)}</td>
                     <td className="p-3 text-right">₹{Number(row.paid_amount ?? 0).toFixed(2)}</td>
                     <td className="p-3 text-right text-amber-700">₹{getDue(row).toFixed(2)}</td>

@@ -41,6 +41,7 @@ export default function DashboardPage() {
   const [onboarding, setOnboarding] = useState<OnboardingChecklist | null>(null);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [shopType, setShopType] = useState<string>('trading');
+  const [renewals, setRenewals] = useState<Array<{ registration_no?: string; doc_type: string; days_left: number; urgency: string; expires_on: string }>>([]);
 
   useEffect(() => {
     (async () => {
@@ -60,6 +61,11 @@ export default function DashboardPage() {
       .then((d) => {
         const t = d?.tenant?.settings?.business_type;
         if (typeof t === 'string' && t) setShopType(t);
+        if (t === 'transport') {
+          void apiGet<typeof renewals>('transport/renewals?within_days=45').then((r) => {
+            if (Array.isArray(r.data)) setRenewals(r.data.slice(0, 5));
+          });
+        }
       })
       .catch(() => undefined);
   }, []);
@@ -102,7 +108,32 @@ export default function DashboardPage() {
             Open billing counter
           </Link>
         )}
+        {shopType === 'transport' && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link href="/transport/trips" className="inline-flex rounded-xl bg-white/15 px-3 py-2 text-sm font-medium hover:bg-white/25">Add trip</Link>
+            <Link href="/transport/vehicles" className="inline-flex rounded-xl bg-white/15 px-3 py-2 text-sm font-medium hover:bg-white/25">Vehicles</Link>
+            <Link href="/transport/renewals" className="inline-flex rounded-xl bg-white/15 px-3 py-2 text-sm font-medium hover:bg-white/25">Renewals</Link>
+            <Link href="/hr/payroll" className="inline-flex rounded-xl bg-white/15 px-3 py-2 text-sm font-medium hover:bg-white/25">Driver payroll</Link>
+          </div>
+        )}
       </section>
+
+      {shopType === 'transport' && renewals.length > 0 && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-semibold text-amber-950">Document renewals due</h2>
+            <Link href="/transport/renewals" className="text-sm text-amber-900 underline">View all</Link>
+          </div>
+          <ul className="mt-2 space-y-1 text-sm text-amber-950">
+            {renewals.map((r, i) => (
+              <li key={i}>
+                <strong>{r.registration_no}</strong> · {r.doc_type} · {r.expires_on}
+                {' '}({r.days_left < 0 ? `expired ${Math.abs(r.days_left)}d` : `${r.days_left}d left`})
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {showOnboardingCard && (
         <div className="mb-6 rounded-xl border border-brand-200 bg-brand-50/50 p-4">

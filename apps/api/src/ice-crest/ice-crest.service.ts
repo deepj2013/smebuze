@@ -52,7 +52,7 @@ export class IceCrestService {
     return tenant;
   }
 
-  async createExpense(body: { company_id?: string; entry_type?: string; expense_number?: string; vendor_id?: string; employee_name?: string; category: string; nature?: string; hsn_sac?: string; itc_eligible?: boolean; taxable_amount?: number; gst_rate?: number; tds_amount?: number; amount?: number; paid_amount?: number; expense_date: string; due_date?: string; description?: string; payment_mode?: string; reference?: string; invoice_number?: string; attachment_url?: string }, ctx: TenantContext) {
+  async createExpense(body: { company_id?: string; entry_type?: string; expense_number?: string; vendor_id?: string; employee_name?: string; category: string; subcategory?: string; nature?: string; hsn_sac?: string; itc_eligible?: boolean; taxable_amount?: number; gst_rate?: number; tds_amount?: number; amount?: number; paid_amount?: number; expense_date: string; due_date?: string; description?: string; payment_mode?: string; reference?: string; invoice_number?: string; attachment_url?: string }, ctx: TenantContext) {
     const tenantId = this.tenantId(ctx); await this.assertIceCrest(tenantId);
     if (!ICE_CREST_EXPENSE_CATEGORIES.includes(body.category)) throw new ForbiddenException('Invalid expense category');
     const entryType=body.entry_type??'operating_expense';if(!ICE_CREST_ENTRY_TYPES.includes(entryType))throw new ForbiddenException('Invalid expense entry type');
@@ -74,7 +74,9 @@ export class IceCrestService {
     const companyId = body.company_id ?? ctx.companyId ?? (await this.dataSource.getRepository(Company).findOne({ where: { tenant_id: tenantId } }))?.id ?? null;
     const saved = await this.expenseRepo.save(this.expenseRepo.create({
       tenant_id: tenantId, company_id: companyId, entry_type:entryType,expense_number:body.expense_number?.trim()||`EXP-${Date.now()}`,
-      vendor_id:body.vendor_id??null,employee_name:body.employee_name?.trim()||null,category: body.category, nature, hsn_sac: body.hsn_sac?.trim() || null, itc_eligible: itcEligible,
+      vendor_id:body.vendor_id??null,employee_name:body.employee_name?.trim()||null,category: body.category,
+      subcategory: body.subcategory?.trim() || null,
+      nature, hsn_sac: body.hsn_sac?.trim() || null, itc_eligible: itcEligible,
       taxable_amount:moneyStr(taxable),gst_rate:moneyStr(gstRate),gst_amount:moneyStr(gst),tds_amount:moneyStr(tds),
       amount: moneyStr(total),paid_amount:moneyStr(paid),status,due_date:dueDate, expense_date: expenseDate,
       description: body.description ?? null, payment_mode: body.payment_mode ?? null,

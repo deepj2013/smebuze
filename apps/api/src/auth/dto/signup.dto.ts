@@ -27,7 +27,7 @@ export class SignupDto {
   @IsIn(['basic', 'advanced', 'enterprise', 'ai_pro'])
   plan: string;
 
-  @IsIn(['monthly', 'quarterly', 'yearly'])
+  @IsIn(['quarterly', 'yearly', 'monthly'])
   interval: string;
 
   /** Optional: payment reference (e.g. Razorpay order_id) for verification */
@@ -44,4 +44,9 @@ export class SignupDto {
   @IsOptional()
   @IsIn([...SIGNUP_BUSINESS_TYPES, TENANT_CLIENT_TYPES.STANDARD])
   businessType?: string;
+
+  /** Optional: agency coupon or referral code from ?ref= */
+  @IsOptional()
+  @IsString()
+  referralCode?: string;
 }

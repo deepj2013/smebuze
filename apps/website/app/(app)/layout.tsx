@@ -54,7 +54,7 @@ import { applyWorkspaceThemeVars, resolveWorkspaceTheme } from '@/lib/variant-th
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-const MODULES = ['dashboard', 'onboarding', 'help', 'crm', 'sales', 'purchase', 'inventory', 'accounting', 'hr', 'service', 'organization', 'reports', 'bulk_upload'] as const;
+const MODULES = ['dashboard', 'onboarding', 'help', 'crm', 'sales', 'purchase', 'inventory', 'accounting', 'hr', 'service', 'transport', 'organization', 'reports', 'bulk_upload'] as const;
 
 const nav: Array<{
   label: string;
@@ -88,12 +88,14 @@ const nav: Array<{
     permission: 'sales.invoice.view',
     children: [
       { label: 'Invoices', href: '/sales/invoices', icon: Receipt, permission: 'sales.invoice.view' },
+      { label: 'Party-wise invoices', href: '/sales/invoices/parties', icon: Receipt, permission: 'sales.invoice.view' },
       { label: 'Pending receivables', href: '/sales/invoices/pending', icon: Receipt, permission: 'sales.invoice.view' },
       { label: 'Quotations', href: '/sales/quotations', icon: FileText, permission: 'sales.quotation.view' },
       { label: 'Sales orders', href: '/sales/orders', icon: FileText, permission: 'sales.order.view' },
       { label: 'Portal orders', href: '/sales/portal-orders', icon: Store, permission: 'sales.order.view' },
       { label: 'Delivery challans', href: '/sales/delivery-challans', icon: FileText, permission: 'sales.invoice.view' },
       { label: 'Credit notes', href: '/sales/credit-notes', icon: Receipt, permission: 'sales.invoice.view' },
+      { label: 'Debit notes', href: '/sales/debit-notes', icon: Receipt, permission: 'sales.invoice.view' },
       { label: 'Recurring invoices', href: '/sales/recurring-invoices', icon: FileText, permission: 'sales.invoice.view' },
     ],
   },
@@ -136,12 +138,27 @@ const nav: Array<{
     ],
   },
   {
-    label: 'HR',
+    label: 'Staff & Payroll',
     icon: Users,
     module: 'hr',
-    permission: 'org.company.view',
+    permission: 'org.company.update',
     children: [
-      { label: 'Employees', href: '/hr/employees', icon: Users, permission: 'org.company.view' },
+      { label: 'Employees', href: '/hr/employees', icon: Users, permission: 'org.company.update' },
+      { label: 'Attendance', href: '/hr/attendance', icon: Upload, permission: 'org.company.update' },
+      { label: 'Leaves', href: '/hr/leaves', icon: BookOpen, permission: 'org.company.update' },
+      { label: 'Payroll & slips', href: '/hr/payroll', icon: Receipt, permission: 'org.company.update' },
+    ],
+  },
+  {
+    label: 'Fleet & Trips',
+    icon: Truck,
+    module: 'transport',
+    permission: 'sales.invoice.view',
+    children: [
+      { label: 'Vehicles', href: '/transport/vehicles', icon: Truck, permission: 'sales.invoice.view' },
+      { label: 'Document renewals', href: '/transport/renewals', icon: FileCheck, permission: 'sales.invoice.view' },
+      { label: 'Trips', href: '/transport/trips', icon: ListOrdered, permission: 'sales.invoice.view' },
+      { label: 'Profit by vehicle / party', href: '/transport/profit', icon: BarChart3, permission: 'reports.view' },
     ],
   },
   {
@@ -166,23 +183,28 @@ const nav: Array<{
       { label: 'Departments', href: '/organization/departments', icon: Layers, permission: 'org.user.view' },
       { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
       { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+      { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
       { label: 'Public website', href: '/website', icon: Store, permission: 'org.company.update' },
       { label: 'Channels', href: '/organization/channels', icon: Wallet, permission: 'org.company.update' },
       { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
       { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
+      { label: 'Support to SMEBUZE', href: '/organization/support', icon: CircleHelp },
     ],
   },
   {
     label: 'Admin',
     icon: Settings,
     module: 'organization',
-    permission: 'admin.tenant.view',
     children: [
       { label: 'Tenants', href: '/admin/tenants', icon: Building2, permission: 'admin.tenant.view' },
       { label: 'Licences', href: '/admin/licenses', icon: KeyRound, permission: 'admin.tenant.view' },
+      { label: 'BDE pipeline', href: '/admin/bde', icon: UserPlus, permission: 'admin.bde.leads' },
+      { label: 'Partners & coupons', href: '/admin/partners', icon: Megaphone, permission: 'admin.partner.manage' },
+      { label: 'My referrals', href: '/admin/partner-portal', icon: Handshake, permission: 'admin.partner.mine' },
       { label: 'Pitch guide', href: '/admin/pitch', icon: Handshake, permission: 'admin.tenant.view' },
       { label: 'Storefronts & domains', href: '/admin/storefronts', icon: Store, permission: 'admin.tenant.view' },
-      { label: 'Tickets', href: '/admin/tickets', icon: Ticket, permission: 'admin.tenant.view' },
+      { label: 'Kitchen tickets', href: '/admin/tickets', icon: Ticket, permission: 'admin.tenant.view' },
+      { label: 'Support inbox', href: '/admin/support', icon: CircleHelp, permission: 'admin.tenant.view' },
     ],
   },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
@@ -213,6 +235,9 @@ const starIceNav: typeof nav = [
       { label: 'Requirement', href: '/sales/requirement', icon: ListOrdered, permission: 'sales.order.view' },
       { label: 'Delivery entry', href: '/sales/delivery-entry', icon: Truck, permission: 'sales.invoice.create' },
       { label: 'Invoices', href: '/sales/invoices', icon: Receipt, permission: 'sales.invoice.view' },
+      { label: 'Party-wise invoices', href: '/sales/invoices/parties', icon: Receipt, permission: 'sales.invoice.view' },
+      { label: 'Credit notes', href: '/sales/credit-notes', icon: Receipt, permission: 'sales.invoice.view' },
+      { label: 'Debit notes', href: '/sales/debit-notes', icon: Receipt, permission: 'sales.invoice.view' },
       { label: 'Consolidate bill', href: '/sales/consolidate-bill', icon: FileCheck, permission: 'sales.invoice.create' },
       { label: 'Payment', href: '/sales/payment', icon: Wallet, permission: 'sales.invoice.view' },
       { label: 'Delivery challans', href: '/sales/delivery-challans', icon: FileText, permission: 'sales.invoice.view' },
@@ -250,6 +275,7 @@ const starIceNav: typeof nav = [
       { label: 'Roles', href: '/organization/roles', icon: Layers, permission: 'org.role.manage' },
       { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
       { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+      { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
       { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
       { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
     ],
@@ -261,9 +287,6 @@ const starIceNav: typeof nav = [
 
 const iceCrestNav: typeof nav = [
   { label: 'Dashboard', href: '/ice-crest/dashboard', icon: LayoutDashboard, module: 'dashboard', permission: 'reports.view' },
-  { label: 'Getting started', href: '/ice-crest/tutorial', icon: Sparkles, module: 'dashboard', permission: 'reports.view' },
-  { label: 'Staff guide', href: '/ice-crest/guide', icon: BookOpen, module: 'dashboard', permission: 'reports.view' },
-  { label: 'WhatsApp', href: '/ice-crest/whatsapp', icon: Megaphone, module: 'crm', permission: 'org.company.update' },
   { label: 'CRM', icon: Users, module: 'crm', permission: 'crm.lead.view', children: [
     { label: 'Leads & enquiries', href: '/crm/leads', icon: UserPlus, permission: 'crm.lead.view' },
     { label: 'Customers', href: '/crm/customers', icon: Users, permission: 'crm.customer.view' },
@@ -275,6 +298,9 @@ const iceCrestNav: typeof nav = [
     { label: 'Quotations', href: '/sales/quotations', icon: FileText, permission: 'sales.quotation.view' },
     { label: 'Orders', href: '/sales/orders', icon: ShoppingCart, permission: 'sales.order.view' },
     { label: 'Invoices & receipts', href: '/sales/invoices', icon: Receipt, permission: 'sales.invoice.view' },
+    { label: 'Party-wise invoices', href: '/sales/invoices/parties', icon: Receipt, permission: 'sales.invoice.view' },
+    { label: 'Credit notes', href: '/sales/credit-notes', icon: Receipt, permission: 'sales.invoice.view' },
+    { label: 'Debit notes', href: '/sales/debit-notes', icon: Receipt, permission: 'sales.invoice.view' },
     { label: 'Payment tracking', href: '/sales/invoices/pending', icon: Wallet, permission: 'sales.invoice.view' },
     { label: 'Delivery', href: '/sales/delivery-challans', icon: Truck, permission: 'sales.invoice.view' },
   ]},
@@ -288,11 +314,27 @@ const iceCrestNav: typeof nav = [
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
+  { label: 'Getting started', href: '/ice-crest/tutorial', icon: Sparkles, module: 'dashboard', permission: 'reports.view' },
+  { label: 'Staff guide', href: '/ice-crest/guide', icon: BookOpen, module: 'dashboard', permission: 'reports.view' },
+  { label: 'WhatsApp', href: '/ice-crest/whatsapp', icon: Megaphone, module: 'crm', permission: 'org.company.update' },
+  {
+    label: 'Staff & Payroll',
+    icon: Users,
+    module: 'reports',
+    permission: 'org.company.update',
+    children: [
+      { label: 'Employees', href: '/hr/employees', icon: Users, permission: 'org.company.update' },
+      { label: 'Attendance', href: '/hr/attendance', icon: Upload, permission: 'org.company.update' },
+      { label: 'Leaves', href: '/hr/leaves', icon: BookOpen, permission: 'org.company.update' },
+      { label: 'Payroll & slips', href: '/hr/payroll', icon: Receipt, permission: 'org.company.update' },
+    ],
+  },
   { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
     { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
     { label: 'Users & roles', href: '/organization/users', icon: Users, permission: 'org.user.view' },
     { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
     { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+    { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
     { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
     { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
   ]},
@@ -305,6 +347,7 @@ const restaurantFloorNav: typeof nav = [
   { label: 'POS / Cashier', href: '/pos', icon: Store, module: 'sales', permission: 'sales.invoice.create' },
   { label: 'Restaurant admin', href: '/pos/floor', icon: LayoutDashboard, module: 'sales', permission: 'sales.order.view' },
   { label: 'Bills', href: '/sales/invoices', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Party-wise bills', href: '/sales/invoices/parties', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
@@ -314,6 +357,7 @@ const restaurantFloorNav: typeof nav = [
     { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
     { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
     { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+    { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
     { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
     { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
   ]},
@@ -324,6 +368,7 @@ const posNav: typeof nav = [
   { label: 'Billing counter', href: '/pos', icon: Store, module: 'sales', permission: 'sales.invoice.create' },
   { label: 'Manage shop', href: '/pos/manage', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Bills', href: '/sales/invoices', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Party-wise bills', href: '/sales/invoices/parties', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Categories', href: '/inventory/categories', icon: Layers, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Products', href: '/inventory/items', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Stock', href: '/inventory/stock', icon: Package, module: 'inventory', permission: 'inventory.stock.view' },
@@ -338,6 +383,7 @@ const posNav: typeof nav = [
     { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
     { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
     { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+    { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
     { label: 'Public website', href: '/website', icon: Store, permission: 'org.company.update' },
     { label: 'Channels', href: '/organization/channels', icon: Wallet, permission: 'org.company.update' },
     { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
@@ -414,6 +460,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     allowed_modules?: string[];
     email_verified?: boolean;
     isSuperAdmin?: boolean;
+    platformRole?: string | null;
     tenantId?: string | null;
     onboarding_completed_at?: string | null;
   } | null>(null);
@@ -454,6 +501,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (user?.isSuperAdmin && !visibleNav.some((i) => i.label === 'Admin')) {
     const adminItem = nav.find((i) => i.label === 'Admin');
     if (adminItem) visibleNav = [...visibleNav, adminItem];
+  }
+  const platformStaff =
+    Boolean(user?.platformRole) ||
+    (user?.permissions ?? []).some((p) => p.startsWith('admin.bde') || p.startsWith('admin.partner'));
+  if (platformStaff && !user?.isSuperAdmin && !visibleNav.some((i) => i.label === 'Admin')) {
+    const adminItem = nav.find((i) => i.label === 'Admin');
+    if (adminItem) {
+      const filtered = filterNavByAccess([adminItem], user?.permissions ?? [], undefined);
+      if (filtered.length) visibleNav = [...visibleNav, ...filtered];
+    }
   }
 
   useEffect(() => {
@@ -499,7 +556,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           return;
         }
         const u = d?.user ?? d;
-        if (u && u.email_verified === false && !u.isSuperAdmin) {
+        if (u && u.email_verified === false && !u.isSuperAdmin && !u.platformRole) {
           const em = encodeURIComponent(u.email || '');
           const slug = encodeURIComponent(d?.tenant?.slug || '');
           router.replace(`/verify-email?email=${em}&slug=${slug}`);
@@ -508,7 +565,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         setUser(u ? { ...u, permissions: u.permissions ?? [], allowed_modules: u.allowed_modules } : null);
         setTenant(d?.tenant ?? null);
         setReady(true);
-        if (d?.tenant?.subscription_expired && !u?.isSuperAdmin && pathname !== '/billing') {
+        if (d?.tenant?.subscription_expired && !u?.isSuperAdmin && !u?.platformRole && pathname !== '/billing') {
           router.replace('/billing');
           return;
         }
@@ -608,7 +665,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const paywalled = Boolean(tenant?.subscription_expired) && !user?.isSuperAdmin;
+  const paywalled = Boolean(tenant?.subscription_expired) && !user?.isSuperAdmin && !user?.platformRole;
   if (paywalled && pathname !== '/billing') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">

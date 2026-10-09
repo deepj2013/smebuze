@@ -100,6 +100,21 @@ export class GrowthController {
     return this.growth.leadHub(ctx);
   }
 
+  @Get('leads/settings')
+  @RequirePermissions('org.company.view')
+  leadSettings(@CurrentTenant() ctx: TenantContext) {
+    return this.growth.getLeadHubSettings(ctx);
+  }
+
+  @Patch('leads/settings')
+  @RequirePermissions('org.company.update')
+  saveLeadSettings(
+    @Body() body: { enabled?: boolean; sources?: string[] },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.growth.saveLeadHubSettings(ctx, body);
+  }
+
   @Post('leads/ingest')
   @RequirePermissions('crm.lead.create')
   ingestLead(

@@ -4,6 +4,38 @@ Use these agents to complete pending work in **auto mode** (no user input requir
 
 ---
 
+## SMEBUZE Business Analyst (CEO / Owner)
+
+**Trigger:** "run business analyst", "BA agent", "think like CEO", "owner audit", "sales pitch", "sales script", "USP", "product strategy".
+
+**Behavior:**
+1. Read **`docs/PRODUCT_AUDIT.md`**, **`docs/ROADMAP_CEO.md`**, **`docs/SALES_PITCH_AND_SCRIPTS.md`**.
+2. Think as **founder/owner**: cash, demos that close, partners, live-tenant safety.
+3. Separate **Sell today** vs **Build next** vs **Defer**. Prefer client packs over new products.
+4. Update pitch docs when asked; do not invent shipped features — verify the audit.
+
+**Skill:** `.cursor/skills/smebuze-business-analyst/SKILL.md`
+
+**Say:** "Run the business analyst" · "CEO audit" · "Update sales scripts"
+
+---
+
+## SMEBUZE Product Manager
+
+**Trigger:** "run product manager", "PM agent", "prioritize", "what to build next", "release plan", "feature audit", "roadmap", "backlog triage".
+
+**Behavior:**
+1. Read audit + CEO roadmap + TODO; rank Must / Should / Could / Won't.
+2. Every ask names buyer, demo path, tenant impact, plan tier.
+3. Append engineering work to **`docs/TODO.md`**; hand growth items to Product Owner agent.
+4. Never promise vision FEATURES as shipped without `PRODUCT_AUDIT.md`.
+
+**Skill:** `.cursor/skills/smebuze-product-manager/SKILL.md`
+
+**Say:** "Run the product manager" · "Prioritize next 90 days" · "Feature audit"
+
+---
+
 ## SMEBUZE Auto-Completion Agent
 
 **Trigger:** User says "complete all pending work", "run auto completion", "finish remaining tasks", or "execute SMEBUZE agent in auto mode".
@@ -20,7 +52,7 @@ Use these agents to complete pending work in **auto mode** (no user input requir
 4. **One phase at a time:** Complete all checkboxes in a section before moving on. Optionally update `docs/TODO.md` to mark items done.
 5. **Do not stop** to ask "which design?" or "should I add X?"—make a reasonable choice and proceed.
 
-**Skill:** When executing this agent, follow the instructions in **`.cursor/skills/smebuze-auto-complete/SKILL.md`** for the exact step-by-step workflow and file paths.
+**Skill:** When executing this agent, follow the instructions in **`.cursor/skills/smebuzz-auto-complete/SKILL.md`** for the exact step-by-step workflow and file paths.
 
 ---
 
@@ -44,14 +76,12 @@ Use these agents to complete pending work in **auto mode** (no user input requir
 
 ## How to run (no input needed)
 
-Say one of these in Cursor to start the agent in **auto mode**:
-
-- **"Complete all pending work"**
-- **"Run SMEBUZE auto completion"**
-- **"Execute the SMEBUZE agent in auto mode"**
-- **"Finish remaining tasks from TODO"**
-
-The AI will read `docs/TODO.md` and `.cursor/skills/smebuzz-auto-complete/SKILL.md`, then implement pending items in order **without asking for any input**. Use these phrases whenever you want remaining work built automatically.
+| Intent | Say |
+|--------|-----|
+| Strategy / pitch / owner audit | **"Run the business analyst"** |
+| Prioritize / release / backlog | **"Run the product manager"** |
+| Implement growth TODOs | **"Run the product owner agent"** |
+| Implement general TODO queue | **"Complete all pending work"** |
 
 ---
 
@@ -59,5 +89,15 @@ The AI will read `docs/TODO.md` and `.cursor/skills/smebuzz-auto-complete/SKILL.
 
 | Agent | Purpose |
 |-------|--------|
-| **SMEBUZE Auto-Completion Agent** | Implements pending items in `docs/TODO.md` in order, with no user input. |
-| **SMEBUZE Product Owner Agent** | Sequences growth-platform features (catalog, public site, domains, shared/private channels, lead hub, payment gateways, one-click client packs) and implements the next TODO. |
+| **Business Analyst (CEO)** | Owner audit, market bets, sales pitches/scripts, sell vs build. |
+| **Product Manager** | Prioritize features, release plan, feature briefs → TODO. |
+| **Product Owner** | Sequences and implements growth-platform TODOs. |
+| **Auto-Completion** | Implements pending items in `docs/TODO.md` in order. |
+
+## Strategy docs (start here)
+
+| Doc | Content |
+|-----|---------|
+| `docs/PRODUCT_AUDIT.md` | Full project audit — shipped vs partial |
+| `docs/ROADMAP_CEO.md` | 90-day bets, have vs build |
+| `docs/SALES_PITCH_AND_SCRIPTS.md` | Pitch + vertical demo scripts |

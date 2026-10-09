@@ -56,6 +56,11 @@ export class GstReturnsService {
       if (companyId && cn.company_id !== companyId) return false;
       return inPeriod(cn.note_date, from, to);
     });
+    const debitNotes = (await this.salesService.findSalesDebitNotes(ctx)).filter((dn) => {
+      if (dn.status === 'cancelled' || dn.status === 'void' || dn.status === 'draft') return false;
+      if (companyId && dn.company_id !== companyId) return false;
+      return inPeriod(dn.note_date, from, to);
+    });
 
     const b2b: Array<Record<string, unknown>> = [];
     const b2c: Array<Record<string, unknown>> = [];
@@ -100,13 +105,32 @@ export class GstReturnsService {
       }
     }
 
-    const cdnr = creditNotes.map((cn) => ({
-      note_number: cn.number,
-      note_date: new Date(cn.note_date).toISOString().slice(0, 10),
-      invoice_number: cn.invoice?.number ?? '',
-      amount: roundMoney(Number(cn.amount)),
-      reason: cn.reason ?? '',
-    }));
+    const cdnr = [
+      ...creditNotes.map((cn) => ({
+        note_type: 'Credit',
+        note_number: cn.number,
+        note_date: new Date(cn.note_date).toISOString().slice(0, 10),
+        invoice_number: cn.invoice?.number ?? '',
+        amount: roundMoney(Number(cn.amount)),
+        taxable_value: roundMoney(Number(cn.taxable_amount ?? 0)),
+        cgst: roundMoney(Number(cn.cgst_amount ?? 0)),
+        sgst: roundMoney(Number(cn.sgst_amount ?? 0)),
+        igst: roundMoney(Number(cn.igst_amount ?? 0)),
+        reason: cn.reason ?? '',
+      })),
+      ...debitNotes.map((dn) => ({
+        note_type: 'Debit',
+        note_number: dn.number,
+        note_date: new Date(dn.note_date).toISOString().slice(0, 10),
+        invoice_number: dn.invoice?.number ?? '',
+        amount: roundMoney(Number(dn.amount)),
+        taxable_value: roundMoney(Number(dn.taxable_amount ?? 0)),
+        cgst: roundMoney(Number(dn.cgst_amount ?? 0)),
+        sgst: roundMoney(Number(dn.sgst_amount ?? 0)),
+        igst: roundMoney(Number(dn.igst_amount ?? 0)),
+        reason: dn.reason ?? '',
+      })),
+    ];
 
     return {
       period,
@@ -116,17 +140,20 @@ export class GstReturnsService {
         invoice_count: invoices.length,
         b2b_count: b2b.length,
         b2c_count: b2c.length,
-        credit_note_count: cdnr.length,
+        credit_note_count: creditNotes.length,
+        debit_note_count: debitNotes.length,
         taxable_value: roundMoney(taxable),
         cgst: roundMoney(cgst),
         sgst: roundMoney(sgst),
         igst: roundMoney(igst),
         invoice_value: roundMoney(invoices.reduce((s, i) => s + Number(i.total), 0)),
-        credit_note_value: roundMoney(cdnr.reduce((s, r) => s + r.amount, 0)),
+        credit_note_value: roundMoney(creditNotes.reduce((s, r) => s + Number(r.amount), 0)),
+        debit_note_value: roundMoney(debitNotes.reduce((s, r) => s + Number(r.amount), 0)),
       },
       documents: [
         { nature: 'Invoices', count: invoices.length, cancelled: 0 },
-        { nature: 'Credit notes', count: cdnr.length, cancelled: 0 },
+        { nature: 'Credit notes', count: creditNotes.length, cancelled: 0 },
+        { nature: 'Debit notes', count: debitNotes.length, cancelled: 0 },
       ],
       b2b,
       b2c,
@@ -147,7 +174,7 @@ export class GstReturnsService {
       'Section,GSTIN,Party,Doc No,Date,Taxable,CGST,SGST,IGST,Value,POS',
       ...data.b2b.map((r) => `B2B,${r.gstin},${csv(String(r.customer))},${r.invoice_number},${r.invoice_date},${r.taxable_value},${r.cgst},${r.sgst},${r.igst},${r.invoice_value},${r.place_of_supply}`),
       ...data.b2c.map((r) => `B2C,,${csv(String(r.customer))},${r.invoice_number},${r.invoice_date},${r.taxable_value},${r.cgst},${r.sgst},${r.igst},${r.invoice_value},${r.place_of_supply}`),
-      ...data.cdnr.map((r) => `CDNR,,${csv(r.reason)},${r.note_number},${r.note_date},,,,,${r.amount},`),
+      ...data.cdnr.map((r) => `CDNR,,${csv(`${r.note_type}: ${r.reason}`)},${r.note_number},${r.note_date},${r.taxable_value},${r.cgst},${r.sgst},${r.igst},${r.amount},`),
       '',
       'HSN,Qty,Taxable,CGST,SGST,IGST',
       ...data.hsn.map((r) => `${r.hsn_sac},${r.qty},${r.taxable},${r.cgst},${r.sgst},${r.igst}`),

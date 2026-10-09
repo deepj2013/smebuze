@@ -6,11 +6,26 @@ import { limitDecimalPlaces, round2 } from '@/lib/money';
 
 type Vendor = { id: string; name: string; gstin?: string | null };
 type Expense = {
-  id: string; expense_number?: string; entry_type: string; category: string; nature?: string;
+  id: string; expense_number?: string; entry_type: string; category: string; subcategory?: string | null; nature?: string;
   amount: string; paid_amount: string; tds_amount: string; status: string; expense_date: string;
   description?: string; employee_name?: string; invoice_number?: string; journal_entry_id?: string | null;
 };
 const categories = ['Purchase / raw material', 'Salary', 'Daily wages', 'Contract labour', 'Transport', 'Fuel', 'Electricity', 'Water', 'Rent', 'Repairs & maintenance', 'Plastic/packaging charges', 'Machinery / equipment', 'Marketing', 'Professional fees', 'Bank charges', 'Taxes & licences', 'Miscellaneous', 'Other operational expenses'];
+const SUBCATEGORY_SUGGESTIONS: Record<string, string[]> = {
+  Salary: ['Monthly payroll', 'Basic salary', 'HRA', 'Overtime', 'Bonus / incentive', 'Employer PF', 'Employer ESI', 'Advance salary'],
+  'Daily wages': ['Daily wages', 'Overtime wages', 'Sunday / holiday wages'],
+  'Contract labour': ['Contractor invoice', 'Contract wages'],
+  'Purchase / raw material': ['Raw material', 'Packaging', 'Consumables'],
+  Transport: ['Local delivery', 'Outstation freight', 'Staff conveyance'],
+  Fuel: ['Diesel', 'Petrol', 'Generator fuel'],
+  Electricity: ['Factory power', 'Office electricity'],
+  Rent: ['Shop rent', 'Godown rent', 'Office rent'],
+  Marketing: ['Ads', 'Print material', 'Social media'],
+  'Professional fees': ['CA / audit', 'Legal', 'Software subscription'],
+  'Bank charges': ['NEFT / IMPS', 'Loan interest', 'Card charges'],
+  'Taxes & licences': ['GST payment', 'TDS', 'Trade licence'],
+  Miscellaneous: ['Staff welfare', 'Courier', 'Misc. cash'],
+};
 const natures = [
   ['production', 'Production / productivity'],
   ['operations', 'Operations'],
@@ -31,7 +46,7 @@ const natureFor = (category: string, entryType: string) => {
   return 'operations';
 };
 const blank = () => ({
-  entry_type: 'operating_expense', category: 'Miscellaneous', nature: 'admin', vendor_id: '', employee_name: '',
+  entry_type: 'operating_expense', category: 'Miscellaneous', subcategory: '', nature: 'admin', vendor_id: '', employee_name: '',
   taxable_amount: '', gst_rate: '0', tds_amount: '0', paid_amount: '0', expense_date: new Date().toISOString().slice(0, 10),
   due_date: '', invoice_number: '', hsn_sac: '', itc_eligible: false, description: '', payment_mode: 'Cash', reference: '',
 });
@@ -63,7 +78,7 @@ export default function Expenses() {
   useEffect(() => { void apiGet<Vendor[]>('purchase/vendors').then((r) => setVendors(r.data || [])); }, []);
   function changeType(v: string) {
     const category = v === 'purchase' ? 'Purchase / raw material' : v === 'wage' ? 'Daily wages' : v === 'salary' ? 'Salary' : v === 'asset_purchase' ? 'Machinery / equipment' : v === 'statutory_payment' ? 'Taxes & licences' : 'Miscellaneous';
-    setForm({ ...form, entry_type: v, category, nature: natureFor(category, v), vendor_id: '', employee_name: '', itc_eligible: v === 'purchase' });
+    setForm({ ...form, entry_type: v, category, subcategory: v === 'salary' ? 'Monthly payroll' : '', nature: natureFor(category, v), vendor_id: '', employee_name: '', itc_eligible: v === 'purchase' });
   }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -104,6 +119,7 @@ export default function Expenses() {
           Book costs by purpose (production, operations, selling, admin). GST vendor bills with a GSTIN flow into GSTR-2A recon and a journal is posted so the books stay complete.
         </p>
         <div className="mt-2 flex flex-wrap gap-3 text-sm">
+          <Link href="/hr/payroll" className="text-cyan-700">Staff payroll →</Link>
           <Link href="/reports/gstr-2a" className="text-cyan-700">GSTR-2A recon →</Link>
           <Link href="/reports/gstr-1" className="text-cyan-700">GSTR-1 from sales →</Link>
           <Link href="/accounting/journal" className="text-cyan-700">Journal →</Link>
@@ -112,7 +128,13 @@ export default function Expenses() {
       {msg && <p className="rounded bg-cyan-50 p-3 text-sm text-cyan-800">{msg}</p>}
       <form onSubmit={submit} className="grid gap-4 rounded-xl border bg-white p-5 sm:grid-cols-2 lg:grid-cols-4">
         <label className="text-sm">Entry type<select value={form.entry_type} onChange={(e) => changeType(e.target.value)} className={input}>{types.map((x) => <option key={x[0]} value={x[0]}>{x[1]}</option>)}</select></label>
-        <label className="text-sm">Category<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value, nature: natureFor(e.target.value, form.entry_type) })} className={input}>{categories.map((c) => <option key={c}>{c}</option>)}</select></label>
+        <label className="text-sm">Category<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value, subcategory: '', nature: natureFor(e.target.value, form.entry_type) })} className={input}>{categories.map((c) => <option key={c}>{c}</option>)}</select></label>
+        <label className="text-sm">Subcategory
+          <input list="expense-subcats" value={form.subcategory} onChange={(e) => setForm({ ...form, subcategory: e.target.value })} className={input} placeholder="Optional — pick a suggestion" />
+          <datalist id="expense-subcats">
+            {(SUBCATEGORY_SUGGESTIONS[form.category] || []).map((s) => <option key={s} value={s} />)}
+          </datalist>
+        </label>
         <label className="text-sm">Purpose / nature<select value={form.nature} onChange={(e) => setForm({ ...form, nature: e.target.value })} className={input}>{natures.map((n) => <option key={n[0]} value={n[0]}>{n[1]}</option>)}</select></label>
         {form.entry_type === 'purchase' && (
           <label className="text-sm">Vendor *<select required value={form.vendor_id} onChange={(e) => setForm({ ...form, vendor_id: e.target.value })} className={input}><option value="">Select vendor</option>{vendors.map((v) => <option key={v.id} value={v.id}>{v.name}{v.gstin ? ` · ${v.gstin}` : ''}</option>)}</select></label>
@@ -168,7 +190,7 @@ export default function Expenses() {
                 return (
                   <tr key={x.id} className="border-b">
                     <td className="py-2">{String(x.expense_date).slice(0, 10)}<br /><span className="text-xs">{x.expense_number}</span></td>
-                    <td>{types.find((t) => t[0] === x.entry_type)?.[1] || x.entry_type}<br /><span className="text-xs text-slate-500">{natures.find((n) => n[0] === x.nature)?.[1] || x.category}</span></td>
+                    <td>{types.find((t) => t[0] === x.entry_type)?.[1] || x.entry_type}<br /><span className="text-xs text-slate-500">{natures.find((n) => n[0] === x.nature)?.[1] || x.category}{x.subcategory ? ` · ${x.subcategory}` : ''}</span></td>
                     <td>{x.employee_name || x.description || x.invoice_number || '—'}</td>
                     <td className="capitalize">{x.status}{x.journal_entry_id ? <span className="block text-xs text-emerald-700">In books</span> : null}</td>
                     <td className="text-right font-semibold">₹{Number(x.amount).toFixed(2)}</td>

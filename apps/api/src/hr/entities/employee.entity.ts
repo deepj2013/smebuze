@@ -50,6 +50,30 @@ export class Employee {
   @Column('date', { nullable: true })
   joining_date: Date | null;
 
+  @Column('decimal', { precision: 18, scale: 2, default: 0 })
+  basic_salary: string;
+
+  @Column({ type: 'varchar', length: 20, default: 'monthly' })
+  pay_cycle: string;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  bank_account: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  bank_ifsc: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  pan: string | null;
+
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  uan: string | null;
+
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  esi_number: string | null;
+
+  @Column({ type: 'int', default: 26 })
+  working_days_per_month: number;
+
   @Column({ default: true })
   is_active: boolean;
 

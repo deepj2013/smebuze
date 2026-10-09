@@ -46,6 +46,10 @@ export class User {
   @Column({ default: false })
   is_super_admin: boolean;
 
+  /** Platform staff: bde | partner. Tenant users leave null. Super admin uses is_super_admin. */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  platform_role: string | null;
+
   @Column('uuid', { nullable: true })
   default_company_id: string | null;
 

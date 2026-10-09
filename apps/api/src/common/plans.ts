@@ -28,6 +28,9 @@ export const INTERVAL_MONTHS: Record<string, number> = {
 /** Extra off when paying 12 months upfront, applied on the discounted monthly. */
 export const YEARLY_DISCOUNT_PERCENT = 15;
 
+/** Smallest package sold on signup / renew UI (monthly kept for legacy workspaces). */
+export const MIN_PACKAGE_INTERVAL = 'quarterly';
+
 export type PlanQuote = {
   list_rupees: number;
   amount_rupees: number;

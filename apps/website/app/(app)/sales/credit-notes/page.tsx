@@ -10,7 +10,8 @@ interface CreditNote {
   note_date: string;
   amount: string | number;
   status: string;
-  invoice?: { id: string; number: string } | null;
+  reason?: string | null;
+  invoice?: { id: string; number: string; customer?: { name: string } | null; vendor?: { name: string } | null } | null;
 }
 
 export default function CreditNotesPage() {
@@ -44,22 +45,26 @@ export default function CreditNotesPage() {
               <tr>
                 <th className="text-left p-3 font-medium text-slate-700">Number</th>
                 <th className="text-left p-3 font-medium text-slate-700">Invoice</th>
+                <th className="text-left p-3 font-medium text-slate-700">Party</th>
                 <th className="text-left p-3 font-medium text-slate-700">Date</th>
+                <th className="text-left p-3 font-medium text-slate-700">Reason</th>
                 <th className="text-right p-3 font-medium text-slate-700">Amount</th>
                 <th className="text-left p-3 font-medium text-slate-700">Status</th>
               </tr>
             </thead>
             <tbody>
               {list.length === 0 ? (
-                <tr><td colSpan={5} className="p-4 text-slate-500">No credit notes yet.</td></tr>
+                <tr><td colSpan={7} className="p-4 text-slate-500">No credit notes yet.</td></tr>
               ) : (
                 list.map((cn) => (
                   <tr key={cn.id} className="border-b border-slate-100 last:border-0">
                     <td className="p-3">{cn.number}</td>
                     <td className="p-3">
-                      {cn.invoice ? <Link href={`/sales/invoices/${cn.invoice.id}`} className="text-brand-600 hover:underline">{cn.invoice.number}</Link> : '—'}
+                      {cn.invoice ? <Link href={`/sales/invoices/${cn.invoice.id}/edit`} className="text-brand-600 hover:underline">{cn.invoice.number}</Link> : '—'}
                     </td>
+                    <td className="p-3">{cn.invoice?.customer?.name ?? cn.invoice?.vendor?.name ?? '—'}</td>
                     <td className="p-3">{typeof cn.note_date === 'string' ? cn.note_date.slice(0, 10) : '—'}</td>
+                    <td className="p-3">{cn.reason || '—'}</td>
                     <td className="p-3 text-right">₹{Number(cn.amount).toFixed(2)}</td>
                     <td className="p-3 capitalize">{cn.status}</td>
                   </tr>

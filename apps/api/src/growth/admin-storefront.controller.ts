@@ -43,4 +43,14 @@ export class AdminStorefrontController {
   ) {
     return this.growth.adminApplyPack(ctx, tenantId, type, body);
   }
+
+  @Post(':tenantId/lead-hub')
+  @RequirePermissions('admin.tenant.create')
+  setLeadHub(
+    @Param('tenantId') tenantId: string,
+    @Body() body: { enabled: boolean },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.growth.adminSetLeadHub(ctx, tenantId, body.enabled !== false);
+  }
 }

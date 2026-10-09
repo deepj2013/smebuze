@@ -11,6 +11,7 @@ import { DeliveryChallan } from './entities/delivery-challan.entity';
 import { DeliveryChallanLine } from './entities/delivery-challan-line.entity';
 import { InvoiceDeliveryChallan } from './entities/invoice-delivery-challan.entity';
 import { CreditNote } from './entities/credit-note.entity';
+import { SalesDebitNote } from './entities/sales-debit-note.entity';
 import { RecurringInvoice } from './entities/recurring-invoice.entity';
 import { Customer } from '../crm/entities/customer.entity';
 import { Lead } from '../crm/entities/lead.entity';
@@ -47,6 +48,7 @@ import { AdminTicketsController } from './admin-tickets.controller';
       DeliveryChallanLine,
       InvoiceDeliveryChallan,
       CreditNote,
+      SalesDebitNote,
       RecurringInvoice,
       Customer,
       Lead,

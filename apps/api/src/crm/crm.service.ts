@@ -263,14 +263,19 @@ export class CrmService {
       this.findFollowUps(ctx, { customer_id: id }),
       this.salesService.findInvoices(ctx, undefined, id),
     ]);
-    const lastInvoices = invoices.slice(0, 10).map((inv) => ({
-      id: inv.id,
-      number: inv.number,
-      date: inv.invoice_date,
-      total: parseFloat(inv.total),
-      paid: parseFloat(inv.paid_amount),
-      status: inv.status,
-    }));
+    const lastInvoices = invoices.slice(0, 10).map((inv) => {
+      const row = inv as typeof inv & { balance_due?: string; payment_status?: string; net_amount?: string };
+      return {
+        id: inv.id,
+        number: inv.number,
+        date: inv.invoice_date,
+        total: parseFloat(row.net_amount ?? inv.total),
+        paid: parseFloat(inv.paid_amount),
+        balance: parseFloat(row.balance_due ?? '0'),
+        status: row.payment_status ?? inv.status,
+        due_date: inv.due_date,
+      };
+    });
     return {
       customer: {
         id: customer.id,

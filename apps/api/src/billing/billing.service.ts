@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, timingSafeEqual } from 'crypto';
@@ -15,6 +17,7 @@ import { razorpayRequest, verifyRazorpaySignature } from '../common/tenant-razor
 import {
   extendSubscriptionFrom,
   INTERVAL_MONTHS,
+  MIN_PACKAGE_INTERVAL,
   payablePlan,
   PLAN_LABELS,
   PLAN_LIST_RUPEES,
@@ -34,6 +37,7 @@ import {
 } from './dto/admin-licence.dto';
 import { MailService } from '../mail/mail.service';
 import { licenceRenewalHtml } from '../mail/templates';
+import { PartnersService } from '../partners/partners.service';
 
 const SUPPORT_EMAIL = 'support@smebuze.com';
 
@@ -63,6 +67,8 @@ export class BillingService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly mail: MailService,
+    @Inject(forwardRef(() => PartnersService))
+    private readonly partnersService: PartnersService,
   ) {}
 
   private tenantId(ctx: TenantContext): string {
@@ -114,10 +120,11 @@ export class BillingService {
   private billingSettings(settings: Record<string, unknown> | null | undefined): {
     interval: string;
     trial?: boolean;
+    auto_renew?: boolean;
   } {
-    const raw = (settings?.billing ?? {}) as { interval?: string; trial?: boolean };
-    const interval = raw.interval && INTERVAL_MONTHS[raw.interval] ? raw.interval : 'monthly';
-    return { interval, trial: raw.trial === true };
+    const raw = (settings?.billing ?? {}) as { interval?: string; trial?: boolean; auto_renew?: boolean };
+    const interval = raw.interval && INTERVAL_MONTHS[raw.interval] ? raw.interval : MIN_PACKAGE_INTERVAL;
+    return { interval, trial: raw.trial === true, auto_renew: raw.auto_renew !== false };
   }
 
   private resolvePlanInterval(
@@ -126,7 +133,7 @@ export class BillingService {
   ): { plan: string; interval: string; amountPaise: number; amountRupees: number } {
     const stored = this.billingSettings(tenant.settings);
     const plan = dto?.plan || tenant.plan || 'basic';
-    const interval = dto?.interval || stored.interval || 'monthly';
+    const interval = dto?.interval || stored.interval || MIN_PACKAGE_INTERVAL;
     if (!payablePlan(plan)) {
       throw new BadRequestException(
         `The ${PLAN_LABELS[plan] || plan} plan is quoted by SMEBUZE. Write to ${SUPPORT_EMAIL}.`,
@@ -164,6 +171,10 @@ export class BillingService {
       support_email: SUPPORT_EMAIL,
       ...sub,
       trial: stored.trial === true && (sub.days_left == null || sub.days_left > 0),
+      auto_renew: stored.auto_renew !== false,
+      min_package_interval: MIN_PACKAGE_INTERVAL,
+      package_note:
+        'Quarterly is the minimum package. Pay yearly and save an extra 15%. Razorpay checkout renews your workspace automatically when auto-renew is on.',
       prices: PLAN_PRICE_RUPEES,
       list_prices: PLAN_LIST_RUPEES,
       plans: Object.keys(PLAN_PRICE_RUPEES).map((id) => ({
@@ -173,15 +184,26 @@ export class BillingService {
         list_rupees: PLAN_LIST_RUPEES[id],
       })),
       intervals: [
-        { id: 'monthly', label: 'Monthly', months: 1, discount_percent: 0 },
-        { id: 'quarterly', label: 'Quarterly', months: 3, discount_percent: 0 },
-        { id: 'yearly', label: 'Yearly', months: 12, discount_percent: YEARLY_DISCOUNT_PERCENT },
+        { id: 'quarterly', label: 'Quarterly (minimum)', months: 3, discount_percent: 0, is_minimum: true },
+        { id: 'yearly', label: 'Yearly', months: 12, discount_percent: YEARLY_DISCOUNT_PERCENT, is_minimum: false },
+        { id: 'monthly', label: 'Monthly', months: 1, discount_percent: 0, is_minimum: false },
       ],
       gateways: {
         razorpay: rzp.enabled,
         phonepe: phonepe.enabled,
       },
     };
+  }
+
+  async setAutoRenew(ctx: TenantContext, autoRenew: boolean) {
+    const tenant = await this.tenantRepo.findOne({ where: { id: this.tenantId(ctx) } });
+    if (!tenant) throw new NotFoundException('Workspace not found');
+    const settings = { ...(tenant.settings || {}) };
+    const billing = this.billingSettings(settings);
+    settings.billing = { ...billing, auto_renew: autoRenew };
+    tenant.settings = settings;
+    await this.tenantRepo.save(tenant);
+    return this.status(ctx);
   }
 
   async createRazorpayOrder(ctx: TenantContext, dto: BillingPayDto) {
@@ -455,7 +477,13 @@ export class BillingService {
     const nextEnd = extendSubscriptionFrom(now, tenant.subscription_ends_at, payment.interval);
     const settings = { ...(tenant.settings || {}) };
     const billing = this.billingSettings(settings);
-    settings.billing = { ...billing, interval: payment.interval, trial: false, last_paid_at: now.toISOString() };
+    settings.billing = {
+      ...billing,
+      interval: payment.interval,
+      trial: false,
+      auto_renew: true,
+      last_paid_at: now.toISOString(),
+    };
     tenant.plan = payment.plan;
     tenant.subscription_ends_at = nextEnd;
     tenant.is_active = true;
@@ -463,6 +491,15 @@ export class BillingService {
     payment.status = 'paid';
     await this.tenantRepo.save(tenant);
     await this.paymentRepo.save(payment);
+    try {
+      await this.partnersService.recordCommissionForPayment({
+        tenantId: tenant.id,
+        paymentId: payment.id,
+        amountPaise: payment.amount_paise,
+      });
+    } catch (err) {
+      this.logger.warn(`Commission for payment ${payment.id} failed: ${(err as Error).message}`);
+    }
     return {
       paid: true,
       plan: tenant.plan,

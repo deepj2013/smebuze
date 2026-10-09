@@ -14,10 +14,10 @@ export class TenantGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredPermissions = this.reflector.get<string[]>(
-      PERMISSIONS_KEY,
+    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
       context.getHandler(),
-    );
+      context.getClass(),
+    ]);
     if (!requiredPermissions?.length) return true;
 
     const request = context.switchToHttp().getRequest();

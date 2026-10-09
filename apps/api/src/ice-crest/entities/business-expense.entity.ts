@@ -10,6 +10,8 @@ export class BusinessExpense {
   @Column('uuid',{nullable:true}) vendor_id: string | null;
   @Column({type:'varchar',length:150,nullable:true}) employee_name: string | null;
   @Column({ length: 60 }) category: string;
+  @Column({ type: 'varchar', length: 80, nullable: true }) subcategory: string | null;
+  @Column('uuid', { nullable: true }) payroll_line_id: string | null;
   /** production | operations | selling | admin | finance | statutory | capex */
   @Column({ type: 'varchar', length: 30, default: 'operations' }) nature: string;
   @Column({ type: 'varchar', length: 20, nullable: true }) hsn_sac: string | null;

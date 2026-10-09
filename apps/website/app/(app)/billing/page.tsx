@@ -21,8 +21,10 @@ type BillingStatus = {
   days_left: number | null;
   prices: Record<string, number>;
   plans: Array<{ id: string; label: string; monthly_rupees: number; list_rupees?: number }>;
-  intervals: Array<{ id: string; label: string; months: number; discount_percent?: number }>;
+  intervals: Array<{ id: string; label: string; months: number; discount_percent?: number; is_minimum?: boolean }>;
   yearly_discount_percent?: number;
+  auto_renew?: boolean;
+  package_note?: string;
   gateways: { razorpay: boolean; phonepe: boolean };
   payment_status?: string;
 };
@@ -53,7 +55,8 @@ export default function BillingPage() {
   const router = useRouter();
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [plan, setPlan] = useState('basic');
-  const [interval, setInterval] = useState('monthly');
+  const [interval, setInterval] = useState('quarterly');
+  const [autoRenew, setAutoRenew] = useState(true);
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [loading, setLoading] = useState(true);
@@ -73,7 +76,8 @@ export default function BillingPage() {
     if (r.data) {
       setStatus(r.data);
       setPlan(r.data.plan && r.data.prices?.[r.data.plan] ? r.data.plan : 'basic');
-      setInterval(r.data.interval || 'monthly');
+      setInterval(r.data.interval === 'monthly' ? 'quarterly' : r.data.interval || 'quarterly');
+      setAutoRenew(r.data.auto_renew !== false);
     }
     setLoading(false);
   }, []);
@@ -188,9 +192,12 @@ export default function BillingPage() {
       </h1>
       <p className="mt-2 text-sm text-slate-600">
         {status?.expired
-          ? 'Pay SMEBUZE to keep invoices, stock and accounts running. Customer invoice payments still go to your own Razorpay account.'
+          ? 'Pay SMEBUZE with Razorpay to keep invoices, stock and accounts running. Customer invoice payments still go to your own Razorpay account.'
           : 'Renew or change the plan. This payment is for SMEBUZE — not customer invoices.'}
       </p>
+      {status?.package_note && (
+        <p className="mt-2 text-sm text-slate-500">{status.package_note}</p>
+      )}
 
       {loading && <p className="mt-6 text-sm text-slate-600">Loading…</p>}
       {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p>}
@@ -232,8 +239,10 @@ export default function BillingPage() {
               </fieldset>
               <fieldset>
                 <legend className="text-sm font-medium text-slate-700">Bill for</legend>
-                <div className="mt-2 grid grid-cols-3 gap-2">
-                  {status.intervals.map((i) => (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {status.intervals
+                    .filter((i) => i.id === 'quarterly' || i.id === 'yearly')
+                    .map((i) => (
                     <label
                       key={i.id}
                       className={`cursor-pointer rounded-lg border px-3 py-2 text-center text-sm ${
@@ -249,6 +258,24 @@ export default function BillingPage() {
                   ))}
                 </div>
               </fieldset>
+              <label className="flex items-start gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={autoRenew}
+                  onChange={async (e) => {
+                    const next = e.target.checked;
+                    setAutoRenew(next);
+                    await apiPost('billing/auto-renew', { auto_renew: next });
+                  }}
+                />
+                <span>
+                  <strong className="text-slate-900">Auto-renew with Razorpay</strong>
+                  <span className="block text-slate-500 text-xs mt-0.5">
+                    Remembers your package so the next renewal is one-click Razorpay checkout when the licence ends.
+                  </span>
+                </span>
+              </label>
               <div>
                 <p className="text-3xl font-bold text-slate-900">
                   {quote ? inr(quote.amount_rupees) : '—'}

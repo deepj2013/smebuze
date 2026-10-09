@@ -12,6 +12,14 @@ Push to **`production`** → GitHub Actions SSHs to the VPS → `scripts/deploy.
 | `deploy/nginx/**` | copy site files, `nginx -t`, reload nginx |
 | README / other docs-only | skip builds; health check |
 
+### Database safety (live tenants)
+
+- Migrations are **additive only** (`CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`). No `DROP TABLE` / bulk deletes.
+- New columns that live tenants do not use stay **NULL** (e.g. `tenants.referred_by_partner_id`, `users.platform_role`).
+- Applied files are tracked in `_schema_migrations` so re-deploys skip what already ran.
+- TypeORM `synchronize` is **off** unless `TYPEORM_SYNC=true` (never set that on production).
+- Demo seeds (`scripts/seed-on-vps.sh`) only touch `demo` / `demo-*` / `pos-*` and platform demo logins — **not** your 3 live customer tenants. Existing passwords are not overwritten unless `SEED_RESET_PASSWORDS=1`.
+
 Does **not** touch other PM2 apps or other databases.
 
 Logs (on the VPS):

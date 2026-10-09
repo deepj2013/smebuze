@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { SalesInvoice } from './entities/sales-invoice.entity';
@@ -12,6 +12,7 @@ import { DeliveryChallan } from './entities/delivery-challan.entity';
 import { DeliveryChallanLine } from './entities/delivery-challan-line.entity';
 import { InvoiceDeliveryChallan } from './entities/invoice-delivery-challan.entity';
 import { CreditNote } from './entities/credit-note.entity';
+import { SalesDebitNote } from './entities/sales-debit-note.entity';
 import { RecurringInvoice } from './entities/recurring-invoice.entity';
 import { Customer } from '../crm/entities/customer.entity';
 import { Vendor } from '../purchase/entities/vendor.entity';
@@ -40,6 +41,19 @@ import { Stock } from '../inventory/entities/stock.entity';
 import { Warehouse } from '../inventory/entities/warehouse.entity';
 import { amountInInrWords, formatInr, formatInvoiceDate, formatQty, gstPlaceOfSupply } from '../common/inr-words';
 import { moneyStr, round2, roundQty } from '../common/money';
+import {
+  allocateDocumentNumber,
+  CREDIT_NOTE_REASONS,
+  describeSeries,
+  isoDateOnly,
+  noteAffectsBalance,
+  parseDocumentSeries,
+  paymentStanding,
+  SALES_DEBIT_NOTE_REASONS,
+  SERIES_KINDS,
+  SeriesKind,
+  validateSeriesConfig,
+} from '../common/document-series';
 
 function gstLine(qty: number, rate: number, cgstRate = 0, sgstRate = 0, igstRate = 0) {
   const q = roundQty(qty);
@@ -90,6 +104,8 @@ export class SalesService {
     private readonly invoiceDeliveryChallanRepo: Repository<InvoiceDeliveryChallan>,
     @InjectRepository(CreditNote)
     private readonly creditNoteRepo: Repository<CreditNote>,
+    @InjectRepository(SalesDebitNote)
+    private readonly salesDebitNoteRepo: Repository<SalesDebitNote>,
     @InjectRepository(RecurringInvoice)
     private readonly recurringInvoiceRepo: Repository<RecurringInvoice>,
     @InjectRepository(Customer)
@@ -110,6 +126,87 @@ export class SalesService {
   private assertTenantId(ctx: TenantContext): string {
     if (!ctx.tenantId) throw new ForbiddenException('Tenant context required');
     return ctx.tenantId;
+  }
+
+  /** Issued and posted notes change what is still due. Older draft notes stay off the balance. */
+  private async annotateInvoices(invoices: SalesInvoice[]): Promise<SalesInvoice[]> {
+    if (!invoices.length) return invoices;
+    const ids = invoices.map((inv) => inv.id);
+    const [creditRows, debitRows] = await Promise.all([
+      this.creditNoteRepo
+        .createQueryBuilder('n')
+        .select('n.invoice_id', 'invoice_id')
+        .addSelect('COALESCE(SUM(n.amount), 0)', 'sum')
+        .where('n.invoice_id IN (:...ids)', { ids })
+        .andWhere("n.status IN ('issued', 'posted')")
+        .groupBy('n.invoice_id')
+        .getRawMany<{ invoice_id: string; sum: string }>(),
+      this.salesDebitNoteRepo
+        .createQueryBuilder('n')
+        .select('n.invoice_id', 'invoice_id')
+        .addSelect('COALESCE(SUM(n.amount), 0)', 'sum')
+        .where('n.invoice_id IN (:...ids)', { ids })
+        .andWhere("n.status IN ('issued', 'posted')")
+        .groupBy('n.invoice_id')
+        .getRawMany<{ invoice_id: string; sum: string }>(),
+    ]);
+    const creditMap = new Map(creditRows.map((row) => [row.invoice_id, round2(Number(row.sum))]));
+    const debitMap = new Map(debitRows.map((row) => [row.invoice_id, round2(Number(row.sum))]));
+    for (const inv of invoices) {
+      const total = round2(parseFloat(inv.total || '0'));
+      const paid = round2(parseFloat(inv.paid_amount || '0'));
+      const credit = creditMap.get(inv.id) ?? 0;
+      const debit = debitMap.get(inv.id) ?? 0;
+      const net = round2(total + debit - credit);
+      const balance = round2(net - paid);
+      Object.assign(inv, {
+        credit_note_total: credit.toFixed(2),
+        debit_note_total: debit.toFixed(2),
+        net_amount: net.toFixed(2),
+        balance_due: balance.toFixed(2),
+        payment_status: paymentStanding(total, paid, credit, debit),
+      });
+    }
+    return invoices;
+  }
+
+  private standingOf(inv: SalesInvoice) {
+    const total = round2(parseFloat(inv.total || '0'));
+    const paid = round2(parseFloat(inv.paid_amount || '0'));
+    const credit = round2(Number((inv as SalesInvoice & { credit_note_total?: string }).credit_note_total ?? 0));
+    const debit = round2(Number((inv as SalesInvoice & { debit_note_total?: string }).debit_note_total ?? 0));
+    return {
+      total,
+      paid,
+      credit,
+      debit,
+      net: round2(total + debit - credit),
+      balance: round2(total + debit - credit - paid),
+    };
+  }
+
+  private async noteTotals(invoiceId: string): Promise<{ credit: number; debit: number }> {
+    const [credits, debits] = await Promise.all([
+      this.creditNoteRepo.find({ where: { invoice_id: invoiceId } }),
+      this.salesDebitNoteRepo.find({ where: { invoice_id: invoiceId } }),
+    ]);
+    const credit = round2(credits.filter((n) => noteAffectsBalance(n.status)).reduce((s, n) => s + Number(n.amount), 0));
+    const debit = round2(debits.filter((n) => noteAffectsBalance(n.status)).reduce((s, n) => s + Number(n.amount), 0));
+    return { credit, debit };
+  }
+
+  private assertNoteTax(amount: number, taxable = 0, cgst = 0, sgst = 0, igst = 0) {
+    if (!(amount > 0)) throw new BadRequestException('Amount must be greater than zero.');
+    if (taxable < 0 || cgst < 0 || sgst < 0 || igst < 0) throw new BadRequestException('Tax amounts cannot be negative.');
+    if (igst > 0 && (cgst > 0 || sgst > 0)) {
+      throw new BadRequestException('Use CGST and SGST for the same state, or IGST for another state.');
+    }
+    if (taxable > 0 || cgst > 0 || sgst > 0 || igst > 0) {
+      const sum = round2(taxable + cgst + sgst + igst);
+      if (Math.abs(sum - amount) > 0.05) {
+        throw new BadRequestException('Taxable value plus GST must equal the note amount.');
+      }
+    }
   }
 
   async createInvoice(dto: CreateInvoiceDto, ctx: TenantContext): Promise<SalesInvoice> {
@@ -158,7 +255,8 @@ export class SalesService {
           .where('inv.tenant_id = :tenantId AND inv.customer_id = :customerId', { tenantId, customerId })
           .andWhere("inv.status <> 'deleted'")
           .getMany();
-        const currentExposure = pendingInvoices.reduce((sum, inv) => sum + parseFloat(inv.total) - parseFloat(inv.paid_amount), 0);
+        await this.annotateInvoices(pendingInvoices);
+        const currentExposure = pendingInvoices.reduce((sum, inv) => sum + Math.max(0, this.standingOf(inv).balance), 0);
         if (currentExposure + draftTotal > creditLimit) {
           throw new ForbiddenException(`Invoice total (₹${draftTotal.toFixed(2)}) would exceed customer credit limit (₹${creditLimit.toFixed(2)}). Current exposure: ₹${currentExposure.toFixed(2)}.`);
         }
@@ -169,8 +267,16 @@ export class SalesService {
       vendorId = dto.vendor_id!;
     }
 
-    const number = dto.number ?? `INV-${Date.now()}`;
-    const invoice = this.invoiceRepo.create({
+    const savedInvoice = await this.dataSource.transaction(async (tx) => {
+      const number = await allocateDocumentNumber(tx, {
+        tenantId,
+        companyId: dto.company_id,
+        kind: 'invoice',
+        explicit: dto.number,
+        isoDate: dto.invoice_date,
+        fallbackPrefix: 'INV',
+      });
+      return tx.save(tx.create(SalesInvoice, {
       tenant_id: tenantId,
       company_id: dto.company_id,
       branch_id: dto.branch_id ?? null,
@@ -190,8 +296,9 @@ export class SalesService {
       gst_applicable: dto.gst_applicable !== false,
       stock_deducted_at: null,
       created_by: ctx.userId,
+    }));
     });
-    const savedInvoice = await this.invoiceRepo.save(invoice);
+    const number = savedInvoice.number;
 
     let subtotal = 0;
     let taxAmount = 0;
@@ -311,7 +418,9 @@ export class SalesService {
         lockedStocks.set(itemId,stock);
       }
       let subtotal=0,taxAmount=0;
-      const number=dto.number?.trim()||`INV-${Date.now()}`;
+      const number = await allocateDocumentNumber(manager, {
+        tenantId, companyId: dto.company_id, kind: 'invoice', explicit: dto.number, isoDate: dto.invoice_date, fallbackPrefix: 'INV',
+      });
       const invoice=await manager.save(SalesInvoice,manager.create(SalesInvoice,{tenant_id:tenantId,company_id:dto.company_id,branch_id:dto.branch_id??null,
         customer_id:dto.customer_id??null,vendor_id:dto.vendor_id??null,sales_order_id:dto.sales_order_id??null,number,invoice_date:new Date(dto.invoice_date),
         due_date:dto.due_date?new Date(dto.due_date):null,status:'issued',subtotal:'0',tax_amount:'0',total:'0',paid_amount:'0',shipping_charges:moneyStr(dto.shipping_charges??0),
@@ -419,7 +528,15 @@ export class SalesService {
     return this.findOneInvoice(id, ctx);
   }
 
-  async findInvoices(ctx: TenantContext, status?: string, customerId?: string, from?: string, limit?: number): Promise<SalesInvoice[]> {
+  async findInvoices(
+    ctx: TenantContext,
+    status?: string,
+    customerId?: string,
+    from?: string,
+    limit?: number,
+    vendorId?: string,
+    skipLines?: boolean,
+  ): Promise<SalesInvoice[]> {
     const tenantId = this.assertTenantId(ctx);
     const qb = this.invoiceRepo
       .createQueryBuilder('inv')
@@ -428,13 +545,14 @@ export class SalesService {
       .leftJoinAndSelect('inv.company', 'company')
       .where('inv.tenant_id = :tenantId', { tenantId })
       .orderBy('inv.created_at', 'DESC');
-    if (!limit) qb.leftJoinAndSelect('inv.lines', 'lines');
+    if (!limit && !skipLines) qb.leftJoinAndSelect('inv.lines', 'lines');
     if (status) qb.andWhere('inv.status = :status', { status });
     else qb.andWhere("inv.status <> 'deleted'");
     if (customerId) qb.andWhere('inv.customer_id = :customerId', { customerId });
+    if (vendorId) qb.andWhere('inv.vendor_id = :vendorId', { vendorId });
     if (from) qb.andWhere('inv.invoice_date >= :from', { from });
     if (limit && limit > 0) qb.take(Math.min(limit, 200));
-    return qb.getMany();
+    return this.annotateInvoices(await qb.getMany());
   }
 
   async findOneInvoice(id: string, ctx: TenantContext): Promise<SalesInvoice> {
@@ -444,6 +562,7 @@ export class SalesService {
       relations: ['customer', 'vendor', 'company', 'branch', 'lines', 'lines.item'],
     });
     if (!inv) throw new NotFoundException('Invoice not found');
+    await this.annotateInvoices([inv]);
     return inv;
   }
 
@@ -470,6 +589,10 @@ export class SalesService {
       throw new ForbiddenException(
         'This invoice has payments recorded. Remove or reverse payments first, then delete.',
       );
+    }
+    const notes = await this.noteTotals(invoice.id);
+    if (notes.credit > 0 || notes.debit > 0) {
+      throw new ForbiddenException('This invoice has a credit or debit note. Those documents stay on record, so the invoice cannot be deleted.');
     }
 
     const snapshot = {
@@ -565,10 +688,14 @@ export class SalesService {
     if (invoice.status === 'deleted') {
       throw new ForbiddenException('Cannot record payment on a deleted invoice.');
     }
-    const total = parseFloat(invoice.total);
-    const paid = parseFloat(invoice.paid_amount);
-    const newPaid = paid + dto.amount;
-    if (newPaid > total) throw new ForbiddenException('Payment exceeds invoice total');
+    const total = round2(parseFloat(invoice.total));
+    const paid = round2(parseFloat(invoice.paid_amount));
+    const notes = await this.noteTotals(invoice.id);
+    const net = round2(total + notes.debit - notes.credit);
+    const newPaid = round2(paid + dto.amount);
+    if (newPaid > net + 0.009) {
+      throw new ForbiddenException(`Payment exceeds amount still due (₹${Math.max(0, round2(net - paid)).toFixed(2)}).`);
+    }
 
     await this.paymentRepo.save(
       this.paymentRepo.create({
@@ -581,7 +708,7 @@ export class SalesService {
     );
     await this.invoiceRepo.update(invoiceId, {
       paid_amount: newPaid.toFixed(2),
-      status: newPaid >= total ? 'paid' : 'partial',
+      status: newPaid >= net - 0.05 ? 'paid' : 'partial',
     });
     return this.findOneInvoice(invoiceId, ctx);
   }
@@ -590,9 +717,8 @@ export class SalesService {
     const invoice = await this.findOneInvoice(invoiceId, ctx);
     const tenant = ctx.tenantId ? await this.tenantRepo.findOne({ where: { id: ctx.tenantId } }) : null;
     const cfg = parseTenantRazorpay(tenant?.settings as Record<string, unknown>);
-    const total = parseFloat(String(invoice.total ?? 0));
-    const paid = parseFloat(String(invoice.paid_amount ?? 0));
-    if (!razorpayReady(cfg) || total - paid < 1) return { enabled: false };
+    const view = this.standingOf(invoice);
+    if (!razorpayReady(cfg) || view.balance < 1) return { enabled: false };
     return { enabled: true, url: frontendPayUrl(makeInvoicePayToken(invoice.id, invoice.tenant_id)) };
   }
 
@@ -615,13 +741,15 @@ export class SalesService {
         }) as Promise<SalesInvoice>;
       }
     }
-    const total = parseFloat(invoice.total);
-    const paid = parseFloat(invoice.paid_amount);
-    const remaining = Math.round((total - paid) * 100) / 100;
+    const total = round2(parseFloat(invoice.total));
+    const paid = round2(parseFloat(invoice.paid_amount));
+    const notes = await this.noteTotals(invoice.id);
+    const net = round2(total + notes.debit - notes.credit);
+    const remaining = round2(net - paid);
     if (remaining <= 0) return invoice;
-    const applied = Math.min(Math.round(Number(amount) * 100) / 100, remaining);
+    const applied = Math.min(round2(Number(amount)), remaining);
     if (applied < 0.01) return invoice;
-    const newPaid = Math.round((paid + applied) * 100) / 100;
+    const newPaid = round2(paid + applied);
     await this.paymentRepo.save(
       this.paymentRepo.create({
         invoice_id: invoiceId,
@@ -633,7 +761,7 @@ export class SalesService {
     );
     await this.invoiceRepo.update(invoiceId, {
       paid_amount: newPaid.toFixed(2),
-      status: newPaid >= total - 0.05 ? 'paid' : 'partial',
+      status: newPaid >= net - 0.05 ? 'paid' : 'partial',
     });
     return this.invoiceRepo.findOne({ where: { id: invoiceId }, relations: ['customer', 'vendor', 'company', 'lines'] }) as Promise<SalesInvoice>;
   }
@@ -646,13 +774,12 @@ export class SalesService {
       .leftJoinAndSelect('inv.vendor', 'vendor')
       .where('inv.tenant_id = :tenantId', { tenantId })
       .andWhere("inv.status <> 'deleted'")
-      .orderBy('inv.due_date', 'ASC')
+      .orderBy('inv.due_date', 'ASC', 'NULLS LAST')
+      .addOrderBy('inv.invoice_date', 'ASC')
       .getMany();
-    const pending = invoices.filter((inv) => parseFloat(inv.paid_amount) < parseFloat(inv.total));
-    const totalPending = pending.reduce(
-      (sum, inv) => sum + (parseFloat(inv.total) - parseFloat(inv.paid_amount)),
-      0,
-    );
+    await this.annotateInvoices(invoices);
+    const pending = invoices.filter((inv) => this.standingOf(inv).balance > 0.05);
+    const totalPending = pending.reduce((sum, inv) => sum + this.standingOf(inv).balance, 0);
     return { invoices: pending, totalPending };
   }
 
@@ -1123,8 +1250,16 @@ export class SalesService {
       }
     }
 
-    const number = dto.number ?? `INV-${Date.now()}`;
-    const invoice = this.invoiceRepo.create({
+    const savedInvoice = await this.dataSource.transaction(async (tx) => {
+      const number = await allocateDocumentNumber(tx, {
+        tenantId,
+        companyId: dto.company_id,
+        kind: 'invoice',
+        explicit: dto.number,
+        isoDate: dto.invoice_date,
+        fallbackPrefix: 'INV',
+      });
+      return tx.save(tx.create(SalesInvoice, {
       tenant_id: tenantId,
       company_id: dto.company_id,
       branch_id: dto.branch_id ?? null,
@@ -1139,8 +1274,8 @@ export class SalesService {
       total: '0',
       paid_amount: '0',
       created_by: ctx.userId,
+    }));
     });
-    const savedInvoice = await this.invoiceRepo.save(invoice);
 
     const gstRate = 2.5;
     let subtotal = 0;
@@ -1200,42 +1335,293 @@ export class SalesService {
   }
 
   async createCreditNote(
-    dto: { company_id: string; branch_id?: string; invoice_id: string; number?: string; note_date: string; amount: number; reason?: string },
+    dto: {
+      company_id: string;
+      branch_id?: string;
+      invoice_id: string;
+      number?: string;
+      note_date: string;
+      amount: number;
+      taxable_amount?: number;
+      cgst_amount?: number;
+      sgst_amount?: number;
+      igst_amount?: number;
+      reason?: string;
+      reason_code?: string;
+    },
     ctx: TenantContext,
   ): Promise<CreditNote> {
     const tenantId = this.assertTenantId(ctx);
-    const company = await this.companyRepo.findOne({ where: { id: dto.company_id, tenant_id: tenantId } });
-    if (!company) throw new NotFoundException('Company not found');
     const invoice = await this.invoiceRepo.findOne({ where: { id: dto.invoice_id, tenant_id: tenantId } });
     if (!invoice) throw new NotFoundException('Invoice not found');
-    const number = dto.number ?? `CN-${Date.now()}`;
-    const note = this.creditNoteRepo.create({
+    if (invoice.status === 'deleted') throw new ForbiddenException('Cannot add a credit note to a deleted invoice.');
+    if (dto.company_id && dto.company_id !== invoice.company_id) {
+      throw new ForbiddenException('Credit note must use the same company as the invoice.');
+    }
+    const reason = this.noteReason(CREDIT_NOTE_REASONS, dto.reason_code, dto.reason);
+    const taxable = round2(dto.taxable_amount ?? 0);
+    const cgst = round2(dto.cgst_amount ?? 0);
+    const sgst = round2(dto.sgst_amount ?? 0);
+    const igst = round2(dto.igst_amount ?? 0);
+    const amount = round2(dto.amount);
+    this.assertNoteTax(amount, taxable, cgst, sgst, igst);
+    const notes = await this.noteTotals(invoice.id);
+    const openValue = round2(parseFloat(invoice.total) + notes.debit - notes.credit);
+    if (amount > openValue + 0.05) {
+      throw new ForbiddenException(`Credit note cannot exceed ₹${Math.max(0, openValue).toFixed(2)} still recorded on this invoice.`);
+    }
+    const number = await this.dataSource.transaction((tx) => allocateDocumentNumber(tx, {
+      tenantId,
+      companyId: invoice.company_id,
+      kind: 'credit_note',
+      explicit: dto.number,
+      isoDate: dto.note_date,
+      fallbackPrefix: 'CN',
+    }));
+    const note = await this.creditNoteRepo.save(this.creditNoteRepo.create({
       tenant_id: tenantId,
-      company_id: dto.company_id,
-      branch_id: dto.branch_id ?? null,
+      company_id: invoice.company_id,
+      branch_id: dto.branch_id ?? invoice.branch_id ?? null,
       invoice_id: dto.invoice_id,
       number,
       note_date: new Date(dto.note_date),
-      amount: String(dto.amount),
-      reason: dto.reason ?? null,
-      status: 'draft',
+      amount: amount.toFixed(2),
+      taxable_amount: taxable.toFixed(2),
+      cgst_amount: cgst.toFixed(2),
+      sgst_amount: sgst.toFixed(2),
+      igst_amount: igst.toFixed(2),
+      reason: reason.text,
+      reason_code: reason.code,
+      status: 'issued',
       created_by: ctx.userId,
-    });
-    return this.creditNoteRepo.save(note);
+    }));
+    if (invoice.status !== 'deleted') {
+      const paid = round2(parseFloat(invoice.paid_amount || '0'));
+      const net = round2(parseFloat(invoice.total) + notes.debit - notes.credit - amount);
+      await this.invoiceRepo.update(invoice.id, { status: paid >= net - 0.05 ? (paid > 0.05 || net <= 0.05 ? 'paid' : invoice.status) : paid > 0.05 ? 'partial' : 'issued' });
+    }
+    return note;
   }
 
   async findCreditNotes(ctx: TenantContext, status?: string): Promise<CreditNote[]> {
     const tenantId = this.assertTenantId(ctx);
     const where: { tenant_id: string; status?: string } = { tenant_id: tenantId };
     if (status) where.status = status;
-    return this.creditNoteRepo.find({ where, relations: ['invoice', 'company'], order: { note_date: 'DESC' } });
+    return this.creditNoteRepo.find({
+      where,
+      relations: ['invoice', 'invoice.customer', 'invoice.vendor', 'company'],
+      order: { note_date: 'DESC' },
+    });
   }
 
   async findOneCreditNote(id: string, ctx: TenantContext): Promise<CreditNote> {
     const tenantId = this.assertTenantId(ctx);
-    const cn = await this.creditNoteRepo.findOne({ where: { id, tenant_id: tenantId }, relations: ['invoice', 'company'] });
+    const cn = await this.creditNoteRepo.findOne({
+      where: { id, tenant_id: tenantId },
+      relations: ['invoice', 'invoice.customer', 'invoice.vendor', 'company'],
+    });
     if (!cn) throw new NotFoundException('Credit note not found');
     return cn;
+  }
+
+  async createSalesDebitNote(
+    dto: {
+      company_id: string;
+      branch_id?: string;
+      invoice_id: string;
+      number?: string;
+      note_date: string;
+      amount: number;
+      taxable_amount?: number;
+      cgst_amount?: number;
+      sgst_amount?: number;
+      igst_amount?: number;
+      reason?: string;
+      reason_code?: string;
+    },
+    ctx: TenantContext,
+  ): Promise<SalesDebitNote> {
+    const tenantId = this.assertTenantId(ctx);
+    const invoice = await this.invoiceRepo.findOne({ where: { id: dto.invoice_id, tenant_id: tenantId } });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    if (invoice.status === 'deleted') throw new ForbiddenException('Cannot add a debit note to a deleted invoice.');
+    if (dto.company_id && dto.company_id !== invoice.company_id) {
+      throw new ForbiddenException('Debit note must use the same company as the invoice.');
+    }
+    const reason = this.noteReason(SALES_DEBIT_NOTE_REASONS, dto.reason_code, dto.reason);
+    const taxable = round2(dto.taxable_amount ?? 0);
+    const cgst = round2(dto.cgst_amount ?? 0);
+    const sgst = round2(dto.sgst_amount ?? 0);
+    const igst = round2(dto.igst_amount ?? 0);
+    const amount = round2(dto.amount);
+    this.assertNoteTax(amount, taxable, cgst, sgst, igst);
+    const number = await this.dataSource.transaction((tx) => allocateDocumentNumber(tx, {
+      tenantId,
+      companyId: invoice.company_id,
+      kind: 'sales_debit_note',
+      explicit: dto.number,
+      isoDate: dto.note_date,
+      fallbackPrefix: 'DN',
+    }));
+    const note = await this.salesDebitNoteRepo.save(this.salesDebitNoteRepo.create({
+      tenant_id: tenantId,
+      company_id: invoice.company_id,
+      branch_id: dto.branch_id ?? invoice.branch_id ?? null,
+      invoice_id: dto.invoice_id,
+      number,
+      note_date: new Date(dto.note_date),
+      amount: amount.toFixed(2),
+      taxable_amount: taxable.toFixed(2),
+      cgst_amount: cgst.toFixed(2),
+      sgst_amount: sgst.toFixed(2),
+      igst_amount: igst.toFixed(2),
+      reason: reason.text,
+      reason_code: reason.code,
+      status: 'issued',
+      created_by: ctx.userId,
+    }));
+    const notes = await this.noteTotals(invoice.id);
+    const paid = round2(parseFloat(invoice.paid_amount || '0'));
+    const net = round2(parseFloat(invoice.total) + notes.debit - notes.credit);
+    await this.invoiceRepo.update(invoice.id, {
+      status: paid >= net - 0.05 ? 'paid' : paid > 0.05 ? 'partial' : 'issued',
+    });
+    return note;
+  }
+
+  async findSalesDebitNotes(ctx: TenantContext, status?: string): Promise<SalesDebitNote[]> {
+    const tenantId = this.assertTenantId(ctx);
+    const where: { tenant_id: string; status?: string } = { tenant_id: tenantId };
+    if (status) where.status = status;
+    return this.salesDebitNoteRepo.find({
+      where,
+      relations: ['invoice', 'invoice.customer', 'invoice.vendor', 'company'],
+      order: { note_date: 'DESC' },
+    });
+  }
+
+  async findOneSalesDebitNote(id: string, ctx: TenantContext): Promise<SalesDebitNote> {
+    const tenantId = this.assertTenantId(ctx);
+    const note = await this.salesDebitNoteRepo.findOne({
+      where: { id, tenant_id: tenantId },
+      relations: ['invoice', 'invoice.customer', 'invoice.vendor', 'company'],
+    });
+    if (!note) throw new NotFoundException('Debit note not found');
+    return note;
+  }
+
+  async partyLedger(ctx: TenantContext) {
+    const invoices = await this.findInvoices(ctx, undefined, undefined, undefined, undefined, undefined, true);
+    const map = new Map<string, {
+      party_type: 'customer' | 'vendor' | 'none';
+      party_id: string | null;
+      name: string;
+      invoice_count: number;
+      total: number;
+      paid: number;
+      balance: number;
+      pending_count: number;
+      partial_count: number;
+      paid_count: number;
+    }>();
+    for (const inv of invoices) {
+      const partyType = inv.customer_id ? 'customer' : inv.vendor_id ? 'vendor' : 'none';
+      const partyId = inv.customer_id || inv.vendor_id || null;
+      const key = `${partyType}:${partyId ?? 'none'}`;
+      const view = this.standingOf(inv);
+      const row = map.get(key) ?? {
+        party_type: partyType,
+        party_id: partyId,
+        name: inv.customer?.name || inv.vendor?.name || 'No party',
+        invoice_count: 0,
+        total: 0,
+        paid: 0,
+        balance: 0,
+        pending_count: 0,
+        partial_count: 0,
+        paid_count: 0,
+      };
+      const standing = paymentStanding(view.total, view.paid, view.credit, view.debit);
+      row.invoice_count += 1;
+      row.total = round2(row.total + view.net);
+      row.paid = round2(row.paid + view.paid);
+      row.balance = round2(row.balance + view.balance);
+      if (standing === 'pending') row.pending_count += 1;
+      else if (standing === 'partial') row.partial_count += 1;
+      else row.paid_count += 1;
+      map.set(key, row);
+    }
+    const parties = Array.from(map.values()).sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name));
+    return {
+      parties,
+      totals: {
+        parties: parties.length,
+        balance: round2(parties.reduce((s, p) => s + Math.max(0, p.balance), 0)),
+        pending: parties.reduce((s, p) => s + p.pending_count, 0),
+        partial: parties.reduce((s, p) => s + p.partial_count, 0),
+      },
+    };
+  }
+
+  async getDocumentSeries(ctx: TenantContext, date?: string) {
+    const tenantId = this.assertTenantId(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    const series = parseDocumentSeries(tenant?.settings as Record<string, unknown>);
+    const on = isoDateOnly(date || new Date().toISOString());
+    const previews: Record<string, { applies: boolean; number: string | null; message: string }> = {};
+    for (const kind of SERIES_KINDS) {
+      previews[kind] = await this.previewSeries(tenantId, kind, on, series[kind]);
+    }
+    return { series, previews, date: on };
+  }
+
+  async previewDocumentNumber(ctx: TenantContext, kind: string, date?: string, companyId?: string) {
+    const tenantId = this.assertTenantId(ctx);
+    if (!SERIES_KINDS.includes(kind as SeriesKind)) throw new BadRequestException('Unknown document series.');
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    const series = parseDocumentSeries(tenant?.settings as Record<string, unknown>);
+    const seriesKind = kind as SeriesKind;
+    const on = isoDateOnly(date);
+    return { kind: seriesKind, date: on, ...(await this.previewSeries(tenantId, seriesKind, on, series[seriesKind], companyId)) };
+  }
+
+  async saveDocumentSeries(ctx: TenantContext, body: Record<string, unknown>) {
+    const tenantId = this.assertTenantId(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const current = parseDocumentSeries(tenant.settings as Record<string, unknown>);
+    const raw = (body.series ?? body) as Record<string, unknown>;
+    const next = parseDocumentSeries({ document_series: { ...current, ...raw } });
+    for (const kind of SERIES_KINDS) {
+      const problem = validateSeriesConfig(next[kind]);
+      if (problem) throw new BadRequestException(`${kind.replace(/_/g, ' ')}: ${problem}`);
+    }
+    tenant.settings = { ...(tenant.settings ?? {}), document_series: next };
+    await this.tenantRepo.save(tenant);
+    return this.getDocumentSeries(ctx);
+  }
+
+  private noteReason(options: readonly { code: string; label: string }[], code?: string, text?: string) {
+    if (code && !options.some((item) => item.code === code)) {
+      throw new BadRequestException('Choose a valid GST reason.');
+    }
+    const picked = options.find((item) => item.code === code) ?? options.find((item) => item.code === 'other') ?? options[0];
+    const extra = (text || '').trim();
+    return { code: picked.code, text: extra || picked.label };
+  }
+
+  private async previewSeries(
+    tenantId: string,
+    kind: SeriesKind,
+    isoDate: string,
+    cfg: ReturnType<typeof parseDocumentSeries>[SeriesKind],
+    companyId?: string,
+  ) {
+    const table = kind === 'invoice' ? 'sales_invoices' : kind === 'credit_note' ? 'credit_notes' : kind === 'sales_debit_note' ? 'sales_debit_notes' : 'debit_notes';
+    const rows: Array<{ number: string }> = companyId
+      ? await this.dataSource.query(`SELECT number FROM ${table} WHERE tenant_id = $1 AND company_id = $2`, [tenantId, companyId])
+      : await this.dataSource.query(`SELECT number FROM ${table} WHERE tenant_id = $1`, [tenantId]);
+    return describeSeries(cfg, isoDate, rows.map((row) => row.number));
   }
 
   async getQuotationPrintHtml(id: string, ctx: TenantContext): Promise<string> {
@@ -1272,9 +1658,10 @@ export class SalesService {
     const shipping = parseFloat(inv.shipping_charges ?? '0');
     const otherCharges = parseFloat(inv.other_charges ?? '0');
     const discount = parseFloat(inv.discount_amount ?? '0');
-    const total = parseFloat(inv.total ?? '0');
-    const paid = parseFloat(inv.paid_amount ?? '0');
-    const due = total - paid;
+    const view = this.standingOf(inv);
+    const total = view.total;
+    const paid = view.paid;
+    const due = view.credit === 0 && view.debit === 0 ? round2(Math.max(0, total - paid)) : view.balance;
 
     const lineRows = lines
       .map(
@@ -1313,6 +1700,8 @@ ${shipping ? `<tr><td>Shipping charges</td><td class="right">₹${shipping.toFix
 ${otherCharges ? `<tr><td>Other charges</td><td class="right">₹${otherCharges.toFixed(2)}</td></tr>` : ''}
 ${discount ? `<tr><td>Discount</td><td class="right">-₹${discount.toFixed(2)}</td></tr>` : ''}
 <tr><td>Total</td><td class="right">₹${total.toFixed(2)}</td></tr>
+${view.credit ? `<tr><td>Credit notes</td><td class="right">-₹${view.credit.toFixed(2)}</td></tr>` : ''}
+${view.debit ? `<tr><td>Debit notes</td><td class="right">₹${view.debit.toFixed(2)}</td></tr>` : ''}
 <tr><td>Paid</td><td class="right">₹${paid.toFixed(2)}</td></tr>
 <tr><td>Amount Due</td><td class="right">₹${due.toFixed(2)}</td></tr></table>
 </div>
@@ -1557,10 +1946,13 @@ ${this.invoicePayBlockHtml(pay)}
     const shipping = round2(parseFloat(inv.shipping_charges ?? '0'));
     const otherCharges = round2(parseFloat(inv.other_charges ?? '0'));
     const discount = round2(parseFloat(inv.discount_amount ?? '0'));
-    const total = round2(parseFloat(inv.total ?? '0'));
-    const paid = round2(parseFloat(inv.paid_amount ?? '0'));
-    const balance = round2(Math.max(0, total - paid));
-    const paymentMode = paid <= 0 ? 'Credit' : paid >= total ? 'Paid' : 'Partial';
+    const view = this.standingOf(inv);
+    const total = view.total;
+    const paid = view.paid;
+    const balance = view.credit === 0 && view.debit === 0 ? round2(Math.max(0, total - paid)) : view.balance;
+    const paymentMode = view.credit === 0 && view.debit === 0
+      ? (paid <= 0 ? 'Credit' : paid >= total ? 'Paid' : 'Partial')
+      : (balance <= 0.05 ? 'Paid' : paid <= 0.05 ? 'Credit' : 'Partial');
     const companyAddr = company.address ?? {};
     const logo = this.resolveLogoUrl(company.logo_url || branding?.logo_url);
     const heading = company.name || branding?.display_name || 'Company';
@@ -1765,6 +2157,8 @@ table.grid th{background:#eee;font-size:12px}
         ${otherCharges ? `<tr><th>Other charges</th><td>₹ ${formatInr(otherCharges)}</td></tr>` : ''}
         ${discount ? `<tr><th>Discount</th><td>- ₹ ${formatInr(discount)}</td></tr>` : ''}
         <tr><th>Total</th><td>₹ ${formatInr(total)}</td></tr>
+        ${view.credit ? `<tr><th>Credit notes</th><td>- ₹ ${formatInr(view.credit)}</td></tr>` : ''}
+        ${view.debit ? `<tr><th>Debit notes</th><td>₹ ${formatInr(view.debit)}</td></tr>` : ''}
         <tr><th>Received</th><td>₹ ${formatInr(paid)}</td></tr>
         <tr><th>Balance</th><td>₹ ${formatInr(balance)}</td></tr>
       </table>

@@ -12,6 +12,19 @@ const bcrypt = require('bcrypt');
 
 const PLATFORM_ORG_ID = 'a0000000-0000-0000-0000-000000000001';
 const DEMO_PASSWORD = 'Password123';
+const RESET = process.env.SEED_RESET_PASSWORDS === '1' || process.env.SEED_RESET_PASSWORDS === 'true';
+
+/** Only these slug patterns may be created/updated by this seed — never live customer tenants. */
+function isDemoVariantSlug(slug) {
+  return (
+    slug === 'demo' ||
+    slug.startsWith('demo-') ||
+    slug.startsWith('pos-') ||
+    slug === 'ice-crest' ||
+    slug === 'restaurant-wholesale' ||
+    slug === 'star-ice'
+  );
+}
 
 function loadEnv() {
   const p = path.join(__dirname, '..', '.env');
@@ -71,6 +84,7 @@ const THEMES = {
   hotel: { primary: '#1e293b', accent: '#0f172a' },
   manufacturing: { primary: '#3f3f46', accent: '#27272a' },
   trading: { primary: '#0284c7', accent: '#0369a1' },
+  transport: { primary: '#1d4ed8', accent: '#1e40af' },
   services: { primary: '#4f46e5', accent: '#3730a3' },
 };
 
@@ -287,6 +301,17 @@ function manufacturingItems() {
   ];
 }
 
+function transportItems() {
+  return [
+    { sku: 'TRN-LOC', barcode: '8914010001001', name: 'Local delivery (within city)', category: 'Freight', unit: 'trip', hsn_sac: '996511', mrp: 2500, cost: 0, sale: 2500, tax: 5, qty: 0, reorder: 0 },
+    { sku: 'TRN-FTL', barcode: '8914010001002', name: 'FTL — 9T truck (one way)', category: 'Freight', unit: 'trip', hsn_sac: '996511', mrp: 28000, cost: 0, sale: 28000, tax: 5, qty: 0, reorder: 0 },
+    { sku: 'TRN-PTL', barcode: '8914010001003', name: 'Part load — per ton', category: 'Freight', unit: 'ton', hsn_sac: '996511', mrp: 3200, cost: 0, sale: 3200, tax: 5, qty: 0, reorder: 0 },
+    { sku: 'TRN-TEMP', barcode: '8914010001004', name: 'Container / trailer hire', category: 'Freight', unit: 'trip', hsn_sac: '996511', mrp: 45000, cost: 0, sale: 45000, tax: 12, qty: 0, reorder: 0 },
+    { sku: 'TRN-LAB', barcode: '8914010001005', name: 'Loading / unloading labour', category: 'Labour', unit: 'trip', hsn_sac: '998599', mrp: 1500, cost: 0, sale: 1500, tax: 18, qty: 0, reorder: 0 },
+    { sku: 'TRN-DET', barcode: '8914010001006', name: 'Detention / waiting charges', category: 'Charges', unit: 'day', hsn_sac: '996511', mrp: 2000, cost: 0, sale: 2000, tax: 5, qty: 0, reorder: 0 },
+  ];
+}
+
 const VARIANTS = [
   {
     slug: 'pos-restaurant',
@@ -488,6 +513,16 @@ const VARIANTS = [
     items: manufacturingItems,
     pos: false,
   },
+  {
+    slug: 'demo-transport',
+    name: 'Demo Transporter',
+    email: 'transport@smebuze.local',
+    type: 'transport',
+    company: 'Highway Movers',
+    warehouse: 'Yard / office',
+    items: transportItems,
+    pos: false,
+  },
 ];
 
 async function ensureStaffUser(db, hash, tenantId, companyId, branchId, email, name, roleId) {
@@ -498,10 +533,15 @@ async function ensureStaffUser(db, hash, tenantId, companyId, branchId, email, n
        VALUES ($1, $2, $3, $4, $5, $6, true, true) RETURNING id`,
       [tenantId, email, hash, name, companyId, branchId],
     );
-  } else {
+  } else if (RESET) {
     await db.query(
       `UPDATE users SET password_hash = $2, name = $3, is_active = true, email_verified = true WHERE id = $1`,
       [user.rows[0].id, hash, name],
+    );
+  } else {
+    await db.query(
+      `UPDATE users SET name = COALESCE(name, $2), is_active = true, email_verified = true WHERE id = $1`,
+      [user.rows[0].id, name],
     );
   }
   const ur = await db.query('SELECT 1 FROM user_roles WHERE user_id = $1 AND role_id = $2', [user.rows[0].id, roleId]);
@@ -623,6 +663,10 @@ async function ensurePlatform(db) {
 }
 
 async function seedVariant(db, hash, v) {
+  if (!isDemoVariantSlug(v.slug)) {
+    console.warn(`SKIP ${v.slug} — not a demo slug (protects live tenants)`);
+    return;
+  }
   const theme = THEMES[v.type] || THEMES.trading;
   const patch = {
     business_type: v.type,
@@ -631,6 +675,11 @@ async function seedVariant(db, hash, v) {
   };
   if (v.type === 'dine_restaurant' || v.type === 'cafe') {
     patch.floor = { tables: Array.from({ length: 12 }, (_, i) => `T${i + 1}`) };
+  }
+  if (v.type === 'transport') {
+    patch.enabled_modules = [
+      'dashboard', 'crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'hr', 'transport', 'onboarding', 'organization', 'help',
+    ];
   }
   const settings = JSON.stringify(patch);
   let t = await db.query('SELECT id FROM tenants WHERE slug = $1 LIMIT 1', [v.slug]);
@@ -702,10 +751,16 @@ async function seedVariant(db, hash, v) {
        VALUES ($1, $2, $3, $4, $5, $6, true, true) RETURNING id`,
       [tenantId, v.email, hash, v.name + ' Admin', companyId, branchId],
     );
-  } else {
+  } else if (RESET) {
     await db.query(
       `UPDATE users SET password_hash = $2, name = $3, default_company_id = $4, default_branch_id = $5, is_active = true, email_verified = true WHERE id = $1`,
       [user.rows[0].id, hash, v.name + ' Admin', companyId, branchId],
+    );
+  } else {
+    await db.query(
+      `UPDATE users SET name = COALESCE(name, $2), default_company_id = COALESCE(default_company_id, $3),
+         default_branch_id = COALESCE(default_branch_id, $4), is_active = true, email_verified = true WHERE id = $1`,
+      [user.rows[0].id, v.name + ' Admin', companyId, branchId],
     );
   }
   const ur = await db.query('SELECT 1 FROM user_roles WHERE user_id = $1 AND role_id = $2', [user.rows[0].id, roleId]);
@@ -774,7 +829,81 @@ async function seedVariant(db, hash, v) {
     await seedRestaurantFloor(db, hash, tenantId, companyId, branchId, v);
   }
 
+  if (v.type === 'transport') {
+    await seedTransportDemo(db, tenantId, companyId);
+    await seedTransportWebsite(db, tenantId, v.slug, v.name);
+  }
+
   console.log(`  ${v.slug.padEnd(16)}  ${v.email.padEnd(28)}  type=${v.type}`);
+}
+
+async function seedTransportDemo(db, tenantId, companyId) {
+  let vehicle = await db.query(
+    `SELECT id FROM transport_vehicles WHERE tenant_id = $1 AND registration_no = 'MH12TR9001' LIMIT 1`,
+    [tenantId],
+  );
+  if (!vehicle.rows.length) {
+    vehicle = await db.query(
+      `INSERT INTO transport_vehicles (tenant_id, company_id, registration_no, vehicle_type, make_model, capacity_tons, ownership, driver_name, helper_name, status)
+       VALUES ($1, $2, 'MH12TR9001', 'truck', 'Tata 407', 5, 'owned', 'Ramesh Patil', 'Suresh', 'active')
+       RETURNING id`,
+      [tenantId, companyId],
+    );
+    const vid = vehicle.rows[0].id;
+    const docs = [
+      ['rc', 'RC-9001', 400],
+      ['insurance', 'POL-7788', 45],
+      ['fitness', 'FIT-221', 20],
+      ['permit', 'PER-110', -5],
+    ];
+    for (const [type, num, days] of docs) {
+      await db.query(
+        `INSERT INTO transport_vehicle_documents (tenant_id, vehicle_id, doc_type, document_number, expires_on, remind_days)
+         VALUES ($1, $2, $3, $4, CURRENT_DATE + ($5 || ' days')::interval, 30)`,
+        [tenantId, vid, type, num, String(days)],
+      );
+    }
+    await db.query(
+      `INSERT INTO transport_trips (tenant_id, company_id, vehicle_id, trip_date, lr_number, from_place, to_place, party_name, party_type, fare_amount, diesel_amount, other_expense, advance_amount, status, bill_status)
+       VALUES
+       ($1, $2, $3, CURRENT_DATE - 2, 'LR-1001', 'Pune', 'Mumbai', 'Acme Traders', 'company', 12500, 4200, 800, 3000, 'completed', 'unbilled'),
+       ($1, $2, $3, CURRENT_DATE - 1, 'LR-1002', 'Mumbai', 'Nashik', 'Sharma Individual', 'individual', 8500, 3100, 400, 2000, 'completed', 'unbilled')`,
+      [tenantId, companyId, vid],
+    );
+    console.log('    transport demo: vehicle MH12TR9001 + sample trips/renewals');
+  }
+}
+
+async function seedTransportWebsite(db, tenantId, slug, name) {
+  const pages = JSON.stringify({
+    hero_title: 'Reliable freight. On time.',
+    hero_subtitle: 'Request a quote for local or outstation trips. We confirm vehicle, rate and LR.',
+    about: `${name} — freight enquiries from this website land in your CRM. Billing and fleet stay inside SMEBUZE.`,
+    phone: '',
+    email: '',
+    address: '',
+  });
+  const existing = await db.query(`SELECT id FROM storefront_sites WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
+  if (!existing.rows.length) {
+    await db.query(
+      `INSERT INTO storefront_sites (tenant_id, slug, is_published, shop_enabled, pages, theme, domain_status)
+       VALUES ($1, $2, true, false, $3::jsonb, '{}'::jsonb, 'none')`,
+      [tenantId, slug, pages],
+    );
+  } else {
+    await db.query(
+      `UPDATE storefront_sites SET is_published = true, shop_enabled = false, pages = COALESCE(pages, '{}'::jsonb) || $2::jsonb, slug = COALESCE(NULLIF(slug,''), $3)
+       WHERE tenant_id = $1`,
+      [tenantId, pages, slug],
+    );
+  }
+  // Ensure at least one freight item is portal-listed for catalogue display on site (enquiry, not cart)
+  await db.query(
+    `UPDATE items SET portal_listed = true, for_sale = true, is_active = true
+     WHERE tenant_id = $1 AND category = 'Freight'`,
+    [tenantId],
+  );
+  console.log(`    transport website: /site/${slug} (enquiry, shop cart off)`);
 }
 
 async function run() {
@@ -796,7 +925,7 @@ async function run() {
     }
     console.log('\nExisting ERP demo stays as tenant slug `demo` (admin@demo.com).');
     console.log('POS tenants open /pos after login. New types: cafe, bakery, pharmacy, hardware, electronics, jewellery, auto parts, florist, stationery, salon, clinic.');
-    console.log('Desk types: coaching, hotel, manufacturing (dashboard + website).');
+    console.log('Desk types: coaching, hotel, manufacturing, transport (Fleet & Trips module).');
   } finally {
     await db.end();
   }

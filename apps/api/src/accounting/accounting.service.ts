@@ -1,6 +1,6 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { ChartOfAccounts } from './entities/chart-of-accounts.entity';
 import { JournalEntry } from './entities/journal-entry.entity';
 import { JournalEntryLine } from './entities/journal-entry-line.entity';
@@ -246,5 +246,127 @@ export class AccountingService {
     line.reconciled_at = new Date();
     line.journal_entry_id = journalEntryId;
     return this.bankLineRepo.save(line);
+  }
+
+  async createAccount(
+    ctx: TenantContext,
+    dto: { company_id: string; code: string; name: string; type: string },
+  ): Promise<ChartOfAccounts> {
+    const tenantId = this.assertTenantId(ctx);
+    const code = String(dto.code || '').trim().toUpperCase();
+    const name = String(dto.name || '').trim();
+    if (!code || !name) throw new ForbiddenException('Code and name are required');
+    const existing = await this.coaRepo.findOne({ where: { tenant_id: tenantId, company_id: dto.company_id, code } });
+    if (existing) throw new ForbiddenException('Account code already exists');
+    return this.coaRepo.save(
+      this.coaRepo.create({
+        tenant_id: tenantId,
+        company_id: dto.company_id,
+        code,
+        name,
+        type: dto.type || 'expense',
+        is_system: false,
+      }),
+    );
+  }
+
+  async seedSystemAccounts(ctx: TenantContext, companyId: string) {
+    const accounts = await this.ensureSystemAccounts(ctx, companyId);
+    return { ok: true, count: Object.keys(accounts).length, accounts: Object.values(accounts) };
+  }
+
+  async bulkCreateBankLines(
+    ctx: TenantContext,
+    dto: {
+      company_id: string;
+      lines: Array<{ line_date: string; amount: number; description?: string; statement_ref?: string; balance_after?: number }>;
+    },
+  ) {
+    const tenantId = this.assertTenantId(ctx);
+    if (!dto.company_id) throw new ForbiddenException('company_id required');
+    const rows = (dto.lines || []).filter((l) => l.line_date && l.amount != null);
+    if (!rows.length) throw new ForbiddenException('No lines to import');
+    const saved: BankStatementLine[] = [];
+    for (const l of rows) {
+      saved.push(
+        await this.bankLineRepo.save(
+          this.bankLineRepo.create({
+            tenant_id: tenantId,
+            company_id: dto.company_id,
+            statement_ref: l.statement_ref ?? null,
+            line_date: new Date(l.line_date),
+            description: l.description ?? null,
+            amount: String(l.amount),
+            balance_after: l.balance_after != null ? String(l.balance_after) : null,
+          }),
+        ),
+      );
+    }
+    return { imported: saved.length, lines: saved };
+  }
+
+  async unreconcileBankLine(ctx: TenantContext, lineId: string): Promise<BankStatementLine> {
+    const tenantId = this.assertTenantId(ctx);
+    const line = await this.bankLineRepo.findOne({ where: { id: lineId, tenant_id: tenantId } });
+    if (!line) throw new NotFoundException('Bank statement line not found');
+    line.reconciled_at = null;
+    line.journal_entry_id = null;
+    return this.bankLineRepo.save(line);
+  }
+
+  async suggestBankMatches(ctx: TenantContext, companyId?: string) {
+    const tenantId = this.assertTenantId(ctx);
+    const where: { tenant_id: string; company_id?: string } = { tenant_id: tenantId };
+    if (companyId) where.company_id = companyId;
+    const unmatched = await this.bankLineRepo.find({
+      where: { ...where, reconciled_at: IsNull() },
+      order: { line_date: 'DESC' },
+      take: 100,
+    });
+    const open = unmatched;
+    const journals = await this.journalRepo.find({
+      where: companyId ? { tenant_id: tenantId, company_id: companyId } : { tenant_id: tenantId },
+      order: { entry_date: 'DESC' },
+      take: 200,
+    });
+    return open.map((line) => {
+      const amt = Math.abs(Number(line.amount));
+      const suggestions = journals
+        .filter((j) => {
+          const d = Math.abs(Number(j.total_debit));
+          const c = Math.abs(Number(j.total_credit));
+          return Math.abs(d - amt) < 0.05 || Math.abs(c - amt) < 0.05;
+        })
+        .slice(0, 5)
+        .map((j) => ({ id: j.id, number: j.number, entry_date: j.entry_date, total_debit: j.total_debit }));
+      return { line, suggestions };
+    });
+  }
+
+  async trialBalance(ctx: TenantContext, companyId: string, asOf?: string) {
+    const date = asOf ? new Date(asOf) : new Date();
+    const accounts = await this.findChartOfAccounts(ctx, companyId);
+    const lines = await this.findJournalEntryLinesAsOf(ctx, date, companyId);
+    const byAccount: Record<string, { debit: number; credit: number }> = {};
+    for (const l of lines) {
+      if (!byAccount[l.account_id]) byAccount[l.account_id] = { debit: 0, credit: 0 };
+      byAccount[l.account_id].debit += l.debit;
+      byAccount[l.account_id].credit += l.credit;
+    }
+    const rows = accounts.map((a) => {
+      const bal = byAccount[a.id] || { debit: 0, credit: 0 };
+      const net = bal.debit - bal.credit;
+      return {
+        id: a.id,
+        code: a.code,
+        name: a.name,
+        type: a.type,
+        debit: Math.round(Math.max(net, 0) * 100) / 100,
+        credit: Math.round(Math.max(-net, 0) * 100) / 100,
+      };
+    });
+    const total_debit = Math.round(rows.reduce((s, r) => s + r.debit, 0) * 100) / 100;
+    const total_credit = Math.round(rows.reduce((s, r) => s + r.credit, 0) * 100) / 100;
+    return { as_of: date.toISOString().slice(0, 10), rows, total_debit, total_credit };
   }
 }
