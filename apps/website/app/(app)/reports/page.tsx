@@ -4,6 +4,14 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, getApiUrl } from '@/lib/api';
 import { standingClass, standingLabel } from '@/lib/invoice-standing';
+import {
+  customerLedgerHtml,
+  openPrintDocument,
+  reportDocumentHtml,
+  type LedgerParty,
+  type StatementBranding,
+  type StatementCompany,
+} from '@/lib/print-statement';
 
 type ReportId =
   | 'dashboard'
@@ -23,7 +31,8 @@ type ReportId =
   | 'requirement-vs-delivery'
   | 'stock-vs-delivery'
   | 'delivery-vs-invoiced'
-  | 'invoice-vs-payment';
+  | 'invoice-vs-payment'
+  | 'customer-ledger';
 
 const REPORTS: { id: ReportId; label: string; description: string; hasExport: boolean }[] = [
   { id: 'dashboard', label: 'Business overview', description: 'Summary, receivables & payables', hasExport: false },
@@ -34,7 +43,8 @@ const REPORTS: { id: ReportId; label: string; description: string; hasExport: bo
   { id: 'requirement-vs-delivery', label: 'Requirement vs delivery', description: 'Orders vs delivered/pending by line — CSV export', hasExport: true },
   { id: 'stock-vs-delivery', label: 'Stock vs delivery', description: 'Stock on hand vs delivered in period — CSV export', hasExport: true },
   { id: 'delivery-vs-invoiced', label: 'Delivery vs invoiced', description: 'Challans and whether they are invoiced — CSV export', hasExport: true },
-  { id: 'invoice-vs-payment', label: 'Invoice vs payment', description: 'Customer totals. Click the invoice count for each bill’s received and pending.', hasExport: true },
+  { id: 'invoice-vs-payment', label: 'Invoice vs payment', description: 'Customer totals. Download ledger on a customer for a PDF of their invoices, received, and amount due.', hasExport: true },
+  { id: 'customer-ledger', label: 'Customer ledger', description: 'Pick one customer and download a PDF statement with your company logo, pending, and due.', hasExport: false },
   { id: 'ledger-summary', label: 'Ledger summary', description: 'Journal entries by period', hasExport: false },
   { id: 'general-ledger', label: 'General ledger', description: 'Journal entries grouped for GL view', hasExport: false },
   { id: 'trial-balance', label: 'Trial balance', description: 'Debits vs credits as of a date', hasExport: false },
@@ -124,7 +134,7 @@ type PaymentRow = {
   invoices?: PaymentInvoice[];
 };
 
-function InvoiceVsPayment({ data }: { data: Record<string, unknown> }) {
+function InvoiceVsPayment({ data, onDownloadLedger }: { data: Record<string, unknown>; onDownloadLedger: (row: PaymentRow) => void }) {
   const s = (data.summary || {}) as Record<string, number>;
   const rows = (data.rows as PaymentRow[]) || [];
   const [openId, setOpenId] = useState<string | null>(null);
@@ -169,6 +179,15 @@ function InvoiceVsPayment({ data }: { data: Record<string, unknown> }) {
                         >
                           {r.customer_name || '—'}
                         </button>
+                        {r.customer_id !== 'unknown' && (
+                          <button
+                            type="button"
+                            className="mt-1 block text-xs font-semibold text-brand-700 hover:underline"
+                            onClick={() => onDownloadLedger(r)}
+                          >
+                            Download ledger
+                          </button>
+                        )}
                       </td>
                       <td className="p-2 whitespace-nowrap">
                         <button
@@ -191,11 +210,18 @@ function InvoiceVsPayment({ data }: { data: Record<string, unknown> }) {
                             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                               {r.customer_name} — invoice wise
                             </p>
-                            {r.customer_id !== 'unknown' && (
-                              <Link href={partyHref} className="text-xs font-medium text-teal-700 hover:underline">
-                                Open in invoices
-                              </Link>
-                            )}
+                            <div className="flex flex-wrap gap-3">
+                              {r.customer_id !== 'unknown' && (
+                                <button type="button" className="text-xs font-semibold text-brand-700 hover:underline" onClick={() => onDownloadLedger(r)}>
+                                  Download ledger
+                                </button>
+                              )}
+                              {r.customer_id !== 'unknown' && (
+                                <Link href={partyHref} className="text-xs font-medium text-teal-700 hover:underline">
+                                  Open in invoices
+                                </Link>
+                              )}
+                            </div>
                           </div>
                           {!invoices.length ? (
                             <p className="text-sm text-slate-600">No invoice lines for this party.</p>
@@ -255,7 +281,15 @@ function InvoiceVsPayment({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-function ReportResult({ reportId, data }: { reportId: ReportId; data: Record<string, unknown> }) {
+function ReportResult({
+  reportId,
+  data,
+  onDownloadLedger,
+}: {
+  reportId: ReportId;
+  data: Record<string, unknown>;
+  onDownloadLedger: (row: PaymentRow) => void;
+}) {
   if (reportId === 'sales-summary') {
     return (
       <div className="space-y-4">
@@ -396,8 +430,23 @@ function ReportResult({ reportId, data }: { reportId: ReportId; data: Record<str
     );
   }
 
+  if (reportId === 'customer-ledger') {
+    const rows = (data.rows as PaymentRow[]) || [];
+    const due = rows.reduce((sum, row) => sum + Number(row.total_pending || 0), 0);
+    return (
+      <div className="space-y-4">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Amount due</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900">{money(due)}</p>
+          <p className="mt-1 text-sm text-slate-600">Tap Download ledger. In the print window choose Save as PDF. The file includes your company logo, GSTIN, address, bank details, and each invoice’s pending and due date.</p>
+        </div>
+        <InvoiceVsPayment data={data} onDownloadLedger={onDownloadLedger} />
+      </div>
+    );
+  }
+
   if (reportId === 'invoice-vs-payment') {
-    return <InvoiceVsPayment data={data} />;
+    return <InvoiceVsPayment data={data} onDownloadLedger={onDownloadLedger} />;
   }
 
   if (reportId === 'ledger-summary' || reportId === 'general-ledger') {
@@ -568,7 +617,9 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ageingType, setAgeingType] = useState<'receivables' | 'payables'>('receivables');
-  const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
+  const [companies, setCompanies] = useState<Array<StatementCompany & { id: string; is_default?: boolean }>>([]);
+  const [branding, setBranding] = useState<StatementBranding | null>(null);
+  const [ledgerNote, setLedgerNote] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([]);
   const [vendors, setVendors] = useState<Array<{ id: string; name: string }>>([]);
 
@@ -578,8 +629,11 @@ export default function ReportsPage() {
       if (raw && Array.isArray((raw as { data?: T[] }).data)) return (raw as { data: T[] }).data;
       return [];
     };
-    void apiGet<Array<{ id: string; name: string }> | { data: Array<{ id: string; name: string }> }>('organization/companies').then((r) => {
-      setCompanies(unwrap(r.data).map((c) => ({ id: c.id, name: c.name })));
+    void apiGet<Array<StatementCompany & { id: string; is_default?: boolean }> | { data: Array<StatementCompany & { id: string; is_default?: boolean }> }>('organization/companies').then((r) => {
+      setCompanies(unwrap(r.data));
+    });
+    void apiGet<StatementBranding>('organization/branding').then((r) => {
+      if (r.data) setBranding(r.data);
     });
     void apiGet<Array<{ id: string; name: string }> | { data: Array<{ id: string; name: string }> }>('crm/customers').then((r) => {
       setCustomers(unwrap(r.data).map((c) => ({ id: c.id, name: c.name })));
@@ -610,10 +664,17 @@ export default function ReportsPage() {
         if (from) params.set('from', from);
         if (to) params.set('to', to);
         if (companyId) params.set('company_id', companyId);
+        if (reportId === 'customer-ledger' && !customerId) {
+          setLoading(false);
+          setError('Choose a customer, then tap View. Download ledger saves their statement as a PDF.');
+          setData(null);
+          return;
+        }
         if (
           customerId &&
           (reportId === 'requirement-vs-delivery' ||
             reportId === 'invoice-vs-payment' ||
+            reportId === 'customer-ledger' ||
             reportId === 'delivery-vs-invoiced')
         ) {
           params.set('customer_id', customerId);
@@ -623,7 +684,9 @@ export default function ReportsPage() {
       const path =
         reportId === 'balance-sheet'
           ? `reports/balance-sheet${qs ? `?${qs}` : ''}`
-          : `reports/${reportId}${qs ? `?${qs}` : ''}`;
+          : reportId === 'customer-ledger'
+            ? `reports/invoice-vs-payment${qs ? `?${qs}` : ''}`
+            : `reports/${reportId}${qs ? `?${qs}` : ''}`;
       const { data: res, error: err } = await apiGet<Record<string, unknown>>(path);
       if (err) setError(err);
       else setData(res ?? null);
@@ -637,7 +700,9 @@ export default function ReportsPage() {
     setSelected(id);
     setData(null);
     setError(null);
-    if (id !== 'dashboard') void runReport(id);
+    setLedgerNote(null);
+    if (id === 'dashboard' || id === 'customer-ledger') return;
+    void runReport(id);
   };
 
   const handleExport = async () => {
@@ -664,9 +729,74 @@ export default function ReportsPage() {
     URL.revokeObjectURL(blobUrl);
   };
 
+  const letterheadCompany = useCallback((): StatementCompany | null => {
+    const chosen = companyId ? companies.find((c) => c.id === companyId) : null;
+    return chosen ?? companies.find((c) => c.is_default) ?? companies[0] ?? null;
+  }, [companies, companyId]);
+
+  const partySlip = useCallback(async (row: PaymentRow): Promise<LedgerParty> => {
+    const fallback: LedgerParty = { name: row.customer_name || 'Customer' };
+    if (!row.customer_id || row.customer_id === 'unknown') return fallback;
+    const path = row.party_type === 'vendor' ? `purchase/vendors/${row.customer_id}` : `crm/customers/${row.customer_id}`;
+    const { data: party } = await apiGet<{ name?: string; gstin?: string | null; phone?: string | null; email?: string | null; address?: Record<string, unknown> | null }>(path);
+    if (!party) return fallback;
+    return {
+      name: party.name || fallback.name,
+      gstin: party.gstin,
+      phone: party.phone,
+      email: party.email,
+      address: party.address,
+    };
+  }, []);
+
+  const downloadLedger = useCallback(async (row: PaymentRow) => {
+    setLedgerNote(null);
+    const party = await partySlip(row);
+    const html = customerLedgerHtml({
+      company: letterheadCompany(),
+      branding,
+      party,
+      invoices: row.invoices || [],
+    });
+    const opened = openPrintDocument(`Customer ledger — ${party.name}`, html);
+    if (!opened) setLedgerNote('The print window was blocked. Allow pop-ups for this site, then tap Download ledger again and choose Save as PDF.');
+  }, [branding, letterheadCompany, partySlip]);
+
+  const downloadReportPdf = useCallback(() => {
+    setLedgerNote(null);
+    const meta = REPORTS.find((r) => r.id === selected);
+    const root = document.getElementById('report-result');
+    if (!root || !meta) {
+      setLedgerNote('Open the report first, then tap PDF.');
+      return;
+    }
+    const range = selected === 'trial-balance' || selected === 'balance-sheet'
+      ? `As of ${to || ''}`
+      : [from, to].filter(Boolean).join(' to ');
+    const opened = openPrintDocument(meta.label, reportDocumentHtml({
+      company: letterheadCompany(),
+      branding,
+      title: meta.label,
+      subtitle: range || 'This workspace',
+      bodyHtml: root.innerHTML,
+    }));
+    if (!opened) setLedgerNote('The print window was blocked. Allow pop-ups, then tap PDF and choose Save as PDF.');
+  }, [branding, from, letterheadCompany, selected, to]);
+
+  const downloadSelectedLedger = useCallback(async () => {
+    const rows = ((data?.rows as PaymentRow[]) || []);
+    const row = customerId ? rows.find((r) => r.customer_id === customerId) : rows.length === 1 ? rows[0] : undefined;
+    if (!row) {
+      setLedgerNote('Choose a customer, tap View, then Download ledger. Or tap Download ledger beside a customer in Invoice vs payment.');
+      return;
+    }
+    await downloadLedger(row);
+  }, [customerId, data, downloadLedger]);
+
   // Open a useful report by default so the mid pane is never empty.
   useEffect(() => {
-    selectReport('sales-summary');
+    const report = new URLSearchParams(window.location.search).get('report');
+    selectReport(report === 'customer-ledger' ? 'customer-ledger' : 'sales-summary');
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once on mount
   }, []);
 
@@ -704,7 +834,7 @@ export default function ReportsPage() {
       )}
       {selected !== 'ageing' && selected !== 'health-score' && selected !== 'vendor-ledger' && (
         <>
-          {selected !== 'invoice-vs-payment' && (
+          {selected !== 'invoice-vs-payment' && selected !== 'customer-ledger' && (
             <>
               <div className="min-w-[140px] flex-1 sm:flex-none">
                 <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -726,7 +856,8 @@ export default function ReportsPage() {
           )}
           {(selected === 'requirement-vs-delivery' ||
             selected === 'delivery-vs-invoiced' ||
-            selected === 'invoice-vs-payment') && (
+            selected === 'invoice-vs-payment' ||
+            selected === 'customer-ledger') && (
             <div className="min-w-[160px] flex-1 sm:flex-none">
               <label className="block text-xs font-medium text-slate-600 mb-1">Customer</label>
               <select
@@ -734,7 +865,7 @@ export default function ReportsPage() {
                 onChange={(e) => setCustomerId(e.target.value)}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]"
               >
-                <option value="">All customers</option>
+                <option value="">{selected === 'customer-ledger' ? 'Choose a customer' : 'All customers'}</option>
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
@@ -745,7 +876,8 @@ export default function ReportsPage() {
             selected !== 'requirement-vs-delivery' &&
             selected !== 'stock-vs-delivery' &&
             selected !== 'delivery-vs-invoiced' &&
-            selected !== 'invoice-vs-payment' && (
+            selected !== 'invoice-vs-payment' &&
+            selected !== 'customer-ledger' && (
               <div className="min-w-[160px] flex-1 sm:flex-none">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Company</label>
                 <select
@@ -778,6 +910,39 @@ export default function ReportsPage() {
         >
           CSV
         </button>
+      )}
+      {(selected === 'customer-ledger' || selected === 'invoice-vs-payment') && (
+        <button
+          type="button"
+          onClick={() => void downloadSelectedLedger()}
+          className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+        >
+          Download ledger
+        </button>
+      )}
+      {selected !== 'customer-ledger' && selected !== 'invoice-vs-payment' && (
+        <button
+          type="button"
+          onClick={downloadReportPdf}
+          className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+        >
+          PDF
+        </button>
+      )}
+      {selected === 'customer-ledger' && (
+        <div className="min-w-[160px] flex-1 sm:flex-none">
+          <label className="block text-xs font-medium text-slate-600 mb-1">Letterhead company</label>
+          <select
+            value={companyId}
+            onChange={(e) => setCompanyId(e.target.value)}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]"
+          >
+            <option value="">Default company</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
       )}
     </div>
   ) : null;
@@ -883,12 +1048,19 @@ export default function ReportsPage() {
                   <p className="text-xs sm:text-sm text-slate-500 mt-0.5">{selectedMeta?.description}</p>
                 </div>
                 {filterControls}
+                {ledgerNote && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">{ledgerNote}</p>}
               </div>
-              <div className="flex-1 overflow-auto p-3 sm:p-5 overscroll-contain">
+              <div id="report-result" className="flex-1 overflow-auto p-3 sm:p-5 overscroll-contain">
                 {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
                 {loading && !data ? <p className="text-sm text-slate-500">Loading…</p> : null}
-                {data != null ? <ReportResult reportId={selected} data={data} /> : !loading ? (
-                  <p className="text-sm text-slate-500">Tap View to load this report.</p>
+                {data != null ? (
+                  <ReportResult reportId={selected} data={data} onDownloadLedger={(row) => void downloadLedger(row)} />
+                ) : !loading ? (
+                  <p className="text-sm text-slate-500">
+                    {selected === 'customer-ledger'
+                      ? 'Choose a customer above, tap View, then Download ledger. In the print window, choose Save as PDF.'
+                      : 'Tap View to load this report.'}
+                  </p>
                 ) : null}
               </div>
             </>

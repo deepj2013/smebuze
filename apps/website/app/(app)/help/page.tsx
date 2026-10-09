@@ -1,11 +1,12 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { BookOpen, ChevronLeft, ChevronRight, CircleHelp, Printer, ScanLine, Store, Warehouse } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CircleHelp, Printer, ScanLine, Store, Warehouse } from 'lucide-react';
 import { businessTypeMeta, isPosBusinessType } from '@/lib/business-types';
 import { apiGet } from '@/lib/api';
+import UserGuide from '../components/UserGuide';
 
 const TUTORIAL = [
   {
@@ -55,55 +56,23 @@ function HelpBody() {
   }, []);
 
   const meta = businessTypeMeta(shop);
+  const guideTitle = shop === 'ice_crest' ? 'Ice Crest' : meta.title;
   const current = TUTORIAL[step];
   const Icon = current.icon;
   const pos = isPosBusinessType(shop);
 
-  const manual = useMemo(
-    () => [
-      {
-        id: 'start',
-        title: 'Start here',
-        body: pos
-          ? `You are set up as ${meta.title}. Open Billing counter to sell. Manage shop to add products.`
-          : `You are set up as ${meta.title}. Use Dashboard, then Customers and Invoices.`,
-      },
-      {
-        id: 'inventory',
-        title: 'Inventory',
-        body: 'Items → Add item. Fill barcode (scan or type), category, MRP, sale price and opening stock. Stock → Receive to add quantity from a purchase.',
-      },
-      {
-        id: 'pos',
-        title: 'POS / bills',
-        body: 'Scan barcode, tap the product, or search. Charge cash, UPI or card. Print the bill. Stock drops on sale for shops (not restaurants). A restaurant also has Waiter (tables → kitchen ticket), Kitchen (KOT display), and Restaurant admin.',
-      },
-      {
-        id: 'printers',
-        title: 'Printers',
-        body: 'Organization → Printers. Pick USB, Wi-Fi, internet or Bluetooth. Save paper size. You can still use the browser print box without adding a printer.',
-      },
-      {
-        id: 'change',
-        title: 'Change shop type or menus',
-        body: 'Setup lets you pick restaurant, kirana, pharmacy, salon, trading and other shop types, and which modules appear in the menu.',
-      },
-    ],
-    [meta.title, pos],
-  );
-
   return (
     <div className="max-w-3xl">
-      <p className="text-xs font-semibold uppercase tracking-widest text-brand-600">Help</p>
-      <h1 className="mt-1 text-2xl font-bold text-slate-900">Tutorial and manual</h1>
-      <p className="mt-1 text-sm text-slate-600">Short walkthrough, or keep the written steps open while you work.</p>
+      <p className="text-xs font-semibold uppercase tracking-widest text-brand-600">Help · {guideTitle}</p>
+      <h1 className="mt-1 text-2xl font-bold text-slate-900">Tutorial and user guide</h1>
+      <p className="mt-1 text-sm text-slate-600">A short walkthrough, or the full guide for how you enter bills, take payment, and download reports.</p>
 
       <div className="mt-4 flex flex-wrap gap-2">
         <Link href="/help?guide=1" className={`rounded-full px-3 py-1.5 text-sm font-semibold ${guide ? 'bg-brand-600 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}>
           Tutorial
         </Link>
         <Link href="/help" className={`rounded-full px-3 py-1.5 text-sm font-semibold ${!guide ? 'bg-brand-600 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}>
-          Manual
+          User guide
         </Link>
         <Link href="/onboarding" className="rounded-full px-3 py-1.5 text-sm font-semibold bg-white border border-slate-200 text-slate-700">
           Change shop / menus
@@ -155,16 +124,8 @@ function HelpBody() {
           </div>
         </div>
       ) : (
-        <div className="mt-6 space-y-4">
-          {manual.map((s) => (
-            <section key={s.id} id={s.id} className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h2 className="font-semibold text-slate-900 flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-brand-700" />
-                {s.title}
-              </h2>
-              <p className="mt-2 text-sm text-slate-600 leading-relaxed">{s.body}</p>
-            </section>
-          ))}
+        <div className="mt-6">
+          <UserGuide businessType={shop} />
         </div>
       )}
     </div>

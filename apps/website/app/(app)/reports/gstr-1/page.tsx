@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, getApiUrl, getToken } from '@/lib/api';
+import { openPrintDocument, reportDocumentHtml, type StatementBranding, type StatementCompany } from '@/lib/print-statement';
 
 type Gstr1 = {
   period: string;
@@ -60,6 +61,24 @@ export default function Gstr1Page() {
     URL.revokeObjectURL(url);
   }
 
+  async function exportPdf() {
+    const root = document.getElementById('gstr1-print');
+    if (!root) return;
+    const [companiesRes, brandingRes] = await Promise.all([
+      apiGet<Array<StatementCompany & { is_default?: boolean }> | { data: Array<StatementCompany & { is_default?: boolean }> }>('organization/companies'),
+      apiGet<StatementBranding>('organization/branding'),
+    ]);
+    const list = Array.isArray(companiesRes.data) ? companiesRes.data : companiesRes.data?.data ?? [];
+    const company = list.find((c) => c.is_default) ?? list[0] ?? null;
+    openPrintDocument(`GSTR-1 ${period}`, reportDocumentHtml({
+      company,
+      branding: brandingRes.data ?? null,
+      title: 'GSTR-1',
+      subtitle: `Return month ${period}`,
+      bodyHtml: root.innerHTML,
+    }));
+  }
+
   const s = data?.summary;
 
   return (
@@ -77,11 +96,12 @@ export default function Gstr1Page() {
           {loading ? 'Loading…' : 'View GSTR-1'}
         </button>
         <button type="button" onClick={() => void exportCsv()} className="rounded-lg border px-4 py-2 text-sm min-h-[44px]">Export CSV</button>
+        <button type="button" onClick={() => void exportPdf()} disabled={!data} className="rounded-lg border px-4 py-2 text-sm min-h-[44px] disabled:opacity-50">PDF</button>
         <Link href="/reports/gstr-2a" className="text-sm text-brand-600">GSTR-2A recon →</Link>
       </div>
       {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p>}
       {s && (
-        <>
+        <div id="gstr1-print" className="space-y-6">
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
               ['Invoices', s.invoice_count],
@@ -101,7 +121,7 @@ export default function Gstr1Page() {
           <Table title={`7. B2C supplies (${data!.b2c.length})`} cols={['Customer', 'Invoice', 'Date', 'Taxable', 'Tax', 'Value']} rows={data!.b2c.map((r) => [r.customer, r.invoice_number, r.invoice_date, money(r.taxable_value), money(r.cgst + r.sgst + r.igst), money(r.invoice_value)])} />
           <Table title="12. HSN summary" cols={['HSN/SAC', 'Qty', 'Taxable', 'CGST', 'SGST', 'IGST']} rows={data!.hsn.map((r) => [r.hsn_sac, String(r.qty), money(r.taxable), money(r.cgst), money(r.sgst), money(r.igst)])} />
           <Table title="9. Credit and debit notes (CDNR)" cols={['Type', 'Note no', 'Date', 'Against invoice', 'Amount', 'Reason']} rows={data!.cdnr.map((r) => [r.note_type || 'Credit', r.note_number, r.note_date, r.invoice_number, money(r.amount), r.reason])} />
-        </>
+        </div>
       )}
     </div>
   );

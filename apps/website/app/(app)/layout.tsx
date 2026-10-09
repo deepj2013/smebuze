@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import GlobalSearch from './components/GlobalSearch';
 import IceCrestTutorial from './components/IceCrestTutorial';
@@ -209,6 +209,7 @@ const nav: Array<{
     ],
   },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'Customer ledger', href: '/reports?report=customer-ledger', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
   { label: 'Bulk upload', href: '/bulk-upload', icon: Upload, module: 'bulk_upload' },
@@ -283,6 +284,7 @@ const starIceNav: typeof nav = [
     ],
   },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'Customer ledger', href: '/reports?report=customer-ledger', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
 ];
@@ -315,10 +317,12 @@ const iceCrestNav: typeof nav = [
   ]},
   { label: 'Expenses', href: '/ice-crest/expenses', icon: BookMarked, module: 'reports', permission: 'reports.view' },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'Customer ledger', href: '/reports?report=customer-ledger', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
   { label: 'Getting started', href: '/ice-crest/tutorial', icon: Sparkles, module: 'dashboard', permission: 'reports.view' },
   { label: 'Staff guide', href: '/ice-crest/guide', icon: BookOpen, module: 'dashboard', permission: 'reports.view' },
+  { label: 'Help', href: '/help', icon: CircleHelp, module: 'help' },
   { label: 'WhatsApp', href: '/ice-crest/whatsapp', icon: Megaphone, module: 'crm', permission: 'org.company.update' },
   {
     label: 'Staff & Payroll',
@@ -353,6 +357,7 @@ const restaurantFloorNav: typeof nav = [
   { label: 'Party-wise bills', href: '/sales/invoices/parties', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Receive payment', href: '/sales/invoices/receive', icon: Wallet, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'Customer ledger', href: '/reports?report=customer-ledger', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
   { label: 'Setup', href: '/onboarding', icon: Settings, module: 'onboarding' },
@@ -380,6 +385,7 @@ const posNav: typeof nav = [
   { label: 'Customers', href: '/crm/customers', icon: Users, module: 'crm', permission: 'crm.customer.view' },
   { label: 'Printers', href: '/organization/printers', icon: Printer, module: 'organization', permission: 'org.company.view' },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'Customer ledger', href: '/reports?report=customer-ledger', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
   { label: 'Setup', href: '/onboarding', icon: Settings, module: 'onboarding' },
@@ -457,6 +463,14 @@ function filterNavByAccess(
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const navActive = (href: string) => {
+    const query = searchParams.toString();
+    const here = query ? `${pathname}?${query}` : pathname;
+    if (href.includes('?')) return here === href;
+    if (pathname === href && searchParams.has('report')) return false;
+    return pathname === href;
+  };
   const router = useRouter();
   const [user, setUser] = useState<{
     email?: string;
@@ -746,7 +760,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <div className="ml-2 mt-0.5 pl-2 border-l-2 border-slate-200 space-y-0.5">
                   {item.children.map((c) => {
                     const Icon = c.icon;
-                    const isActive = pathname === c.href;
+                    const isActive = navActive(c.href);
                     return (
                       <Link
                         key={c.href}
@@ -771,7 +785,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               href={item.href!}
               onClick={isMobile ? closeDrawer : undefined}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg ${isMobile ? 'text-base min-touch' : 'text-sm'} ${
-                pathname === item.href
+                navActive(item.href!)
                   ? 'bg-brand-100 text-brand-800 font-medium'
                   : 'text-slate-700 hover:bg-slate-100'
               }`}
