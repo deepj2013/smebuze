@@ -1,6 +1,7 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, getApiUrl } from '@/lib/api';
 import { standingClass, standingLabel } from '@/lib/invoice-standing';
@@ -605,6 +606,17 @@ function ReportResult({
   );
 }
 
+function ReportQuery({ onChange }: { onChange: (report: string | null) => void }) {
+  const params = useSearchParams();
+  const report = params.get('report');
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  useEffect(() => {
+    onChangeRef.current(report);
+  }, [report]);
+  return null;
+}
+
 export default function ReportsPage() {
   const defaults = useMemo(() => monthBounds(), []);
   const [selected, setSelected] = useState<ReportId | null>(null);
@@ -793,12 +805,6 @@ export default function ReportsPage() {
     await downloadLedger(row);
   }, [customerId, data, downloadLedger]);
 
-  // Open a useful report by default so the mid pane is never empty.
-  useEffect(() => {
-    const report = new URLSearchParams(window.location.search).get('report');
-    selectReport(report === 'customer-ledger' ? 'customer-ledger' : 'sales-summary');
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once on mount
-  }, []);
 
   const selectedMeta = REPORTS.find((r) => r.id === selected);
 
@@ -949,6 +955,9 @@ export default function ReportsPage() {
 
   return (
     <div className="flex flex-col gap-3 min-h-0">
+      <Suspense fallback={null}>
+        <ReportQuery onChange={(report) => selectReport(report === 'customer-ledger' ? 'customer-ledger' : 'sales-summary')} />
+      </Suspense>
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Reports</h1>
         <p className="text-sm text-slate-500 mt-0.5">

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import GlobalSearch from './components/GlobalSearch';
 import IceCrestTutorial from './components/IceCrestTutorial';
@@ -463,12 +463,14 @@ function filterNavByAccess(
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const [navQuery, setNavQuery] = useState('');
+  useEffect(() => {
+    setNavQuery(window.location.search.replace(/^\?/, ''));
+  }, [pathname]);
   const navActive = (href: string) => {
-    const query = searchParams.toString();
-    const here = query ? `${pathname}?${query}` : pathname;
+    const here = navQuery ? `${pathname}?${navQuery}` : pathname;
     if (href.includes('?')) return here === href;
-    if (pathname === href && searchParams.has('report')) return false;
+    if (pathname === href && navQuery.includes('report=')) return false;
     return pathname === href;
   };
   const router = useRouter();
