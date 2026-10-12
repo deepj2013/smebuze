@@ -50,6 +50,23 @@ export class Item {
   @Column({ type: 'varchar', length: 100, nullable: true })
   category: string | null;
 
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  subcategory: string | null;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  variant_size: string | null;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  variant_shape: string | null;
+
+  /** Bulk item this pack is filled from. Stock of the bulk item is what the shop holds. */
+  @Column('uuid', { nullable: true })
+  pack_source_id: string | null;
+
+  /** Bulk quantity used by one sale unit. Example: 0.05 kg for a 50g pack when the bulk unit is kg. */
+  @Column('decimal', { precision: 18, scale: 4, nullable: true })
+  pack_qty: string | null;
+
   @Column({ type: 'varchar', length: 20, nullable: true })
   hsn_sac: string | null;
 

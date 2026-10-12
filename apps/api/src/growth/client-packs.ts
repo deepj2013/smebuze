@@ -156,7 +156,7 @@ export const CLIENT_PACKS: ClientPack[] = [
     hero_subtitle: 'Order notebooks, pens and kits. Collect from the shop.',
     about: 'Your neighbourhood stationery store, now online.',
   }),
-  pack('department_store', 'Department store', 'Multi-department POS plus online catalog.', POS_SHOP, {
+  pack('department_store', 'Department store', 'Barcode counter, departments, pack stock, cash and monthly credit.', POS_SHOP, {
     hero_title: 'Shop by department',
     hero_subtitle: 'Browse products and place an order for pickup or delivery.',
     about: 'One catalog for the floor and the website.',

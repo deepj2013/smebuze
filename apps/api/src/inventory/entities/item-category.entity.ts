@@ -24,6 +24,10 @@ export class ItemCategory {
   @Column({ type: 'varchar', length: 100 })
   name: string;
 
+  /** Set when this row is a subcategory of a department. */
+  @Column('uuid', { nullable: true })
+  parent_id: string | null;
+
   @Column({ type: 'int', default: 0 })
   sort_order: number;
 

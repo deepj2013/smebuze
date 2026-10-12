@@ -53,10 +53,10 @@ export default function BulkUploadPage() {
     try {
       const text = await itemsFile.text();
       const rows = parseCsv(text);
-      const { data, error: err } = await apiPost<{ received?: number; message?: string }>('bulk-upload/items', { rows });
+      const { data, error: err } = await apiPost<{ received?: number; inserted?: number; failed?: number; message?: string }>('bulk-upload/items', { rows });
       setLoading(false);
       if (err) setError(err);
-      else setItemsResult(data?.message ?? `Received ${data?.received ?? 0} rows.`);
+      else setItemsResult(data?.message ?? `Saved ${data?.inserted ?? 0} of ${data?.received ?? 0}. Failed ${data?.failed ?? 0}.`);
     } catch {
       setLoading(false);
       setError('Failed to read file.');
@@ -87,7 +87,7 @@ export default function BulkUploadPage() {
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-6">
           <h2 className="font-semibold text-slate-900 mb-2">Upload items (CSV)</h2>
-          <p className="text-sm text-slate-500 mb-2">Headers: name, sku, unit, category, hsn_sac, description (optional).</p>
+          <p className="text-sm text-slate-500 mb-2">Headers: name, sku, unit, category, hsn_sac, description. A shop sheet can also include barcode, mrp, cost_price, discount_percent, tax_rate, subcategory, variant_size, variant_shape, pack_sku, pack_qty, for_sale, opening_qty. Upload the loose bulk item before the pack that uses it. A file with only the first headers still imports the same way.</p>
           <a
             href="data:text/csv;charset=utf-8,name,sku,unit,category,hsn_sac,description%0ASample%20Item,SKU001,nos,General,998314,Sample%20product"
             download="smebuzz-items-sample.csv"

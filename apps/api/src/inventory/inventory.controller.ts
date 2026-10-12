@@ -43,7 +43,7 @@ export class InventoryController {
 
   @Post('categories')
   @RequirePermissions('inventory.item.create')
-  async createCategory(@Body() body: { name: string; sort_order?: number }, @CurrentTenant() ctx: TenantContext) {
+  async createCategory(@Body() body: { name: string; sort_order?: number; parent_id?: string | null }, @CurrentTenant() ctx: TenantContext) {
     return this.inventoryService.createCategory(body, ctx);
   }
 
@@ -51,7 +51,7 @@ export class InventoryController {
   @RequirePermissions('inventory.item.create')
   async updateCategory(
     @Param('id') id: string,
-    @Body() body: { name?: string; sort_order?: number; is_active?: boolean },
+    @Body() body: { name?: string; sort_order?: number; is_active?: boolean; parent_id?: string | null },
     @CurrentTenant() ctx: TenantContext,
   ) {
     return this.inventoryService.updateCategory(id, body, ctx);
@@ -131,10 +131,17 @@ export class InventoryController {
   @Post('stock/receive')
   @RequirePermissions('inventory.item.create')
   async receiveStock(
-    @Body() body: { warehouse_id: string; item_id: string; quantity: number },
+    @Body() body: { warehouse_id: string; item_id: string; quantity: number; cost_price?: number; measured?: boolean },
     @CurrentTenant() ctx: TenantContext,
   ) {
-    await this.inventoryService.receiveStock(ctx, body.warehouse_id, body.item_id, body.quantity);
+    if (body.cost_price != null && Number.isFinite(Number(body.cost_price))) {
+      await this.inventoryService.setItemCost(ctx, body.item_id, Number(body.cost_price));
+    }
+    if (body.measured) {
+      await this.inventoryService.receiveMeasured(ctx, body.warehouse_id, body.item_id, body.quantity);
+    } else {
+      await this.inventoryService.receiveStock(ctx, body.warehouse_id, body.item_id, body.quantity);
+    }
     return { ok: true };
   }
 

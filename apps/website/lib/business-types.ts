@@ -110,7 +110,7 @@ export const SIGNUP_BUSINESS_TYPES = [
     id: 'department_store',
     group: 'retail',
     title: 'Department store / supermarket',
-    blurb: 'Scan at the counter with a USB/Bluetooth reader, or use the phone camera. Stock by department like a normal store.',
+    blurb: 'Barcode counter for a general store. Departments, sizes, packs from bulk stock, cash bills and monthly credit.',
     itemLabel: 'product',
     itemsLabel: 'Departments',
     counterLabel: 'Department store POS',

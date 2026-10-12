@@ -123,6 +123,12 @@ export class SalesController {
     return this.salesService.deleteReceipt(id, ctx);
   }
 
+  @Post('invoices/:id/counter-return')
+  @RequirePermissions('sales.invoice.create')
+  async counterReturn(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
+    return this.salesService.counterReturn(id, ctx);
+  }
+
   @Post('invoices/:id/payment')
   @RequirePermissions('sales.invoice.create')
   async recordPayment(

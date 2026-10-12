@@ -10,7 +10,8 @@ import PosSwitcher from '../../../../components/PosSwitcher';
 import BarcodeCapture from '../../../../components/BarcodeCapture';
 import { DecimalInput } from '../../../../components/NumberField';
 import { parseNonNeg, splitItemGst } from '@/lib/item-pricing';
-import { parseMoney, parseQty } from '@/lib/money';
+import { parseMoney, parseQty, round2 } from '@/lib/money';
+import { DepartmentItemFields } from '../../../DepartmentItemFields';
 
 function validateHsnSac(v: string): string | null {
   if (!v.trim()) return null;
@@ -45,6 +46,12 @@ export default function EditItemPage() {
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [isDept, setIsDept] = useState(false);
+  const [subcategory, setSubcategory] = useState('');
+  const [variantSize, setVariantSize] = useState('');
+  const [variantShape, setVariantShape] = useState('');
+  const [packSourceId, setPackSourceId] = useState('');
+  const [packQty, setPackQty] = useState('');
 
   useEffect(() => {
     apiGet<Record<string, unknown>>(`inventory/items/${id}`).then((res) => {
@@ -72,12 +79,23 @@ export default function EditItemPage() {
         });
         setCgstRate(String(gst.cgst));
         setSgstRate(String(gst.sgst));
+        setSubcategory((d.subcategory as string) ?? '');
+        setVariantSize((d.variant_size as string) ?? '');
+        setVariantShape((d.variant_shape as string) ?? '');
+        setPackSourceId((d.pack_source_id as string) ?? '');
+        setPackQty(d.pack_qty != null ? String(d.pack_qty) : '');
         setForSale(d.for_sale !== false);
         setForConsume(d.for_consume !== false);
         setImageUrls(Array.isArray(d.image_urls) ? (d.image_urls as string[]) : []);
       }
     });
   }, [id]);
+
+  useEffect(() => {
+    apiGet<{ tenant?: { settings?: { business_type?: string } } }>('auth/me').then(({ data }) => {
+      if (data?.tenant?.settings?.business_type === 'department_store') setIsDept(true);
+    });
+  }, []);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -163,6 +181,16 @@ export default function EditItemPage() {
     else body.sale_price = null;
     if (discountPercent.trim() !== '') body.discount_percent = parseMoney(discountPercent);
     else body.discount_percent = null;
+    if (isDept) {
+      body.subcategory = subcategory.trim() || null;
+      body.variant_size = variantSize.trim() || null;
+      body.variant_shape = variantShape.trim() || null;
+      body.pack_source_id = packSourceId || null;
+      body.pack_qty = packSourceId && packQty.trim() ? Math.round(Number(packQty) * 10000) / 10000 : null;
+      const m = mrp.trim() ? parseMoney(mrp) : 0;
+      const d = discountPercent.trim() ? parseMoney(discountPercent) : 0;
+      if (m > 0) body.sale_price = round2(m * (1 - Math.min(100, Math.max(0, d)) / 100));
+    }
     body.cgst_rate = parseMoney(cgstRate);
     body.sgst_rate = parseMoney(sgstRate);
     body.for_sale = forSale;
@@ -284,7 +312,7 @@ export default function EditItemPage() {
               {fieldErrors.salePrice && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.salePrice}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Discount % (optional)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{isDept ? 'Maximum discount % off MRP' : 'Discount % (optional)'}</label>
               <DecimalInput min={0} max={100} value={discountPercent} onValue={(v) => { setDiscountPercent(v); setFieldErrors((p) => ({ ...p, discountPercent: '' })); }} invalid={!!fieldErrors.discountPercent} />
               {fieldErrors.discountPercent && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.discountPercent}</p>}
             </div>
@@ -301,6 +329,25 @@ export default function EditItemPage() {
                 Combined GST {((parseFloat(cgstRate) || 0) + (parseFloat(sgstRate) || 0)).toFixed(2)}%. Copied onto invoices and still editable there.
               </p>
             </div>
+            {isDept && (
+              <DepartmentItemFields
+                subcategory={subcategory}
+                setSubcategory={setSubcategory}
+                variantSize={variantSize}
+                setVariantSize={setVariantSize}
+                variantShape={variantShape}
+                setVariantShape={setVariantShape}
+                packSourceId={packSourceId}
+                setPackSourceId={setPackSourceId}
+                packQty={packQty}
+                setPackQty={setPackQty}
+                mrp={mrp}
+                discountPercent={discountPercent}
+                costPrice={costPrice}
+                cgstRate={cgstRate}
+                sgstRate={sgstRate}
+              />
+            )}
             <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
               <p className="text-sm font-medium text-slate-800">This product is used for</p>
               <label className="flex items-center gap-2 text-sm text-slate-700">

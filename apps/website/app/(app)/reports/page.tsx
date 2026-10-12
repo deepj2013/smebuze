@@ -628,14 +628,15 @@ function ReportResult({
   );
 }
 
-function ReportQuery({ onChange }: { onChange: (report: string | null) => void }) {
+function ReportQuery({ onChange }: { onChange: (report: string | null, customerId: string | null) => void }) {
   const params = useSearchParams();
   const report = params.get('report');
+  const customerId = params.get('customer_id');
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   useEffect(() => {
-    onChangeRef.current(report);
-  }, [report]);
+    onChangeRef.current(report, customerId);
+  }, [report, customerId]);
   return null;
 }
 
@@ -978,7 +979,10 @@ export default function ReportsPage() {
   return (
     <div className="flex flex-col gap-3 min-h-0">
       <Suspense fallback={null}>
-        <ReportQuery onChange={(report) => selectReport(report === 'customer-ledger' ? 'customer-ledger' : 'sales-summary')} />
+        <ReportQuery onChange={(report, customerFromUrl) => {
+          if (customerFromUrl) setCustomerId(customerFromUrl);
+          selectReport(report === 'customer-ledger' ? 'customer-ledger' : 'sales-summary');
+        }} />
       </Suspense>
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Reports</h1>

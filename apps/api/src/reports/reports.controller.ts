@@ -76,6 +76,16 @@ export class ReportsController {
     return data;
   }
 
+  @Get('department-counter')
+  @RequirePermissions('reports.view')
+  async departmentCounter(
+    @CurrentTenant() ctx: TenantContext,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.reportsService.getDepartmentCounterReport(ctx, from, to);
+  }
+
   @Get('item-wise-sales')
   @RequirePermissions('reports.view')
   async itemWiseSales(

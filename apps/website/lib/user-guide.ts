@@ -69,14 +69,16 @@ function dailyFlow(kind: GuideKind, title: string): GuideBlock {
       intro: 'Add what you sell once. At the counter, scan or tap, take money, and print the bill. Shops that track stock see quantity go down on each sale.',
       steps: [
         { title: '1. Add products', body: 'Manage shop or Products. Name, barcode, MRP, sale price and opening stock. On a phone, use the camera to fill the barcode. A USB scanner types into the barcode box.', href: '/inventory/items', link: 'Open products' },
-        { title: '2. Receive a supplier delivery', body: 'Stock → receive quantity when a truck or carton arrives. Selling does not add stock; receiving does.', href: '/inventory/stock', link: 'Open stock' },
-        { title: '3. Bill at the counter', body: 'Billing counter. Scan, search, or tap. Take cash, UPI or card. Print. The bill is saved under Bills.', href: '/pos', link: 'Open counter' },
-        { title: '4. A regular who pays later', body: 'Put the bill on the customer’s name. When they pay one bill, use Record payment on that bill. When they pay three or four together, use Receive payment.', href: '/sales/invoices/receive', link: 'Receive payment' },
+        { title: '2. Receive a supplier delivery', body: 'Receive stock when a truck or carton arrives. Enter 50 or 50.5 if you buy by weight. Leave cost blank to keep the old cost, or type the new cost from the supplier bill. Selling does not add stock.', href: '/inventory/stock/receive', link: 'Receive stock' },
+        { title: '3. Bill at the counter', body: 'Scan, search, or tap. Take cash, UPI, card, or put a named customer on credit until month end. The slip prints and the cart clears for the next person. Hold parks one customer while you serve the next. Return puts today’s bill back into stock. If the internet drops, the bill stays on this device and stock updates after it syncs.', href: '/pos', link: 'Open counter' },
+        { title: '4. A regular who pays later', body: 'Choose Credit and a named customer. Their credit limit blocks a new credit bill when they already owe too much. Cash today is not blocked by that limit. When they pay one bill, use Record payment. When they pay three or four together, use Receive payment. Open their statement from Customer ledger.', href: '/sales/invoices/receive', link: 'Receive payment' },
         { title: '5. End of day', body: 'Reports → Sales summary. Pending is what customers still owe. Download a customer ledger if someone asks for a statement.', href: '/reports', link: 'Open reports' },
       ],
       asks: [
         { q: 'The scanner does nothing.', a: 'Click the search or barcode box first, then scan. The scanner acts like a keyboard.' },
-        { q: 'I sold the wrong item.', a: 'Do not delete a bill you already gave the customer if GST is involved. Issue a credit note for the return, then make a fresh bill if needed.' },
+        { q: 'I sold the wrong item.', a: 'On the counter, tap Return and pick today’s bill. Stock comes back, including a small pack that was taken from a loose bulk item. Then make a fresh bill if needed.' },
+        { q: 'How do I load many products?', a: 'Item upload. The simple columns still work. A shop sheet can also include barcode, MRP, cost, discount, GST, size, and the bulk SKU a pack comes from. Upload the loose item first.' },
+        { q: 'How do I print shelf stickers?', a: 'Barcode labels. Choose how many copies, then print. The scanner reads the bars. The price on the sticker is MRP.' },
       ],
     };
   }

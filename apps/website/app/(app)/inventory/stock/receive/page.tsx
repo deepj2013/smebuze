@@ -4,8 +4,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
-import { parseQty } from '@/lib/money';
-import { DecimalInput } from '../../../components/NumberField';
 import BarcodeCapture from '../../../components/BarcodeCapture';
 import PosSwitcher from '../../../components/PosSwitcher';
 
@@ -18,6 +16,7 @@ export default function ReceiveStockPage() {
   const [warehouseId, setWarehouseId] = useState('');
   const [itemId, setItemId] = useState('');
   const [quantity, setQuantity] = useState('');
+  const [costPrice, setCostPrice] = useState('');
   const [scanCode, setScanCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,13 +53,25 @@ export default function ReceiveStockPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    const qty = parseQty(quantity);
+    const qty = Number(quantity);
     if (!warehouseId || !itemId || !Number.isFinite(qty) || qty <= 0) {
       setError('Select warehouse, item and enter a positive quantity.');
       return;
     }
+    const measured = Math.abs(qty - Math.round(qty)) > 0.0001;
+    const cost = costPrice.trim() === '' ? undefined : Number(costPrice);
+    if (cost != null && !Number.isFinite(cost)) {
+      setError('Cost must be a number, or leave it blank.');
+      return;
+    }
     setLoading(true);
-    const { error: err } = await apiPost('inventory/stock/receive', { warehouse_id: warehouseId, item_id: itemId, quantity: qty });
+    const { error: err } = await apiPost('inventory/stock/receive', {
+      warehouse_id: warehouseId,
+      item_id: itemId,
+      quantity: qty,
+      measured,
+      ...(cost != null ? { cost_price: cost } : {}),
+    });
     setLoading(false);
     if (err) setError(err);
     else {
@@ -74,7 +85,7 @@ export default function ReceiveStockPage() {
       <PosSwitcher />
       <Link href="/inventory/stock" className="text-sm text-slate-600 hover:text-slate-900 mb-4 inline-block">← Stock</Link>
       <h1 className="text-2xl font-bold text-slate-900 mb-4">Receive stock</h1>
-      <p className="text-sm text-slate-600 mb-4">Scan the pack barcode to pick the item, then enter qty from the truck or supplier.</p>
+      <p className="text-sm text-slate-600 mb-4">Scan the pack barcode to pick the item, then enter qty from the truck or supplier. Whole numbers stay as they are. A decimal such as 50.5 kg is stored as measured stock. Leave cost blank to keep the current cost.</p>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
       <form onSubmit={submit} className="max-w-md rounded-xl border border-slate-200 bg-white p-6 space-y-4">
         <div>
@@ -115,7 +126,25 @@ export default function ReceiveStockPage() {
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Quantity *</label>
-          <DecimalInput whole min={1} value={quantity} onValue={setQuantity} required aria-label="Quantity" />
+          <input
+            value={quantity}
+            onChange={(e) => setQuantity(e.target.value.replace(/[^\d.]/g, ''))}
+            inputMode="decimal"
+            required
+            aria-label="Quantity"
+            placeholder="10 or 50.5"
+            className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">New cost price</label>
+          <input
+            value={costPrice}
+            onChange={(e) => setCostPrice(e.target.value.replace(/[^\d.]/g, ''))}
+            inputMode="decimal"
+            placeholder="Optional"
+            className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
         </div>
         <div className="flex gap-2">
           <button type="submit" disabled={loading} className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50">Add to stock</button>

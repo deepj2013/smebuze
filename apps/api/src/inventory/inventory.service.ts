@@ -1,6 +1,6 @@
 import { Injectable, ForbiddenException, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { Warehouse } from './entities/warehouse.entity';
 import { Item } from './entities/item.entity';
 import { ItemCategory } from './entities/item-category.entity';
@@ -80,11 +80,19 @@ export class InventoryService {
     });
   }
 
-  async createCategory(dto: { name: string; sort_order?: number }, ctx: TenantContext) {
+  async createCategory(dto: { name: string; sort_order?: number; parent_id?: string | null }, ctx: TenantContext) {
     const tenantId = this.assertTenantId(ctx);
     const name = dto.name.trim();
     if (!name) throw new ForbiddenException('Category name is required');
-    const existing = await this.categoryRepo.findOne({ where: { tenant_id: tenantId, name } });
+    const parentId = dto.parent_id || null;
+    if (parentId) {
+      const parent = await this.categoryRepo.findOne({ where: { id: parentId, tenant_id: tenantId } });
+      if (!parent) throw new NotFoundException('Parent category not found');
+      if (parent.parent_id) throw new BadRequestException('A subcategory cannot contain another subcategory');
+    }
+    const existing = await this.categoryRepo.findOne({
+      where: { tenant_id: tenantId, name, parent_id: parentId ? parentId : IsNull() },
+    });
     if (existing) {
       if (!existing.is_active) {
         existing.is_active = true;
@@ -97,13 +105,14 @@ export class InventoryService {
       this.categoryRepo.create({
         tenant_id: tenantId,
         name,
+        parent_id: parentId,
         sort_order: dto.sort_order ?? 0,
         is_active: true,
       }),
     );
   }
 
-  async updateCategory(id: string, dto: { name?: string; sort_order?: number; is_active?: boolean }, ctx: TenantContext) {
+  async updateCategory(id: string, dto: { name?: string; sort_order?: number; is_active?: boolean; parent_id?: string | null }, ctx: TenantContext) {
     const tenantId = this.assertTenantId(ctx);
     const row = await this.categoryRepo.findOne({ where: { id, tenant_id: tenantId } });
     if (!row) throw new NotFoundException('Category not found');
@@ -115,6 +124,16 @@ export class InventoryService {
     }
     if (dto.sort_order != null) row.sort_order = dto.sort_order;
     if (dto.is_active != null) row.is_active = dto.is_active;
+    if (dto.parent_id !== undefined) {
+      const parentId = dto.parent_id || null;
+      if (parentId === id) throw new BadRequestException('A category cannot sit under itself');
+      if (parentId) {
+        const parent = await this.categoryRepo.findOne({ where: { id: parentId, tenant_id: tenantId } });
+        if (!parent) throw new NotFoundException('Parent category not found');
+        if (parent.parent_id) throw new BadRequestException('A subcategory cannot contain another subcategory');
+      }
+      row.parent_id = parentId;
+    }
     const saved = await this.categoryRepo.save(row);
     if (dto.name && dto.name.trim() !== oldName) {
       await this.itemRepo
@@ -129,6 +148,40 @@ export class InventoryService {
 
   async archiveCategory(id: string, ctx: TenantContext) {
     return this.updateCategory(id, { is_active: false }, ctx);
+  }
+
+  private packQtyStr(n: number): string | null {
+    const v = Number(n);
+    if (!Number.isFinite(v) || v <= 0) return null;
+    return (Math.round(v * 10000) / 10000).toFixed(4);
+  }
+
+  private async assertPackLink(sourceId: string | null, packQty: string | null, selfId: string | null, ctx: TenantContext) {
+    if (!sourceId) return;
+    if (selfId && sourceId === selfId) throw new BadRequestException('A pack cannot be filled from itself');
+    const source = await this.findOneItem(sourceId, ctx);
+    if (!source.for_consume && source.for_sale) {
+      throw new BadRequestException('The bulk item should be the stock you buy, not another sale pack');
+    }
+    const qty = Number(packQty ?? 0);
+    if (!(qty > 0)) throw new BadRequestException('Enter how much of the bulk unit one pack uses. Example: 0.05 kg for a 50g pack.');
+  }
+
+  private async ensureSubcategory(parentName: string, childName: string, ctx: TenantContext) {
+    const parent = parentName.trim();
+    const child = childName.trim();
+    if (!parent || !child) return;
+    await this.ensureCategory(parent, ctx);
+    const tenantId = this.assertTenantId(ctx);
+    const parentRow = await this.categoryRepo.findOne({
+      where: { tenant_id: tenantId, name: parent, parent_id: IsNull() },
+    });
+    if (!parentRow) return;
+    try {
+      await this.createCategory({ name: child, parent_id: parentRow.id }, ctx);
+    } catch (e) {
+      if (!(e instanceof ConflictException)) throw e;
+    }
   }
 
   async ensureCategory(name: string, ctx: TenantContext) {
@@ -237,6 +290,11 @@ export class InventoryService {
       for_consume: boolean;
       portal_listed: boolean;
       opening_qty: number;
+      subcategory: string;
+      variant_size: string;
+      variant_shape: string;
+      pack_source_id: string | null;
+      pack_qty: number | null;
     }>,
     ctx: TenantContext,
   ) {
@@ -257,6 +315,11 @@ export class InventoryService {
       description: dto.description ?? null,
       unit: dto.unit ?? 'pcs',
       category: dto.category ?? null,
+      subcategory: dto.subcategory?.trim() || null,
+      variant_size: dto.variant_size?.trim() || null,
+      variant_shape: dto.variant_shape?.trim() || null,
+      pack_source_id: dto.pack_source_id || null,
+      pack_qty: dto.pack_qty != null ? this.packQtyStr(dto.pack_qty) : null,
       hsn_sac: dto.hsn_sac ?? null,
       reorder_level: dto.reorder_level != null ? moneyStr(dto.reorder_level) : '0.00',
       mrp: optionalMoneyStr(dto.mrp),
@@ -270,8 +333,10 @@ export class InventoryService {
       for_consume: forConsume,
       portal_listed: dto.portal_listed === true,
     });
+    await this.assertPackLink(item.pack_source_id, item.pack_qty, null, ctx);
     const saved = await this.itemRepo.save(item);
     if (dto.category?.trim()) await this.ensureCategory(dto.category, ctx);
+    if (dto.subcategory?.trim() && dto.category?.trim()) await this.ensureSubcategory(dto.category, dto.subcategory, ctx);
     if (dto.opening_qty && dto.opening_qty > 0) {
       const warehouseId = await this.getDefaultWarehouse(ctx);
       if (warehouseId) await this.receiveStock(ctx, warehouseId, saved.id, dto.opening_qty);
@@ -308,7 +373,11 @@ export class InventoryService {
     for (const s of stockList) {
       byItem[s.item_id] = (byItem[s.item_id] ?? 0) + parseFloat(s.quantity);
     }
-    return items.map((item) => ({ ...item, current_stock: byItem[item.id] ?? 0 }));
+    return items.map((item) => ({
+      ...item,
+      current_stock: byItem[item.id] ?? 0,
+      source_stock: item.pack_source_id ? (byItem[item.pack_source_id] ?? 0) : null,
+    }));
   }
 
   /** Items with current stock (sum of quantity across warehouses) for list/table. */
@@ -320,7 +389,11 @@ export class InventoryService {
     for (const s of stockList) {
       byItem[s.item_id] = (byItem[s.item_id] ?? 0) + parseFloat(s.quantity);
     }
-    return items.map((item) => ({ ...item, current_stock: byItem[item.id] ?? 0 }));
+    return items.map((item) => ({
+      ...item,
+      current_stock: byItem[item.id] ?? 0,
+      source_stock: item.pack_source_id ? (byItem[item.pack_source_id] ?? 0) : null,
+    }));
   }
 
   async findOneItem(id: string, ctx: TenantContext) {
@@ -353,6 +426,11 @@ export class InventoryService {
       for_consume: boolean;
       portal_listed: boolean;
       is_active: boolean;
+      subcategory: string | null;
+      variant_size: string | null;
+      variant_shape: string | null;
+      pack_source_id: string | null;
+      pack_qty: number | null;
     }>,
     ctx: TenantContext,
   ) {
@@ -366,6 +444,14 @@ export class InventoryService {
     if (dto.category != null) {
       item.category = dto.category;
       if (dto.category.trim()) await this.ensureCategory(dto.category, ctx);
+    }
+    if (dto.subcategory !== undefined) item.subcategory = dto.subcategory?.trim() || null;
+    if (dto.variant_size !== undefined) item.variant_size = dto.variant_size?.trim() || null;
+    if (dto.variant_shape !== undefined) item.variant_shape = dto.variant_shape?.trim() || null;
+    if (dto.pack_source_id !== undefined) item.pack_source_id = dto.pack_source_id || null;
+    if (dto.pack_qty !== undefined) item.pack_qty = dto.pack_qty == null ? null : this.packQtyStr(dto.pack_qty);
+    if (dto.subcategory?.trim() && (dto.category?.trim() || item.category)) {
+      await this.ensureSubcategory(dto.category?.trim() || item.category || '', dto.subcategory, ctx);
     }
     if (dto.hsn_sac != null) item.hsn_sac = dto.hsn_sac;
     if (dto.reorder_level != null) item.reorder_level = moneyStr(dto.reorder_level);
@@ -388,6 +474,7 @@ export class InventoryService {
     }
     if (dto.portal_listed !== undefined) item.portal_listed = Boolean(dto.portal_listed);
     if (dto.is_active !== undefined) item.is_active = Boolean(dto.is_active);
+    await this.assertPackLink(item.pack_source_id, item.pack_qty, item.id, ctx);
     return this.itemRepo.save(item);
   }
 
@@ -471,6 +558,76 @@ export class InventoryService {
       row = this.stockRepo.create({ tenant_id: tenantId, warehouse_id: warehouseId, item_id: itemId, quantity: String(qty), reserved: '0' });
       await this.stockRepo.save(row);
     }
+  }
+
+  /** Add stock in measured units (kg, grams) without rounding to a whole number. */
+  async receiveMeasured(ctx: TenantContext, warehouseId: string, itemId: string, quantity: number): Promise<void> {
+    const tenantId = this.assertTenantId(ctx);
+    await this.findOneWarehouse(warehouseId, ctx);
+    await this.findOneItem(itemId, ctx);
+    const qty = Math.round(Math.max(0, Number(quantity) || 0) * 10000) / 10000;
+    let row = await this.stockRepo.findOne({ where: { tenant_id: tenantId, warehouse_id: warehouseId, item_id: itemId } });
+    if (row) {
+      row.quantity = (Math.round((parseFloat(row.quantity) + qty) * 10000) / 10000).toFixed(4);
+      await this.stockRepo.save(row);
+    } else {
+      row = this.stockRepo.create({
+        tenant_id: tenantId,
+        warehouse_id: warehouseId,
+        item_id: itemId,
+        quantity: qty.toFixed(4),
+        reserved: '0',
+      });
+      await this.stockRepo.save(row);
+    }
+  }
+
+  async setItemCost(ctx: TenantContext, itemId: string, cost: number): Promise<void> {
+    if (!Number.isFinite(cost) || cost < 0) return;
+    const item = await this.findOneItem(itemId, ctx);
+    item.cost_price = cost.toFixed(2);
+    await this.itemRepo.save(item);
+  }
+
+  /**
+   * Counter sale. A packed item reduces the bulk stock (50g pack uses 0.05 kg).
+   * Items with no pack link keep the existing whole-unit deduction.
+   */
+  async deductForSale(ctx: TenantContext, warehouseId: string, itemId: string, quantity: number): Promise<void> {
+    const item = await this.findOneItem(itemId, ctx);
+    const perPack = Number(item.pack_qty ?? 0);
+    if (item.pack_source_id && perPack > 0) {
+      const need = Math.round(Math.max(0, quantity) * perPack * 10000) / 10000;
+      await this.deductMeasured(ctx, warehouseId, item.pack_source_id, need);
+      return;
+    }
+    await this.deductStock(ctx, warehouseId, itemId, quantity);
+  }
+
+  /** Put stock back after a counter return. Packed items return quantity to the bulk item. */
+  async restoreForSale(ctx: TenantContext, warehouseId: string, itemId: string, quantity: number): Promise<void> {
+    const item = await this.findOneItem(itemId, ctx);
+    const perPack = Number(item.pack_qty ?? 0);
+    if (item.pack_source_id && Number.isFinite(perPack) && perPack > 0) {
+      await this.receiveMeasured(ctx, warehouseId, item.pack_source_id, quantity * perPack);
+      return;
+    }
+    await this.receiveStock(ctx, warehouseId, itemId, quantity);
+  }
+
+  /** Deduct a measured quantity (kg, litre) without rounding it to a whole number. */
+  private async deductMeasured(ctx: TenantContext, warehouseId: string, itemId: string, quantity: number): Promise<void> {
+    const tenantId = this.assertTenantId(ctx);
+    const row = await this.stockRepo.findOne({ where: { tenant_id: tenantId, warehouse_id: warehouseId, item_id: itemId } });
+    const qty = Math.round(Math.max(0, quantity) * 10000) / 10000;
+    const source = await this.findOneItem(itemId, ctx);
+    if (!row) throw new ForbiddenException(`No stock of ${source.name}. Receive the bulk quantity before selling packs.`);
+    const current = parseFloat(row.quantity);
+    if (current + 0.00001 < qty) {
+      throw new ForbiddenException(`Not enough ${source.name}: have ${current} ${source.unit}, need ${qty} ${source.unit}.`);
+    }
+    row.quantity = (Math.round((current - qty) * 10000) / 10000).toFixed(4);
+    await this.stockRepo.save(row);
   }
 
   /** Deduct stock (e.g. on delivery). Throws if insufficient. */

@@ -9,6 +9,7 @@ import PosSwitcher from '../../components/PosSwitcher';
 interface Category {
   id: string;
   name: string;
+  parent_id?: string | null;
   sort_order?: number;
 }
 
@@ -16,6 +17,8 @@ export default function CategoriesPage() {
   const { success, error: showError } = useToast();
   const [list, setList] = useState<Category[]>([]);
   const [name, setName] = useState('');
+  const [parentId, setParentId] = useState('');
+  const [isDept, setIsDept] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -28,17 +31,21 @@ export default function CategoriesPage() {
 
   useEffect(() => {
     load();
+    apiGet<{ tenant?: { settings?: { business_type?: string } } }>('auth/me').then(({ data }) => {
+      if (data?.tenant?.settings?.business_type === 'department_store') setIsDept(true);
+    });
   }, []);
 
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
     setSaving(true);
-    const { error } = await apiPost('inventory/categories', { name: name.trim() });
+    const { error } = await apiPost('inventory/categories', { name: name.trim(), parent_id: parentId || null });
     setSaving(false);
     if (error) showError(error);
     else {
       setName('');
+      setParentId('');
       success('Category added.');
       load();
     }
@@ -68,11 +75,19 @@ export default function CategoriesPage() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Categories</h1>
-          <p className="text-sm text-slate-600">Group the menu or shelf. Then add items under a category.</p>
+          <p className="text-sm text-slate-600">{isDept ? 'Departments on the left of the counter, and a subcategory under each one.' : 'Group the menu or shelf. Then add items under a category.'}</p>
         </div>
         <Link href="/pos/manage" className="text-sm font-medium text-brand-700 hover:underline">Shop manager</Link>
       </div>
-      <form onSubmit={add} className="mb-4 flex gap-2 max-w-lg">
+      <form onSubmit={add} className="mb-4 flex flex-col sm:flex-row gap-2 max-w-xl">
+        {isDept && (
+          <select value={parentId} onChange={(e) => setParentId(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm min-h-[44px]">
+            <option value="">Department</option>
+            {list.filter((c) => !c.parent_id).map((c) => (
+              <option key={c.id} value={c.id}>Under {c.name}</option>
+            ))}
+          </select>
+        )}
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -91,7 +106,9 @@ export default function CategoriesPage() {
             {list.length === 0 && <li className="p-4 text-slate-500 text-sm">No categories yet.</li>}
             {list.map((c) => (
               <li key={c.id} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 last:border-0">
-                <span className="font-medium text-slate-900">{c.name}</span>
+                <span className="font-medium text-slate-900">
+                  {c.parent_id ? `${list.find((p) => p.id === c.parent_id)?.name || 'Department'} / ${c.name}` : c.name}
+                </span>
                 <span className="flex gap-3 text-sm">
                   <button type="button" onClick={() => rename(c)} className="text-brand-600 hover:underline">Rename</button>
                   <button type="button" onClick={() => archive(c)} className="text-slate-500 hover:underline">Hide</button>

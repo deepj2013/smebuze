@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { SalesService } from '../sales/sales.service';
 import { PurchaseService } from '../purchase/purchase.service';
 import { AccountingService } from '../accounting/accounting.service';
@@ -16,6 +17,7 @@ export class ReportsService {
     private readonly accountingService: AccountingService,
     private readonly crmService: CrmService,
     private readonly inventoryService: InventoryService,
+    private readonly dataSource: DataSource,
   ) {}
 
   private filterByDateAndCompany<T>(
@@ -854,6 +856,128 @@ export class ReportsService {
       customer_id: customer_id ?? null,
       summary: { total_invoiced, total_received, total_pending },
       rows,
+    };
+  }
+
+  /** Counter report for a department store: GST, margin, credit accounts, and bulk packs. */
+  async getDepartmentCounterReport(ctx: TenantContext, from?: string, to?: string) {
+    const tenantId = ctx.tenantId;
+    if (!tenantId) return { items: [], categories: [], credit: [], packs: [] };
+    const start = from || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    const end = to || new Date().toISOString().slice(0, 10);
+    const items = await this.dataSource.query(
+      `SELECT COALESCE(i.category, 'Uncategorised') AS category,
+              COALESCE(i.subcategory, '') AS subcategory,
+              COALESCE(i.name, l.description) AS name,
+              COALESCE(i.variant_size, '') AS variant_size,
+              COALESCE(i.variant_shape, '') AS variant_shape,
+              COALESCE(SUM(l.qty), 0)::float AS qty,
+              COALESCE(SUM(l.taxable_value), 0)::float AS taxable_value,
+              COALESCE(SUM(l.cgst_amount), 0)::float AS cgst,
+              COALESCE(SUM(l.sgst_amount), 0)::float AS sgst,
+              COALESCE(SUM(l.igst_amount), 0)::float AS igst,
+              COALESCE(SUM(l.taxable_value + l.cgst_amount + l.sgst_amount + l.igst_amount), 0)::float AS invoice_value,
+              COALESCE(SUM(l.qty * COALESCE(i.cost_price, 0)), 0)::float AS cost
+       FROM sales_invoice_lines l
+       JOIN sales_invoices inv ON inv.id = l.invoice_id
+       LEFT JOIN items i ON i.id = l.item_id
+       WHERE inv.tenant_id = $1
+         AND inv.invoice_date >= $2::date
+         AND inv.invoice_date <= $3::date
+         AND COALESCE(inv.status, '') <> 'deleted'
+       GROUP BY 1, 2, 3, 4, 5
+       ORDER BY 1, 2, 3`,
+      [tenantId, start, end],
+    );
+    const categories = await this.dataSource.query(
+      `SELECT COALESCE(i.category, 'Uncategorised') AS category,
+              COALESCE(SUM(l.taxable_value), 0)::float AS taxable_value,
+              COALESCE(SUM(l.cgst_amount), 0)::float AS cgst,
+              COALESCE(SUM(l.sgst_amount), 0)::float AS sgst,
+              COALESCE(SUM(l.igst_amount), 0)::float AS igst,
+              COALESCE(SUM(l.taxable_value + l.cgst_amount + l.sgst_amount + l.igst_amount), 0)::float AS invoice_value,
+              COALESCE(SUM(l.qty * COALESCE(i.cost_price, 0)), 0)::float AS cost
+       FROM sales_invoice_lines l
+       JOIN sales_invoices inv ON inv.id = l.invoice_id
+       LEFT JOIN items i ON i.id = l.item_id
+       WHERE inv.tenant_id = $1
+         AND inv.invoice_date >= $2::date
+         AND inv.invoice_date <= $3::date
+         AND COALESCE(inv.status, '') <> 'deleted'
+       GROUP BY 1
+       ORDER BY invoice_value DESC`,
+      [tenantId, start, end],
+    );
+    const credit = await this.dataSource.query(
+      `SELECT c.id, c.name, c.phone,
+              COALESCE(SUM(inv.total), 0)::float AS invoiced,
+              COALESCE(SUM(pay.paid), 0)::float AS paid
+       FROM customers c
+       LEFT JOIN sales_invoices inv
+         ON inv.customer_id = c.id AND inv.tenant_id = c.tenant_id AND COALESCE(inv.status, '') <> 'deleted'
+       LEFT JOIN (
+         SELECT invoice_id, SUM(amount) AS paid FROM invoice_payments GROUP BY invoice_id
+       ) pay ON pay.invoice_id = inv.id
+       WHERE c.tenant_id = $1
+         AND c.is_active = true
+         AND (c.segment = 'credit' OR COALESCE(c.tags, '[]'::jsonb) @> '["credit"]'::jsonb)
+       GROUP BY c.id, c.name, c.phone
+       ORDER BY c.name`,
+      [tenantId],
+    );
+    const packs = await this.dataSource.query(
+      `SELECT src.name AS bulk_name, src.unit AS bulk_unit,
+              COALESCE(SUM(st.quantity), 0)::float AS bulk_qty,
+              pack.name AS pack_name, pack.variant_size, pack.pack_qty::float AS pack_qty,
+              pack.mrp::float AS mrp, pack.cost_price::float AS cost_price, pack.sale_price::float AS sale_price,
+              pack.discount_percent::float AS discount_percent
+       FROM items pack
+       JOIN items src ON src.id = pack.pack_source_id AND src.tenant_id = pack.tenant_id
+       LEFT JOIN stock st ON st.item_id = src.id AND st.tenant_id = pack.tenant_id
+       WHERE pack.tenant_id = $1 AND pack.is_active = true
+       GROUP BY src.name, src.unit, pack.name, pack.variant_size, pack.pack_qty, pack.mrp, pack.cost_price, pack.sale_price, pack.discount_percent
+       ORDER BY src.name, pack.name`,
+      [tenantId],
+    );
+    const round = (n: number) => Math.round(Number(n || 0) * 100) / 100;
+    return {
+      from: start,
+      to: end,
+      categories: categories.map((r: Record<string, number | string>) => ({
+        ...r,
+        taxable_value: round(Number(r.taxable_value)),
+        cgst: round(Number(r.cgst)),
+        sgst: round(Number(r.sgst)),
+        igst: round(Number(r.igst)),
+        invoice_value: round(Number(r.invoice_value)),
+        cost: round(Number(r.cost)),
+        margin: round(Number(r.invoice_value) - Number(r.cost)),
+      })),
+      items: items.map((r: Record<string, number | string>) => ({
+        ...r,
+        qty: round(Number(r.qty)),
+        taxable_value: round(Number(r.taxable_value)),
+        cgst: round(Number(r.cgst)),
+        sgst: round(Number(r.sgst)),
+        igst: round(Number(r.igst)),
+        invoice_value: round(Number(r.invoice_value)),
+        cost: round(Number(r.cost)),
+        margin: round(Number(r.invoice_value) - Number(r.cost)),
+      })),
+      credit: credit.map((r: { invoiced: number; paid: number; name: string; phone: string | null; id: string }) => ({
+        id: r.id,
+        name: r.name,
+        phone: r.phone,
+        invoiced: round(r.invoiced),
+        paid: round(r.paid),
+        due: round(Number(r.invoiced) - Number(r.paid)),
+      })),
+      packs: packs.map((r: { bulk_qty: number; pack_qty: number; bulk_name: string; bulk_unit: string; pack_name: string; variant_size: string; mrp: number; cost_price: number; sale_price: number; discount_percent: number }) => ({
+        ...r,
+        bulk_qty: round(Number(r.bulk_qty)),
+        packs_left: Number(r.pack_qty) > 0 ? Math.floor(Number(r.bulk_qty) / Number(r.pack_qty)) : 0,
+        margin: round(Number(r.sale_price || 0) - Number(r.cost_price || 0)),
+      })),
     };
   }
 }

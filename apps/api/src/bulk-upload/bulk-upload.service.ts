@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from '../crm/entities/customer.entity';
 import { Item } from '../inventory/entities/item.entity';
+import { InventoryService } from '../inventory/inventory.service';
 import { TenantContext } from '../common/tenant-context';
 
 const CUSTOMER_COLUMNS: Record<string, string> = {
@@ -20,6 +21,18 @@ const ITEM_COLUMNS: Record<string, string> = {
   category: 'category',
   hsn_sac: 'hsn_sac',
   description: 'description',
+  barcode: 'barcode',
+  mrp: 'mrp',
+  cost_price: 'cost_price',
+  discount_percent: 'discount_percent',
+  tax_rate: 'tax_rate',
+  subcategory: 'subcategory',
+  variant_size: 'variant_size',
+  variant_shape: 'variant_shape',
+  pack_sku: 'pack_sku',
+  pack_qty: 'pack_qty',
+  for_sale: 'for_sale',
+  opening_qty: 'opening_qty',
 };
 
 export interface BulkPreviewRow {
@@ -41,6 +54,7 @@ export class BulkUploadService {
     private readonly customerRepo: Repository<Customer>,
     @InjectRepository(Item)
     private readonly itemRepo: Repository<Item>,
+    private readonly inventory: InventoryService,
   ) {}
 
   private assertTenantId(ctx: TenantContext): string {
@@ -144,9 +158,25 @@ export class BulkUploadService {
     return { preview, validCount };
   }
 
+  private numOrUndef(value: unknown): number | undefined {
+    if (value == null || value === '') return undefined;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+  }
+
+  private async isIceCrest(tenantId: string): Promise<boolean> {
+    const rows = await this.itemRepo.manager.query(
+      'SELECT slug, settings FROM tenants WHERE id = $1 LIMIT 1',
+      [tenantId],
+    ) as { slug?: string; settings?: { business_type?: string } }[];
+    const row = rows[0];
+    return row?.slug === 'ice-crest' || row?.settings?.business_type === 'ice_crest';
+  }
+
   async importItems(rows: Record<string, unknown>[], ctx: TenantContext): Promise<BulkResult> {
     const tenantId = this.assertTenantId(ctx);
     const result: BulkResult = { inserted: 0, failed: 0, errors: [] };
+    const iceCrest = await this.isIceCrest(tenantId);
 
     for (let i = 0; i < rows.length; i++) {
       const normalized = this.normalizeRow(rows[i], ITEM_COLUMNS);
@@ -159,17 +189,56 @@ export class BulkUploadService {
       }
 
       try {
-        const item = this.itemRepo.create({
-          tenant_id: tenantId,
-          name: (normalized.name as string) || '',
-          sku: (normalized.sku as string) || null,
-          unit: (normalized.unit as string) || 'pcs',
-          category: (normalized.category as string) || null,
-          hsn_sac: (normalized.hsn_sac as string) || null,
-          description: (normalized.description as string) || null,
-          reorder_level: String(normalized.reorder_level ?? 0),
-        });
-        await this.itemRepo.save(item);
+        if (iceCrest) {
+          const item = this.itemRepo.create({
+            tenant_id: tenantId,
+            name: (normalized.name as string) || '',
+            sku: (normalized.sku as string) || null,
+            unit: (normalized.unit as string) || 'pcs',
+            category: (normalized.category as string) || null,
+            hsn_sac: (normalized.hsn_sac as string) || null,
+            description: (normalized.description as string) || null,
+            reorder_level: '0',
+          });
+          await this.itemRepo.save(item);
+        } else {
+          const packSku = String(normalized.pack_sku || '').trim();
+          let packSourceId: string | null = null;
+          if (packSku) {
+            const source = await this.itemRepo.findOne({ where: { tenant_id: tenantId, sku: packSku } });
+            if (!source) throw new Error(`Bulk item SKU ${packSku} was not found. Upload the loose item first.`);
+            packSourceId = source.id;
+          }
+          const saleFlag = String(normalized.for_sale || '').trim().toLowerCase();
+          const forSale = saleFlag === '' ? true : !['no', 'n', '0', 'false', 'bulk'].includes(saleFlag);
+          const opening = this.numOrUndef(normalized.opening_qty);
+          const wholeOpening = opening != null && Math.abs(opening - Math.round(opening)) < 0.0001;
+          const saved = await this.inventory.createItem({
+            name: (normalized.name as string) || '',
+            sku: (normalized.sku as string) || undefined,
+            barcode: (normalized.barcode as string) || undefined,
+            unit: (normalized.unit as string) || 'pcs',
+            category: (normalized.category as string) || undefined,
+            subcategory: (normalized.subcategory as string) || undefined,
+            variant_size: (normalized.variant_size as string) || undefined,
+            variant_shape: (normalized.variant_shape as string) || undefined,
+            hsn_sac: (normalized.hsn_sac as string) || undefined,
+            description: (normalized.description as string) || undefined,
+            mrp: this.numOrUndef(normalized.mrp),
+            cost_price: this.numOrUndef(normalized.cost_price),
+            discount_percent: this.numOrUndef(normalized.discount_percent),
+            tax_rate: this.numOrUndef(normalized.tax_rate),
+            pack_source_id: packSourceId,
+            pack_qty: this.numOrUndef(normalized.pack_qty) ?? null,
+            for_sale: forSale,
+            for_consume: true,
+            opening_qty: wholeOpening ? opening : undefined,
+          }, ctx);
+          if (opening != null && opening > 0 && !wholeOpening) {
+            const warehouseId = await this.inventory.getDefaultWarehouse(ctx);
+            if (warehouseId) await this.inventory.receiveMeasured(ctx, warehouseId, saved.id, opening);
+          }
+        }
         result.inserted++;
       } catch (e) {
         result.failed++;

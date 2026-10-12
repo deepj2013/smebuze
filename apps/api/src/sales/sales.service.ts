@@ -234,6 +234,38 @@ export class SalesService {
     assertBooksOpen(lockedThroughYmd(tenant?.settings as Record<string, unknown>), date, label);
   }
 
+  /** MRP is tax-inclusive. A line cannot be sold above MRP or below MRP minus the item's maximum discount. */
+  private async assertDepartmentStoreBill(dto: CreateInvoiceDto, ctx: TenantContext): Promise<void> {
+    let floor = 0;
+    let gross = 0;
+    for (const line of dto.lines) {
+      if (!line.item_id) continue;
+      const item = await this.inventoryService.findOneItem(line.item_id, ctx);
+      const mrp = Number(item.mrp ?? 0);
+      if (!(mrp > 0)) continue;
+      const maxDisc = Math.min(100, Math.max(0, Number(item.discount_percent ?? 0)));
+      const qty = Math.max(0, Math.round(Number(line.qty) || 0));
+      const rate = round2(Number(line.rate) || 0);
+      const cgst = dto.gst_applicable === false ? 0 : round2(Number(line.cgst_rate) || 0);
+      const sgst = dto.gst_applicable === false ? 0 : round2(Number(line.sgst_rate) || 0);
+      const igst = dto.gst_applicable === false ? 0 : round2(Number(line.igst_rate) || 0);
+      const taxable = round2(qty * rate);
+      const tax = round2(round2((taxable * cgst) / 100) + round2((taxable * sgst) / 100) + round2((taxable * igst) / 100));
+      const inclusive = round2(taxable + tax);
+      const mrpTotal = round2(mrp * qty);
+      const minTotal = round2(mrpTotal * (1 - maxDisc / 100));
+      if (inclusive > mrpTotal + 0.05) {
+        throw new BadRequestException(`${item.name} is above MRP ₹${mrp.toFixed(2)}.`);
+      }
+      floor = round2(floor + minTotal);
+      gross = round2(gross + inclusive);
+    }
+    const net = round2(gross - Number(dto.discount_amount ?? 0));
+    if (floor > 0 && net + 0.05 < floor) {
+      throw new BadRequestException('Discount is more than the maximum set on these items in inventory.');
+    }
+  }
+
   async createInvoice(dto: CreateInvoiceDto, ctx: TenantContext): Promise<SalesInvoice> {
     const tenantId = this.assertTenantId(ctx);
     const invoiceTenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
@@ -245,6 +277,9 @@ export class SalesService {
     }
     if (dto.customer_id && dto.vendor_id) {
       throw new ForbiddenException('Provide only one of customer_id or vendor_id.');
+    }
+    if (invoiceTenant?.settings?.business_type === 'department_store') {
+      await this.assertDepartmentStoreBill(dto, ctx);
     }
 
     const company = await this.companyRepo.findOne({ where: { id: dto.company_id, tenant_id: tenantId } });
@@ -270,7 +305,8 @@ export class SalesService {
       if (!customer) throw new NotFoundException('Customer not found');
       customerId = dto.customer_id;
       const creditLimit = parseFloat(customer.credit_limit || '0');
-      if (creditLimit > 0) {
+      const onCredit = !!dto.due_date && String(dto.due_date).slice(0, 10) > String(dto.invoice_date).slice(0, 10);
+      if (creditLimit > 0 && onCredit) {
         let draftTotal = 0;
         for (const line of dto.lines) {
           const { taxable, tax } = gstLine(line.qty, line.rate, line.cgst_rate ?? 0, line.sgst_rate ?? 0, (line as { igst_rate?: number }).igst_rate ?? 0);
@@ -388,7 +424,7 @@ export class SalesService {
         for (const line of dto.lines) {
           if (!line.item_id || line.qty <= 0) continue;
           try {
-            await this.inventoryService.deductStock(ctx, warehouseId, line.item_id, line.qty);
+            await this.inventoryService.deductForSale(ctx, warehouseId, line.item_id, line.qty);
           } catch (err) {
             if (strict) throw err;
           }
@@ -683,7 +719,7 @@ export class SalesService {
           if (!line.item_id) continue;
           const qty = Number(line.qty);
           if (!Number.isFinite(qty) || qty <= 0) continue;
-          await this.inventoryService.receiveStock(ctx, warehouseId, line.item_id, qty);
+          await this.inventoryService.restoreForSale(ctx, warehouseId, line.item_id, qty);
           await this.stockMovementRepo.save(
             this.stockMovementRepo.create({
               tenant_id: tenantId,
@@ -1670,6 +1706,87 @@ export class SalesService {
     }
     await this.auditService.log(ctx, 'credit_note.create', 'credit_note', note.id, { number: note.number, invoice_id: invoice.id, amount, note_date: dto.note_date }).catch(() => undefined);
     return note;
+  }
+
+  /**
+   * Full return from a shop counter. Writes a credit note and puts stock back,
+   * including packs that came out of a bulk item. Ice Crest keeps its own bill flow.
+   */
+  async counterReturn(invoiceId: string, ctx: TenantContext) {
+    const tenantId = this.assertTenantId(ctx);
+    const invoiceTenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    const isIceCrest = !!invoiceTenant && (
+      invoiceTenant.slug === 'ice-crest'
+      || invoiceTenant.settings?.business_type === 'ice_crest'
+      || invoiceTenant.features?.includes('ice_crest')
+    );
+    if (isIceCrest) throw new ForbiddenException('Ice Crest returns stay on the Ice Crest bill.');
+    const invoice = await this.invoiceRepo.findOne({
+      where: { id: invoiceId, tenant_id: tenantId },
+      relations: ['lines'],
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    if (invoice.status === 'deleted') throw new ForbiddenException('This bill was deleted.');
+    const existing = await this.noteTotals(invoice.id);
+    if (existing.credit > 0.05) throw new ForbiddenException('This bill already has a return.');
+    let taxable = 0;
+    let cgst = 0;
+    let sgst = 0;
+    let igst = 0;
+    for (const line of invoice.lines || []) {
+      taxable = round2(taxable + Number(line.taxable_value || 0));
+      cgst = round2(cgst + Number(line.cgst_amount || 0));
+      sgst = round2(sgst + Number(line.sgst_amount || 0));
+      igst = round2(igst + Number(line.igst_amount || 0));
+    }
+    const amount = round2(Number(invoice.total));
+    const lineSum = round2(taxable + cgst + sgst + igst);
+    if (lineSum > 0 && Math.abs(lineSum - amount) > 0.05) {
+      const factor = amount / lineSum;
+      taxable = round2(taxable * factor);
+      cgst = round2(cgst * factor);
+      sgst = round2(sgst * factor);
+      igst = round2(igst * factor);
+      taxable = round2(taxable + (amount - round2(taxable + cgst + sgst + igst)));
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const note = await this.createCreditNote({
+      company_id: invoice.company_id,
+      invoice_id: invoice.id,
+      note_date: today,
+      amount: amount > 0 ? amount : lineSum,
+      taxable_amount: taxable,
+      cgst_amount: cgst,
+      sgst_amount: sgst,
+      igst_amount: igst,
+      reason_code: 'sales_return',
+      reason: 'Counter return',
+    }, ctx);
+    if (invoice.stock_deducted_at) {
+      const warehouseId = await this.inventoryService.getDefaultWarehouse(ctx);
+      if (warehouseId) {
+        for (const line of invoice.lines || []) {
+          if (!line.item_id) continue;
+          const qty = Number(line.qty);
+          if (!Number.isFinite(qty) || qty <= 0) continue;
+          await this.inventoryService.restoreForSale(ctx, warehouseId, line.item_id, qty);
+          await this.stockMovementRepo.save(this.stockMovementRepo.create({
+            tenant_id: tenantId,
+            warehouse_id: warehouseId,
+            item_id: line.item_id,
+            movement_type: 'inward',
+            quantity: String(qty),
+            movement_date: new Date(),
+            reference_type: 'counter_return',
+            reference_id: note.id,
+            reference_number: note.number,
+            notes: `Stock restored for return of ${invoice.number}`,
+            created_by: ctx.userId,
+          }));
+        }
+      }
+    }
+    return { ok: true, credit_note: note.number, invoice: invoice.number, amount };
   }
 
   async findCreditNotes(ctx: TenantContext, status?: string): Promise<CreditNote[]> {

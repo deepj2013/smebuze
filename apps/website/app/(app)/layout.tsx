@@ -373,6 +373,31 @@ const restaurantFloorNav: typeof nav = [
   ]},
 ];
 
+/** Department / general store — counter, stock, credit customers. No quotations. */
+const departmentStoreNav: typeof nav = [
+  { label: 'Billing counter', href: '/pos', icon: Store, module: 'sales', permission: 'sales.invoice.create' },
+  { label: 'Departments', href: '/inventory/categories', icon: Layers, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Products', href: '/inventory/items', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Stock', href: '/inventory/stock', icon: Package, module: 'inventory', permission: 'inventory.stock.view' },
+  { label: 'Receive stock', href: '/inventory/stock/receive', icon: Warehouse, module: 'inventory', permission: 'inventory.item.create' },
+  { label: 'Item upload', href: '/bulk-upload', icon: Upload, module: 'inventory', permission: 'inventory.item.create' },
+  { label: 'Barcode labels', href: '/inventory/labels', icon: Printer, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Customers', href: '/crm/customers', icon: Users, module: 'crm', permission: 'crm.customer.view' },
+  { label: 'Bills', href: '/sales/invoices', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Receive payment', href: '/sales/invoices/receive', icon: Wallet, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Store reports', href: '/reports/department', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'Customer ledger', href: '/reports?report=customer-ledger', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'Setup', href: '/onboarding', icon: Settings, module: 'onboarding' },
+  { label: 'Help', href: '/help', icon: CircleHelp, module: 'help' },
+  { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
+    { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
+    { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
+    { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+    { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
+  ]},
+];
+
 /** Retail / mobile shop / kirana — counter + products. No waiter/kitchen. */
 const posNav: typeof nav = [
   { label: 'Billing counter', href: '/pos', icon: Store, module: 'sales', permission: 'sales.invoice.create' },
@@ -383,6 +408,9 @@ const posNav: typeof nav = [
   { label: 'Categories', href: '/inventory/categories', icon: Layers, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Products', href: '/inventory/items', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Stock', href: '/inventory/stock', icon: Package, module: 'inventory', permission: 'inventory.stock.view' },
+  { label: 'Receive stock', href: '/inventory/stock/receive', icon: Warehouse, module: 'inventory', permission: 'inventory.item.create' },
+  { label: 'Item upload', href: '/bulk-upload', icon: Upload, module: 'inventory', permission: 'inventory.item.create' },
+  { label: 'Barcode labels', href: '/inventory/labels', icon: Printer, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Customers', href: '/crm/customers', icon: Users, module: 'crm', permission: 'crm.customer.view' },
   { label: 'Printers', href: '/organization/printers', icon: Printer, module: 'organization', permission: 'org.company.view' },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
@@ -501,6 +529,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [showIceCrestTutorial, setShowIceCrestTutorial] = useState(false);
   const isStarIce = tenant?.slug === 'star-ice';
   const isIceCrest = tenant?.slug === 'ice-crest' || tenant?.settings?.business_type === 'ice_crest';
+  const isDepartmentStore = tenant?.settings?.business_type === 'department_store';
   const isPosTenant = isPosBusinessType(tenant?.settings?.business_type);
   const isFloorTenant = isFloorBusinessType(tenant?.settings?.business_type);
   const isPublicIceCrestSite = pathname === '/ice-crest';
@@ -519,9 +548,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         ? starIceNav
         : isFloorTenant
           ? restaurantFloorNav
-          : isPosTenant
-            ? posNav
-            : nav;
+          : isDepartmentStore
+            ? departmentStoreNav
+            : isPosTenant
+              ? posNav
+              : nav;
   let visibleNav = filterNavByAccess(
     baseNav,
     user?.isSuperAdmin ? ['*'] : (user?.permissions ?? []),

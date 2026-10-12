@@ -10,7 +10,8 @@ import PosSwitcher from '../../../components/PosSwitcher';
 import BarcodeCapture from '../../../components/BarcodeCapture';
 import { DecimalInput } from '../../../components/NumberField';
 import { parseNonNeg } from '@/lib/item-pricing';
-import { parseMoney, parseQty } from '@/lib/money';
+import { parseMoney, parseQty, round2 } from '@/lib/money';
+import { DepartmentItemFields } from '../../DepartmentItemFields';
 
 function validateHsnSac(v: string): string | null {
   if (!v.trim()) return null;
@@ -44,6 +45,12 @@ export default function NewItemPage() {
   const [loadingSku, setLoadingSku] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [isDept, setIsDept] = useState(false);
+  const [subcategory, setSubcategory] = useState('');
+  const [variantSize, setVariantSize] = useState('');
+  const [variantShape, setVariantShape] = useState('');
+  const [packSourceId, setPackSourceId] = useState('');
+  const [packQty, setPackQty] = useState('');
 
   useEffect(() => {
     apiGet<{ tenant?: { slug?: string; settings?: { business_type?: string } } }>('auth/me').then(({ data }) => {
@@ -52,6 +59,7 @@ export default function NewItemPage() {
         setCgstRate((prev) => prev || '2.5');
         setSgstRate((prev) => prev || '2.5');
       }
+      if (t?.settings?.business_type === 'department_store') setIsDept(true);
     });
   }, []);
 
@@ -148,6 +156,16 @@ export default function NewItemPage() {
     if (costPrice.trim() !== '') body.cost_price = parseMoney(costPrice);
     if (salePrice.trim() !== '') body.sale_price = parseMoney(salePrice);
     if (discountPercent.trim() !== '') body.discount_percent = parseMoney(discountPercent);
+    if (isDept) {
+      body.subcategory = subcategory.trim() || null;
+      body.variant_size = variantSize.trim() || null;
+      body.variant_shape = variantShape.trim() || null;
+      body.pack_source_id = packSourceId || null;
+      body.pack_qty = packSourceId && packQty.trim() ? Math.round(Number(packQty) * 10000) / 10000 : null;
+      const m = mrp.trim() ? parseMoney(mrp) : 0;
+      const d = discountPercent.trim() ? parseMoney(discountPercent) : 0;
+      if (m > 0) body.sale_price = round2(m * (1 - Math.min(100, Math.max(0, d)) / 100));
+    }
     if (openingQty.trim() !== '') body.opening_qty = parseQty(openingQty);
     if (cgstRate.trim() !== '') body.cgst_rate = parseMoney(cgstRate);
     if (sgstRate.trim() !== '') body.sgst_rate = parseMoney(sgstRate);
@@ -276,7 +294,7 @@ export default function NewItemPage() {
               {fieldErrors.salePrice && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.salePrice}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Discount % (optional)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{isDept ? 'Maximum discount % off MRP' : 'Discount % (optional)'}</label>
               <DecimalInput min={0} max={100} value={discountPercent} onValue={(v) => { setDiscountPercent(v); setFieldErrors((p) => ({ ...p, discountPercent: '' })); }} invalid={!!fieldErrors.discountPercent} />
               {fieldErrors.discountPercent && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.discountPercent}</p>}
             </div>
@@ -297,6 +315,25 @@ export default function NewItemPage() {
                 Combined GST {((parseFloat(cgstRate) || 0) + (parseFloat(sgstRate) || 0)).toFixed(2)}%. Copied onto invoices and still editable there.
               </p>
             </div>
+            {isDept && (
+              <DepartmentItemFields
+                subcategory={subcategory}
+                setSubcategory={setSubcategory}
+                variantSize={variantSize}
+                setVariantSize={setVariantSize}
+                variantShape={variantShape}
+                setVariantShape={setVariantShape}
+                packSourceId={packSourceId}
+                setPackSourceId={setPackSourceId}
+                packQty={packQty}
+                setPackQty={setPackQty}
+                mrp={mrp}
+                discountPercent={discountPercent}
+                costPrice={costPrice}
+                cgstRate={cgstRate}
+                sgstRate={sgstRate}
+              />
+            )}
             <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
               <p className="text-sm font-medium text-slate-800">This product is used for</p>
               <label className="flex items-center gap-2 text-sm text-slate-700">

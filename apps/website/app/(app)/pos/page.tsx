@@ -12,7 +12,18 @@ import BarcodeCapture from '../components/BarcodeCapture';
 import { useHidBarcode } from '@/lib/use-hid-barcode';
 import { playScanBeep } from '@/lib/pos-beep';
 import { limitDecimalPlaces, round2 } from '@/lib/money';
+import {
+  isNetworkError,
+  loadHeld,
+  loadOutbox,
+  printCounterSlip,
+  queueBill,
+  saveHeld,
+  syncOutbox,
+  type HeldBill,
+} from '@/lib/counter-desk';
 import { KITCHEN_LABEL, statusClass, type FloorSnapshot, type FloorTicket } from '@/lib/floor';
+import DepartmentCounter from './DepartmentCounter';
 
 interface PosItem {
   id: string;
@@ -52,11 +63,17 @@ interface CartLine {
   unit: string;
 }
 
-type PayMode = 'cash' | 'upi' | 'card';
+type PayMode = 'cash' | 'upi' | 'card' | 'credit';
+
+function monthEnd(): string {
+  const d = new Date();
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+}
 
 export default function PosPage() {
   const { success, error: showError } = useToast();
-  const [businessType, setBusinessType] = useState<string>('retail_shop');
+  const [businessType, setBusinessType] = useState<string | null>(null);
   const [items, setItems] = useState<PosItem[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -76,9 +93,12 @@ export default function PosPage() {
   const [billBusy, setBillBusy] = useState<string | null>(null);
   const [showTakeaway, setShowTakeaway] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
+  const [tenantKey, setTenantKey] = useState('');
+  const [held, setHeld] = useState<HeldBill[]>([]);
+  const [waiting, setWaiting] = useState(0);
   const itemsRef = useRef<PosItem[]>([]);
 
-  const meta = businessTypeMeta(businessType);
+  const meta = businessTypeMeta(businessType ?? 'retail_shop');
   const floorMode = isFloorBusinessType(businessType);
   itemsRef.current = items;
 
@@ -96,21 +116,33 @@ export default function PosPage() {
   };
 
   useEffect(() => {
+    let timer = 0;
+    let cancelled = false;
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
     const token = typeof window !== 'undefined' ? window.localStorage.getItem('smebuzz_token') : null;
-    if (token) {
-      fetch(`${API_URL}/api/v1/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-        .then((r) => r.json())
-        .then((d) => {
-          const t = d?.tenant?.settings?.business_type;
-          if (typeof t === 'string') setBusinessType(t);
-          if (isFloorBusinessType(t)) {
-            apiGet<FloorSnapshot>('sales/floor').then((r) => { if (r.data) setFloor(r.data); });
-          }
-        })
-        .catch(() => undefined);
-    }
     (async () => {
+      let type = 'retail_shop';
+      if (token) {
+        try {
+          const response = await fetch(`${API_URL}/api/v1/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+          const d = await response.json();
+          const t = d?.tenant?.settings?.business_type;
+          if (typeof t === 'string') type = t;
+          const key = d?.tenant?.slug || d?.tenant?.id || '';
+          if (key) {
+            setTenantKey(key);
+            setHeld(loadHeld(key));
+          }
+        } catch {
+          type = 'retail_shop';
+        }
+      }
+      if (cancelled) return;
+      setBusinessType(type);
+      if (type === 'department_store') return;
+      if (isFloorBusinessType(type)) {
+        apiGet<FloorSnapshot>('sales/floor').then((r) => { if (r.data) setFloor(r.data); });
+      }
       await loadCatalog();
       const [custRes, coRes] = await Promise.all([
         apiGet<Customer[] | { data: Customer[] }>('crm/customers'),
@@ -124,9 +156,12 @@ export default function PosPage() {
       const walkIn = custList.find((c) => c.tags?.includes('walk_in') || /walk-?in/i.test(c.name));
       if (walkIn) setCustomerId(walkIn.id);
       else if (custList[0]) setCustomerId(custList[0].id);
+      timer = window.setInterval(() => { loadCatalog(); }, 20000);
     })();
-    const timer = setInterval(() => { loadCatalog(); }, 20000);
-    return () => clearInterval(timer);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearInterval(timer);
+    };
   }, []);
 
   const categories = useMemo(() => {
@@ -229,6 +264,8 @@ export default function PosPage() {
   const tendered = Number(cashTendered || 0);
   const change = payMode === 'cash' && tendered > 0 ? Math.max(0, tendered - totals.total) : 0;
 
+  const shopCounter = !!businessType && businessType !== 'ice_crest' && businessType !== 'department_store' && !floorMode;
+
   const charge = async () => {
     if (!cart.length) {
       showError('Add at least one item to the bill.');
@@ -242,58 +279,157 @@ export default function PosPage() {
       showError('Choose Walk-in / Counter or a customer.');
       return;
     }
+    if (payMode === 'credit' && /walk-?in/i.test(customers.find((c) => c.id === customerId)?.name || '')) {
+      showError('Credit needs a named customer, not Walk-in.');
+      return;
+    }
     if (payMode === 'cash' && tendered > 0 && tendered < totals.total) {
       showError('Cash received is less than the bill total.');
       return;
     }
+    const today = new Date().toISOString().slice(0, 10);
+    const credit = shopCounter && payMode === 'credit';
+    const invoiceBody = {
+      company_id: companyId,
+      customer_id: customerId,
+      invoice_date: today,
+      due_date: credit ? monthEnd() : today,
+      gst_applicable: cart.some((l) => l.tax_rate > 0),
+      lines: cart.map((l) => {
+        const half = l.tax_rate / 2;
+        return {
+          item_id: l.item_id,
+          hsn_sac: l.hsn_sac,
+          description: l.name,
+          qty: l.qty,
+          unit: l.unit,
+          rate: l.rate,
+          cgst_rate: half,
+          sgst_rate: half,
+        };
+      }),
+    };
+    const paymentBody = credit ? null : {
+      amount: totals.total,
+      payment_date: today,
+      mode: payMode === 'credit' ? 'cash' : payMode,
+      reference: payMode === 'cash' ? 'POS cash' : payMode === 'upi' ? 'POS UPI' : 'POS card',
+    };
+    const clearBill = () => {
+      setCart([]);
+      setCashTendered('');
+      setCartOpen(false);
+    };
+    if (shopCounter && typeof navigator !== 'undefined' && navigator.onLine === false) {
+      const queued = queueBill({ invoice: invoiceBody, payment: paymentBody });
+      setWaiting(loadOutbox().length);
+      clearBill();
+      success('Saved on this device. Stock updates when the internet is back.');
+      void printCounterSlip({
+        company: companies.find((c) => c.id === companyId)?.name || 'Shop',
+        number: queued.id,
+        date: today,
+        billTo: customers.find((c) => c.id === customerId)?.name || 'Customer',
+        lines: cart.map((l) => ({ description: l.name, qty: l.qty, amount: round2(l.qty * l.rate) })),
+        taxable: totals.subtotal,
+        total: totals.total,
+        paid: credit ? 0 : totals.total,
+        due: credit ? totals.total : 0,
+        footer: 'Waiting to sync. Stock is not updated yet.',
+      }).catch(() => undefined);
+      return;
+    }
     setBusy(true);
     try {
-      const today = new Date().toISOString().slice(0, 10);
-      const { data: invoice, error: invErr } = await apiPost<{ id: string; number: string; total: string | number }>('sales/invoices', {
-        company_id: companyId,
-        customer_id: customerId,
-        invoice_date: today,
-        due_date: today,
-        gst_applicable: cart.some((l) => l.tax_rate > 0),
-        lines: cart.map((l) => {
-          const half = l.tax_rate / 2;
-          return {
-            item_id: l.item_id,
-            hsn_sac: l.hsn_sac,
-            description: l.name,
-            qty: l.qty,
-            unit: l.unit,
-            rate: l.rate,
-            cgst_rate: half,
-            sgst_rate: half,
-          };
-        }),
-      });
+      const { data: invoice, error: invErr } = await apiPost<{ id: string; number: string; total: string | number }>('sales/invoices', invoiceBody);
       if (invErr || !invoice?.id) {
+        if (shopCounter && isNetworkError(invErr)) {
+          queueBill({ invoice: invoiceBody, payment: paymentBody });
+          setWaiting(loadOutbox().length);
+          clearBill();
+          success('Saved on this device. Stock updates when the internet is back.');
+          return;
+        }
         showError(invErr || 'Could not create the bill.');
         return;
       }
       const total = Number(invoice.total ?? totals.total);
-      const { error: payErr } = await apiPost(`sales/invoices/${invoice.id}/payment`, {
-        amount: total,
-        payment_date: today,
-        mode: payMode,
-        reference: payMode === 'cash' ? 'POS cash' : payMode === 'upi' ? 'POS UPI' : 'POS card',
-      });
-      if (payErr) {
-        showError(`Bill saved but payment failed: ${payErr}`);
+      if (paymentBody) {
+        const { error: payErr } = await apiPost(`sales/invoices/${invoice.id}/payment`, { ...paymentBody, amount: total });
+        if (payErr) showError(`Bill saved but payment failed: ${payErr}`);
+        else success(`Bill ${invoice.number} settled.`);
       } else {
-        success(`Bill ${invoice.number} settled.`);
+        success(`Credit bill ${invoice.number} · ₹${total.toFixed(2)}`);
       }
       setLastBill({ id: invoice.id, number: invoice.number, total });
-      setCart([]);
-      setCashTendered('');
-      setCartOpen(false);
+      clearBill();
+      if (shopCounter) {
+        void printCounterSlip({
+          company: companies.find((c) => c.id === companyId)?.name || 'Shop',
+          number: invoice.number,
+          date: today,
+          billTo: customers.find((c) => c.id === customerId)?.name || 'Customer',
+          lines: cart.map((l) => ({ description: l.name, qty: l.qty, amount: round2(l.qty * l.rate) })),
+          taxable: totals.subtotal,
+          total,
+          paid: credit ? 0 : total,
+          due: credit ? total : 0,
+        }).catch(() => undefined);
+      }
       loadCatalog();
+    } catch (err) {
+      if (shopCounter && (err instanceof TypeError || isNetworkError(err instanceof Error ? err.message : ''))) {
+        queueBill({ invoice: invoiceBody, payment: paymentBody });
+        setWaiting(loadOutbox().length);
+        clearBill();
+        success('Saved on this device. Stock updates when the internet is back.');
+        return;
+      }
+      showError(err instanceof Error ? err.message : 'Could not create the bill.');
     } finally {
       setBusy(false);
     }
   };
+
+  const holdBill = () => {
+    if (!shopCounter || !cart.length || !tenantKey) return;
+    const next: HeldBill[] = [{
+      id: `hold_${Date.now().toString(36)}`,
+      at: new Date().toISOString(),
+      label: `${customers.find((c) => c.id === customerId)?.name || 'Bill'} · ₹${totals.total.toFixed(2)}`,
+      customerId,
+      payMode,
+      billDiscount: '',
+      cart,
+    }, ...held];
+    saveHeld(tenantKey, next);
+    setHeld(loadHeld(tenantKey));
+    setCart([]);
+    success('Bill parked. Start the next customer.');
+  };
+
+  const recallBill = (bill: HeldBill) => {
+    setCart(Array.isArray(bill.cart) ? bill.cart as CartLine[] : []);
+    if (bill.customerId) setCustomerId(bill.customerId);
+    if (bill.payMode === 'cash' || bill.payMode === 'upi' || bill.payMode === 'card' || bill.payMode === 'credit') setPayMode(bill.payMode);
+    const next = held.filter((row) => row.id !== bill.id);
+    saveHeld(tenantKey, next);
+    setHeld(next);
+    setCartOpen(true);
+  };
+
+  useEffect(() => {
+    if (!shopCounter) return;
+    const run = () => {
+      void syncOutbox().then((result) => {
+        setWaiting(result.left);
+        if (result.sent > 0) success(`${result.sent} saved bill${result.sent === 1 ? '' : 's'} synced. Stock is updated.`);
+      });
+    };
+    window.addEventListener('online', run);
+    run();
+    return () => window.removeEventListener('online', run);
+  }, [shopCounter, success]);
 
   const onSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return;
@@ -325,9 +461,17 @@ export default function PosPage() {
     }
   };
 
+  if (!businessType) return <p className="text-slate-600">Loading counter…</p>;
+  if (businessType === 'department_store') return <DepartmentCounter />;
+
   return (
     <div className="flex flex-col lg:flex-row gap-4 min-h-[calc(100vh-8rem)] pb-28 lg:pb-0">
       <div className="flex-1 min-w-0">
+      {shopCounter && waiting > 0 && (
+        <p className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          {waiting} bill(s) are on this device. Stock updates after they sync.
+        </p>
+      )}
       {floorMode ? <FloorSwitcher role="POS / Cashier" /> : <PosSwitcher />}
         <div
           className="rounded-2xl p-4 sm:p-5 mb-4 text-white"
@@ -600,13 +744,26 @@ export default function PosPage() {
           </label>
         )}
 
+        {shopCounter && (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setPayMode('credit')} className={`rounded-lg border py-2 text-xs font-semibold min-h-[44px] ${payMode === 'credit' ? 'border-brand-500 bg-brand-50 text-brand-800' : 'border-slate-200'}`}>Credit</button>
+            <button type="button" onClick={holdBill} disabled={cart.length === 0} className="rounded-lg border border-slate-300 py-2 text-xs font-semibold min-h-[44px] disabled:opacity-50">Hold bill</button>
+          </div>
+        )}
+        {shopCounter && held.length > 0 && (
+          <div className="mt-2 space-y-1">
+            {held.map((bill) => (
+              <button key={bill.id} type="button" onClick={() => recallBill(bill)} className="block w-full rounded-lg bg-amber-50 px-2 py-2 text-left text-xs font-medium text-amber-950">{bill.label}</button>
+            ))}
+          </div>
+        )}
         <button
           type="button"
           onClick={charge}
           disabled={busy || cart.length === 0}
           className="mt-4 w-full rounded-xl bg-brand-600 text-white py-3.5 font-semibold hover:bg-brand-700 disabled:opacity-50 min-h-[52px]"
         >
-          {busy ? 'Saving…' : `Charge ₹${totals.total.toFixed(2)}`}
+          {busy ? 'Saving…' : payMode === 'credit' && shopCounter ? `Save credit ₹${totals.total.toFixed(2)}` : `Charge ₹${totals.total.toFixed(2)}`}
         </button>
 
         {lastBill && (
