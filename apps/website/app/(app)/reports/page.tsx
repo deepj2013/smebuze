@@ -45,7 +45,7 @@ const REPORTS: { id: ReportId; label: string; description: string; hasExport: bo
   { id: 'stock-vs-delivery', label: 'Stock vs delivery', description: 'Stock on hand vs delivered in period — CSV export', hasExport: true },
   { id: 'delivery-vs-invoiced', label: 'Delivery vs invoiced', description: 'Challans and whether they are invoiced — CSV export', hasExport: true },
   { id: 'invoice-vs-payment', label: 'Invoice vs payment', description: 'Customer totals. Download ledger on a customer for a PDF of their invoices, received, and amount due.', hasExport: true },
-  { id: 'customer-ledger', label: 'Customer ledger', description: 'Pick one customer and download a PDF statement with your company logo, pending, and due.', hasExport: false },
+  { id: 'customer-ledger', label: 'Customer ledger', description: 'Pick one customer and download a PDF statement with taxable value, CGST, SGST, IGST, invoice value, and amount due.', hasExport: false },
   { id: 'ledger-summary', label: 'Ledger summary', description: 'Journal entries by period', hasExport: false },
   { id: 'general-ledger', label: 'General ledger', description: 'Journal entries grouped for GL view', hasExport: false },
   { id: 'trial-balance', label: 'Trial balance', description: 'Debits vs credits as of a date', hasExport: false },
@@ -119,6 +119,11 @@ type PaymentInvoice = {
   invoice_date: string;
   due_date: string | null;
   payment_status: string;
+  taxable_value?: number;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+  invoice_value?: number;
   total_invoiced: number;
   total_received: number;
   total_pending: number;
@@ -131,6 +136,11 @@ type PaymentRow = {
   total_invoiced: number;
   total_received: number;
   total_pending: number;
+  taxable_value?: number;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+  invoice_value?: number;
   invoice_count: number;
   invoices?: PaymentInvoice[];
 };
@@ -151,11 +161,11 @@ function InvoiceVsPayment({ data, onDownloadLedger }: { data: Record<string, unk
       {!rows.length ? (
         <Empty message="No invoices yet. Create an invoice to see received and pending amounts." />
       ) : (
-        <div className="overflow-x-auto -mx-1 sm:mx-0 border border-slate-200 rounded-lg">
+        <div className="overflow-x-auto overflow-y-hidden -mx-1 sm:mx-0 border border-slate-200 rounded-lg">
           <table className="w-full text-sm min-w-[640px]">
             <thead className="bg-slate-100">
               <tr>
-                {['Customer', 'Invoices', 'Invoiced', 'Received', 'Pending'].map((h) => (
+                {['Customer', 'Invoices', 'Taxable', 'CGST', 'SGST', 'IGST', 'Invoice value', 'Received', 'Pending'].map((h) => (
                   <th key={h} className="text-left p-2 whitespace-nowrap font-medium text-slate-700">{h}</th>
                 ))}
               </tr>
@@ -200,13 +210,17 @@ function InvoiceVsPayment({ data, onDownloadLedger }: { data: Record<string, unk
                           {r.invoice_count}
                         </button>
                       </td>
-                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(r.total_invoiced)}</td>
+                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(r.taxable_value)}</td>
+                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(r.cgst)}</td>
+                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(r.sgst)}</td>
+                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(r.igst)}</td>
+                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(r.invoice_value ?? r.total_invoiced)}</td>
                       <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(r.total_received)}</td>
                       <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(r.total_pending)}</td>
                     </tr>
                     {open && (
                       <tr className="border-t border-slate-100 bg-slate-50">
-                        <td colSpan={5} className="p-3">
+                        <td colSpan={9} className="p-3">
                           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                               {r.customer_name} — invoice wise
@@ -230,7 +244,7 @@ function InvoiceVsPayment({ data, onDownloadLedger }: { data: Record<string, unk
                             <table className="w-full text-sm bg-white border border-slate-200 rounded-lg">
                               <thead className="bg-white">
                                 <tr>
-                                  {['Invoice', 'Date', 'Due', 'Status', 'Invoiced', 'Received', 'Pending'].map((h) => (
+                                  {['Invoice', 'Date', 'Due', 'Status', 'Taxable', 'CGST', 'SGST', 'IGST', 'Invoice value', 'Received', 'Pending'].map((h) => (
                                     <th key={h} className="text-left p-2 whitespace-nowrap font-medium text-slate-600">{h}</th>
                                   ))}
                                 </tr>
@@ -259,7 +273,11 @@ function InvoiceVsPayment({ data, onDownloadLedger }: { data: Record<string, unk
                                           {standingLabel(inv.payment_status)}
                                         </span>
                                       </td>
-                                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(inv.total_invoiced)}</td>
+                                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(inv.taxable_value)}</td>
+                                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(inv.cgst)}</td>
+                                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(inv.sgst)}</td>
+                                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(inv.igst)}</td>
+                                      <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(inv.invoice_value ?? inv.total_invoiced)}</td>
                                       <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(inv.total_received)}</td>
                                       <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(inv.total_pending)}</td>
                                     </tr>
@@ -301,10 +319,14 @@ function ReportResult({
           <Stat label="Invoices" value={String(data.invoiceCount ?? 0)} />
         </div>
         <DataTable
-          headers={['Number', 'Date', 'Total', 'Paid', 'Due']}
+          headers={['Number', 'Date', 'Taxable', 'CGST', 'SGST', 'IGST', 'Invoice value', 'Paid', 'Due']}
           rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
             String(r.number ?? ''),
             String(r.date ?? '').slice(0, 10),
+            money(r.taxable_value as number),
+            money(r.cgst as number),
+            money(r.sgst as number),
+            money(r.igst as number),
             money(r.total as number),
             money(r.paid as number),
             money(r.due as number),
@@ -439,7 +461,7 @@ function ReportResult({
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Amount due</p>
           <p className="mt-1 text-2xl font-bold text-slate-900">{money(due)}</p>
-          <p className="mt-1 text-sm text-slate-600">Tap Download ledger. In the print window choose Save as PDF. The file includes your company logo, GSTIN, address, bank details, and each invoice’s pending and due date.</p>
+          <p className="mt-1 text-sm text-slate-600">Tap Download ledger. In the print window choose Save as PDF. The file includes your company logo, GSTIN, address, bank details, and each invoice’s taxable value, CGST, SGST, IGST, invoice value, pending, and due date.</p>
         </div>
         <InvoiceVsPayment data={data} onDownloadLedger={onDownloadLedger} />
       </div>
@@ -965,7 +987,7 @@ export default function ReportsPage() {
         </p>
       </div>
 
-      <div className="flex min-h-0 flex-col gap-3 md:min-h-[min(70vh,720px)] md:flex-row md:items-stretch md:gap-4">
+      <div className="flex min-h-0 flex-col gap-3 md:flex-row md:items-start md:gap-4">
         <div className="space-y-2 md:hidden">
           <label htmlFor="report-picker" className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
             Report
@@ -1033,7 +1055,7 @@ export default function ReportsPage() {
         </aside>
 
         {/* Mid: report view */}
-        <section className="flex-1 min-w-0 rounded-xl border border-slate-200 bg-white flex flex-col overflow-hidden">
+        <section className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white lg:max-h-[calc(100dvh-9rem)]">
           {!selected ? (
             <div className="flex flex-1 items-center justify-center p-6 text-sm text-slate-500">
               Select a report above.
@@ -1059,7 +1081,7 @@ export default function ReportsPage() {
                 {filterControls}
                 {ledgerNote && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">{ledgerNote}</p>}
               </div>
-              <div id="report-result" className="flex-1 overflow-auto p-3 sm:p-5 overscroll-contain">
+              <div id="report-result" className="min-h-0 flex-1 overflow-x-auto overflow-y-auto p-3 sm:p-5">
                 {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
                 {loading && !data ? <p className="text-sm text-slate-500">Loading…</p> : null}
                 {data != null ? (

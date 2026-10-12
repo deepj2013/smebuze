@@ -9,6 +9,11 @@ interface PartyRow {
   party_id: string | null;
   name: string;
   invoice_count: number;
+  taxable?: number;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+  invoice_value?: number;
   total: number;
   paid: number;
   balance: number;
@@ -60,14 +65,18 @@ export default function PartyInvoicesPage() {
                 <th className="p-3 text-right font-medium text-slate-700">Pending</th>
                 <th className="p-3 text-right font-medium text-slate-700">Partial</th>
                 <th className="p-3 text-right font-medium text-slate-700">Paid</th>
-                <th className="p-3 text-right font-medium text-slate-700">Billed</th>
+                <th className="p-3 text-right font-medium text-slate-700">Taxable</th>
+                <th className="p-3 text-right font-medium text-slate-700">CGST</th>
+                <th className="p-3 text-right font-medium text-slate-700">SGST</th>
+                <th className="p-3 text-right font-medium text-slate-700">IGST</th>
+                <th className="p-3 text-right font-medium text-slate-700">Invoice value</th>
                 <th className="p-3 text-right font-medium text-slate-700">Received</th>
                 <th className="p-3 text-right font-medium text-slate-700">Due</th>
               </tr>
             </thead>
             <tbody>
               {shown.length === 0 ? (
-                <tr><td colSpan={8} className="p-4 text-slate-500">No invoices yet.</td></tr>
+                <tr><td colSpan={12} className="p-4 text-slate-500">No invoices yet.</td></tr>
               ) : shown.map((p) => {
                 const href = p.party_type === 'customer' && p.party_id
                   ? `/sales/invoices?customer_id=${p.party_id}`
@@ -84,7 +93,11 @@ export default function PartyInvoicesPage() {
                     <td className="p-3 text-right">{p.pending_count}</td>
                     <td className="p-3 text-right">{p.partial_count}</td>
                     <td className="p-3 text-right">{p.paid_count}</td>
-                    <td className="p-3 text-right">₹{p.total.toFixed(2)}</td>
+                    <td className="p-3 text-right">₹{Number(p.taxable ?? 0).toFixed(2)}</td>
+                    <td className="p-3 text-right">₹{Number(p.cgst ?? 0).toFixed(2)}</td>
+                    <td className="p-3 text-right">₹{Number(p.sgst ?? 0).toFixed(2)}</td>
+                    <td className="p-3 text-right">₹{Number(p.igst ?? 0).toFixed(2)}</td>
+                    <td className="p-3 text-right">₹{Number(p.invoice_value ?? p.total).toFixed(2)}</td>
                     <td className="p-3 text-right">₹{p.paid.toFixed(2)}</td>
                     <td className={`p-3 text-right font-medium ${p.balance > 0.05 ? 'text-amber-800' : 'text-emerald-700'}`}>₹{p.balance.toFixed(2)}</td>
                   </tr>

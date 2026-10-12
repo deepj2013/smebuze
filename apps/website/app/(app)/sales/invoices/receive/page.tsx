@@ -16,6 +16,10 @@ interface OpenInvoice {
   due_date?: string | null;
   invoice_date?: string | null;
   total: string | number;
+  taxable_value?: string | number;
+  cgst_amount?: string | number;
+  sgst_amount?: string | number;
+  igst_amount?: string | number;
   paid_amount?: string | number;
   balance_due?: string | number;
   payment_status?: string;
@@ -260,6 +264,9 @@ export default function ReceivePaymentPage() {
                         <p className="text-xs text-slate-500">
                           Due {inv.due_date ? String(inv.due_date).slice(0, 10) : '—'}
                           {overdue ? ' · Overdue' : ''} · still {money(due)}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Taxable {money(Number(inv.taxable_value ?? 0))} · CGST {money(Number(inv.cgst_amount ?? 0))} · SGST {money(Number(inv.sgst_amount ?? 0))} · IGST {money(Number(inv.igst_amount ?? 0))} · Invoice {money(Number(inv.total))}
                         </p>
                       </div>
                       <label className="shrink-0 text-right">

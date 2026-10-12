@@ -20,6 +20,11 @@ export type LedgerInvoice = {
   invoice_date: string;
   due_date: string | null;
   payment_status: string;
+  taxable_value?: number;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+  invoice_value?: number;
   total_invoiced: number;
   total_received: number;
   total_pending: number;
@@ -126,6 +131,8 @@ const PRINT_CSS = `
   .due { margin-top: 14px; background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; }
   .due strong { font-size: 18px; }
   table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+  table.dense { font-size: 10px; }
+  table.dense th, table.dense td { padding: 4px 3px; }
   th, td { border-bottom: 1px solid #e2e8f0; padding: 7px 8px; text-align: left; vertical-align: top; }
   th { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: #475569; background: #f8fafc; }
   .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -176,7 +183,11 @@ export function customerLedgerHtml(input: {
 }): string {
   const today = localToday();
   const invoices = [...input.invoices].sort((a, b) => a.invoice_date.localeCompare(b.invoice_date) || a.number.localeCompare(b.number));
-  const invoiced = invoices.reduce((s, row) => s + Number(row.total_invoiced || 0), 0);
+  const taxable = invoices.reduce((s, row) => s + Number(row.taxable_value || 0), 0);
+  const cgst = invoices.reduce((s, row) => s + Number(row.cgst || 0), 0);
+  const sgst = invoices.reduce((s, row) => s + Number(row.sgst || 0), 0);
+  const igst = invoices.reduce((s, row) => s + Number(row.igst || 0), 0);
+  const invoiceValue = invoices.reduce((s, row) => s + Number(row.invoice_value ?? row.total_invoiced ?? 0), 0);
   const received = invoices.reduce((s, row) => s + Number(row.total_received || 0), 0);
   const pending = invoices.reduce((s, row) => s + Number(row.total_pending || 0), 0);
   const partyAddress = formatAddress(input.party.address);
@@ -196,13 +207,17 @@ export function customerLedgerHtml(input: {
           <td>${esc(inv.number)}</td>
           <td>${esc(prettyDate(inv.due_date))}${overdue ? ' <span class="over">Overdue</span>' : ''}</td>
           <td>${esc(statusLabel(inv.payment_status))}</td>
-          <td class="num">${esc(moneyIn(inv.total_invoiced))}</td>
+          <td class="num">${esc(moneyIn(inv.taxable_value))}</td>
+          <td class="num">${esc(moneyIn(inv.cgst))}</td>
+          <td class="num">${esc(moneyIn(inv.sgst))}</td>
+          <td class="num">${esc(moneyIn(inv.igst))}</td>
+          <td class="num">${esc(moneyIn(inv.invoice_value ?? inv.total_invoiced))}</td>
           <td class="num">${esc(moneyIn(inv.total_received))}</td>
           <td class="num">${esc(moneyIn(inv.total_pending))}</td>
           <td class="num">${esc(moneyIn(running))}</td>
         </tr>`;
       }).join('')
-    : `<tr><td colspan="8">No invoices for this customer.</td></tr>`;
+    : `<tr><td colspan="12">No invoices for this customer.</td></tr>`;
   const bank = bankLines(input.company?.bank_details);
   return `<div class="sheet">
     ${letterheadHtml(input.company, input.branding, 'Customer ledger', 'Invoices, payments received, and amount due')}
@@ -215,20 +230,25 @@ export function customerLedgerHtml(input: {
       <div class="box">
         <p class="label">Statement</p>
         <p>${invoices.length} invoice${invoices.length === 1 ? '' : 's'}</p>
-        <p class="muted">Balance is after credit notes and debit notes.</p>
+        <p class="muted">Invoice value is the bill total. Pending is after credit notes, debit notes, and payments.</p>
       </div>
     </div>
     <div class="due"><span>Amount due</span><strong>${esc(moneyIn(pending))}</strong></div>
-    <table>
+    <table class="dense">
       <thead><tr>
         <th>Date</th><th>Invoice</th><th>Due</th><th>Status</th>
-        <th class="num">Invoiced</th><th class="num">Received</th><th class="num">Pending</th><th class="num">Balance</th>
+        <th class="num">Taxable</th><th class="num">CGST</th><th class="num">SGST</th><th class="num">IGST</th>
+        <th class="num">Invoice value</th><th class="num">Received</th><th class="num">Pending</th><th class="num">Balance</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <table class="totals">
       <tbody>
-        <tr><td>Total invoiced</td><td class="num">${esc(moneyIn(invoiced))}</td></tr>
+        <tr><td>Taxable value</td><td class="num">${esc(moneyIn(taxable))}</td></tr>
+        <tr><td>CGST</td><td class="num">${esc(moneyIn(cgst))}</td></tr>
+        <tr><td>SGST</td><td class="num">${esc(moneyIn(sgst))}</td></tr>
+        <tr><td>IGST</td><td class="num">${esc(moneyIn(igst))}</td></tr>
+        <tr><td>Invoice value</td><td class="num">${esc(moneyIn(invoiceValue))}</td></tr>
         <tr><td>Total received</td><td class="num">${esc(moneyIn(received))}</td></tr>
         <tr><td><strong>Amount due</strong></td><td class="num"><strong>${esc(moneyIn(pending))}</strong></td></tr>
       </tbody>

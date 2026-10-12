@@ -134,7 +134,7 @@ export class SalesService {
   private async annotateInvoices(invoices: SalesInvoice[]): Promise<SalesInvoice[]> {
     if (!invoices.length) return invoices;
     const ids = invoices.map((inv) => inv.id);
-    const [creditRows, debitRows] = await Promise.all([
+    const [creditRows, debitRows, gstRows] = await Promise.all([
       this.creditNoteRepo
         .createQueryBuilder('n')
         .select('n.invoice_id', 'invoice_id')
@@ -151,9 +151,20 @@ export class SalesService {
         .andWhere("n.status IN ('issued', 'posted')")
         .groupBy('n.invoice_id')
         .getRawMany<{ invoice_id: string; sum: string }>(),
+      this.lineRepo
+        .createQueryBuilder('l')
+        .select('l.invoice_id', 'invoice_id')
+        .addSelect('COALESCE(SUM(l.taxable_value), 0)', 'taxable')
+        .addSelect('COALESCE(SUM(l.cgst_amount), 0)', 'cgst')
+        .addSelect('COALESCE(SUM(l.sgst_amount), 0)', 'sgst')
+        .addSelect('COALESCE(SUM(l.igst_amount), 0)', 'igst')
+        .where('l.invoice_id IN (:...ids)', { ids })
+        .groupBy('l.invoice_id')
+        .getRawMany<{ invoice_id: string; taxable: string; cgst: string; sgst: string; igst: string }>(),
     ]);
     const creditMap = new Map(creditRows.map((row) => [row.invoice_id, round2(Number(row.sum))]));
     const debitMap = new Map(debitRows.map((row) => [row.invoice_id, round2(Number(row.sum))]));
+    const gstMap = new Map(gstRows.map((row) => [row.invoice_id, row]));
     for (const inv of invoices) {
       const total = round2(parseFloat(inv.total || '0'));
       const paid = round2(parseFloat(inv.paid_amount || '0'));
@@ -161,12 +172,18 @@ export class SalesService {
       const debit = debitMap.get(inv.id) ?? 0;
       const net = round2(total + debit - credit);
       const balance = round2(net - paid);
+      const gst = gstMap.get(inv.id);
       Object.assign(inv, {
         credit_note_total: credit.toFixed(2),
         debit_note_total: debit.toFixed(2),
         net_amount: net.toFixed(2),
         balance_due: balance.toFixed(2),
         payment_status: paymentStanding(total, paid, credit, debit),
+        taxable_value: round2(Number(gst?.taxable ?? inv.subtotal ?? 0)).toFixed(2),
+        cgst_amount: round2(Number(gst?.cgst ?? 0)).toFixed(2),
+        sgst_amount: round2(Number(gst?.sgst ?? 0)).toFixed(2),
+        igst_amount: round2(Number(gst?.igst ?? 0)).toFixed(2),
+        invoice_value: total.toFixed(2),
       });
     }
     return invoices;
@@ -1771,6 +1788,11 @@ export class SalesService {
       party_id: string | null;
       name: string;
       invoice_count: number;
+      taxable: number;
+      cgst: number;
+      sgst: number;
+      igst: number;
+      invoice_value: number;
       total: number;
       paid: number;
       balance: number;
@@ -1788,6 +1810,11 @@ export class SalesService {
         party_id: partyId,
         name: inv.customer?.name || inv.vendor?.name || 'No party',
         invoice_count: 0,
+        taxable: 0,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
+        invoice_value: 0,
         total: 0,
         paid: 0,
         balance: 0,
@@ -1796,7 +1823,13 @@ export class SalesService {
         paid_count: 0,
       };
       const standing = paymentStanding(view.total, view.paid, view.credit, view.debit);
+      const gst = inv as SalesInvoice & { taxable_value?: string; cgst_amount?: string; sgst_amount?: string; igst_amount?: string };
       row.invoice_count += 1;
+      row.taxable = round2(row.taxable + Number(gst.taxable_value || 0));
+      row.cgst = round2(row.cgst + Number(gst.cgst_amount || 0));
+      row.sgst = round2(row.sgst + Number(gst.sgst_amount || 0));
+      row.igst = round2(row.igst + Number(gst.igst_amount || 0));
+      row.invoice_value = round2(row.invoice_value + view.total);
       row.total = round2(row.total + view.net);
       row.paid = round2(row.paid + view.paid);
       row.balance = round2(row.balance + view.balance);
@@ -1908,7 +1941,9 @@ export class SalesService {
     const addr = (v: Record<string, unknown> | undefined) => (v && typeof v === 'object' && v.line1) ? [v.line1, v.line2, v.city, v.state, v.pincode].filter(Boolean).join(', ') : (v && typeof v === 'object' ? Object.values(v).filter(Boolean).join(', ') : '');
     const lines = inv.lines ?? [];
     const subtotal = parseFloat(inv.subtotal ?? '0');
-    const taxAmount = parseFloat(inv.tax_amount ?? '0');
+    const cgstTotal = lines.reduce((s, l) => s + parseFloat(l.cgst_amount ?? '0'), 0);
+    const sgstTotal = lines.reduce((s, l) => s + parseFloat(l.sgst_amount ?? '0'), 0);
+    const igstTotal = lines.reduce((s, l) => s + parseFloat(l.igst_amount ?? '0'), 0);
     const shipping = parseFloat(inv.shipping_charges ?? '0');
     const otherCharges = parseFloat(inv.other_charges ?? '0');
     const discount = parseFloat(inv.discount_amount ?? '0');
@@ -1920,7 +1955,7 @@ export class SalesService {
     const lineRows = lines
       .map(
         (l: SalesInvoiceLine) =>
-          `<tr><td>${escapeHtml(l.hsn_sac)}</td><td>${escapeHtml(String(l.description).slice(0, 15))}</td><td>${formatQty(Number(l.qty))}</td><td>${Number(l.rate).toFixed(2)}</td><td>${parseFloat(l.taxable_value).toFixed(2)}</td><td>${Number(l.cgst_rate).toFixed(2)}</td><td>${parseFloat(l.cgst_amount).toFixed(2)}</td><td>${Number(l.sgst_rate).toFixed(2)}</td><td>${parseFloat(l.sgst_amount).toFixed(2)}</td></tr>`,
+          `<tr><td>${escapeHtml(l.hsn_sac)}</td><td>${escapeHtml(String(l.description).slice(0, 15))}</td><td>${formatQty(Number(l.qty))}</td><td>${Number(l.rate).toFixed(2)}</td><td>${parseFloat(l.taxable_value).toFixed(2)}</td><td>${parseFloat(l.cgst_amount).toFixed(2)}</td><td>${parseFloat(l.sgst_amount).toFixed(2)}</td><td>${parseFloat(l.igst_amount).toFixed(2)}</td></tr>`,
       )
       .join('');
 
@@ -1944,16 +1979,18 @@ ${posLogo ? `<div class="section" style="text-align:center"><img src="${escapeHt
 <div class="section"><strong>Bill To:</strong><br>${escapeHtml(billTo.name)}<br>${billTo.gstin ? 'GSTIN: ' + escapeHtml(billTo.gstin) + '<br>' : ''}${escapeHtml(addr(billTo.address))}</div>
 <div class="section">Inv No: <strong>${escapeHtml(inv.number)}</strong> | Date: ${inv.invoice_date}${inv.due_date ? ' | Due: ' + inv.due_date : ''}</div>
 <table>
-<thead><tr><th>HSN</th><th>Desc</th><th>Qty</th><th>Rate</th><th>TaxVal</th><th>CGST%</th><th>CGST</th><th>SGST%</th><th>SGST</th></tr></thead>
+<thead><tr><th>HSN</th><th>Desc</th><th>Qty</th><th>Rate</th><th>Taxable</th><th>CGST</th><th>SGST</th><th>IGST</th></tr></thead>
 <tbody>${lineRows}</tbody>
 </table>
 <div class="totals">
-<table><tr><td>Subtotal</td><td class="right">₹${subtotal.toFixed(2)}</td></tr>
-<tr><td>Tax (GST)</td><td class="right">₹${taxAmount.toFixed(2)}</td></tr>
+<table><tr><td>Taxable value</td><td class="right">₹${subtotal.toFixed(2)}</td></tr>
+<tr><td>CGST</td><td class="right">₹${cgstTotal.toFixed(2)}</td></tr>
+<tr><td>SGST</td><td class="right">₹${sgstTotal.toFixed(2)}</td></tr>
+<tr><td>IGST</td><td class="right">₹${igstTotal.toFixed(2)}</td></tr>
 ${shipping ? `<tr><td>Shipping charges</td><td class="right">₹${shipping.toFixed(2)}</td></tr>` : ''}
 ${otherCharges ? `<tr><td>Other charges</td><td class="right">₹${otherCharges.toFixed(2)}</td></tr>` : ''}
 ${discount ? `<tr><td>Discount</td><td class="right">-₹${discount.toFixed(2)}</td></tr>` : ''}
-<tr><td>Total</td><td class="right">₹${total.toFixed(2)}</td></tr>
+<tr><td>Invoice value</td><td class="right">₹${total.toFixed(2)}</td></tr>
 ${view.credit ? `<tr><td>Credit notes</td><td class="right">-₹${view.credit.toFixed(2)}</td></tr>` : ''}
 ${view.debit ? `<tr><td>Debit notes</td><td class="right">₹${view.debit.toFixed(2)}</td></tr>` : ''}
 <tr><td>Paid</td><td class="right">₹${paid.toFixed(2)}</td></tr>
@@ -1986,7 +2023,6 @@ ${this.invoicePayBlockHtml(pay, true)}
     const lines = inv.lines ?? [];
     const invDate = new Date(inv.invoice_date as Date | string).toISOString().slice(0, 10);
     const subtotal = parseFloat(inv.subtotal ?? '0');
-    const taxAmount = parseFloat(inv.tax_amount ?? '0');
     const total = parseFloat(inv.total ?? '0');
     const companyAddr = addr(company.address);
     const companyEmail = (company.address && typeof company.address === 'object' && (company.address as Record<string, unknown>).email) ? String((company.address as Record<string, unknown>).email) : '';
@@ -2024,6 +2060,7 @@ ${this.invoicePayBlockHtml(pay, true)}
     const cgst2_5 = lines2_5.reduce((s, l) => s + parseFloat(l.cgst_amount ?? '0'), 0);
     const sgst9 = lines9.reduce((s, l) => s + parseFloat(l.sgst_amount ?? '0'), 0);
     const cgst9 = lines9.reduce((s, l) => s + parseFloat(l.cgst_amount ?? '0'), 0);
+    const igstTotal = lines.reduce((s, l) => s + parseFloat(l.igst_amount ?? '0'), 0);
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${escapeHtml(inv.number)}</title><style>
 ${invoicePrintSizeCss(branding?.invoice_print_size)}
@@ -2081,11 +2118,13 @@ th{background:#f0f0f0;font-weight:bold}
 
 <div class="star-ice-tax-table">
   <table style="width:auto;border:none">
+    <tr><td>Taxable value</td><td class="right">${subtotal.toFixed(2)}</td></tr>
     <tr><td>SGST @ 2.5%</td><td class="right">${sgst2_5.toFixed(2)}</td></tr>
     <tr><td>CGST @ 2.5%</td><td class="right">${cgst2_5.toFixed(2)}</td></tr>
     <tr><td>SGST @ 9%</td><td class="right">${sgst9.toFixed(2)}</td></tr>
     <tr><td>CGST @ 9%</td><td class="right">${cgst9.toFixed(2)}</td></tr>
-    <tr><td><strong>Grand Total</strong></td><td class="right"><strong>₹${total.toFixed(2)}</strong></td></tr>
+    <tr><td>IGST</td><td class="right">${igstTotal.toFixed(2)}</td></tr>
+    <tr><td><strong>Invoice value</strong></td><td class="right"><strong>₹${total.toFixed(2)}</strong></td></tr>
   </table>
 </div>
 
@@ -2230,18 +2269,23 @@ ${this.invoicePayBlockHtml(pay)}
 
     let qtyTotal = 0;
     let taxableTotal = 0;
-    let gstTotal = 0;
+    let cgstTotal = 0;
+    let sgstTotal = 0;
+    let igstTotal = 0;
     let amountTotal = 0;
     const itemRows = lines.map((l, i) => {
       const qty = roundQty(Number(l.qty || 0));
       const rate = round2(Number(l.rate || 0));
       const taxable = round2(Number(l.taxable_value || 0));
-      const gstAmt = round2(Number(l.cgst_amount || 0) + Number(l.sgst_amount || 0) + Number(l.igst_amount || 0));
-      const gstPct = round2(Number(l.cgst_rate || 0) + Number(l.sgst_rate || 0) + Number(l.igst_rate || 0));
-      const amount = round2(taxable + gstAmt);
+      const cgstAmt = round2(Number(l.cgst_amount || 0));
+      const sgstAmt = round2(Number(l.sgst_amount || 0));
+      const igstAmt = round2(Number(l.igst_amount || 0));
+      const amount = round2(taxable + cgstAmt + sgstAmt + igstAmt);
       qtyTotal = roundQty(qtyTotal + qty);
       taxableTotal = round2(taxableTotal + taxable);
-      gstTotal = round2(gstTotal + gstAmt);
+      cgstTotal = round2(cgstTotal + cgstAmt);
+      sgstTotal = round2(sgstTotal + sgstAmt);
+      igstTotal = round2(igstTotal + igstAmt);
       amountTotal = round2(amountTotal + amount);
       return `<tr>
         <td class="c">${i + 1}</td>
@@ -2251,27 +2295,32 @@ ${this.invoicePayBlockHtml(pay)}
         <td class="c">${escapeHtml((l.unit || 'PCS').toUpperCase())}</td>
         <td class="r">${formatInr(rate)}</td>
         <td class="r">${formatInr(taxable)}</td>
-        <td class="r">${formatInr(gstAmt)}${gstPct ? ` (${gstPct}%)` : ''}</td>
+        <td class="r">${formatInr(cgstAmt)}</td>
+        <td class="r">${formatInr(sgstAmt)}</td>
+        <td class="r">${formatInr(igstAmt)}</td>
         <td class="r">${formatInr(amount)}</td>
       </tr>`;
     }).join('');
 
-    const hsnMap = new Map<string, { hsn: string; taxable: number; cgstRate: number; cgst: number; sgstRate: number; sgst: number }>();
+    const hsnMap = new Map<string, { hsn: string; taxable: number; cgstRate: number; cgst: number; sgstRate: number; sgst: number; igstRate: number; igst: number }>();
     for (const l of lines) {
       const hsn = l.hsn_sac || '—';
       const cgstRate = round2(Number(l.cgst_rate || 0));
       const sgstRate = round2(Number(l.sgst_rate || 0));
-      const key = `${hsn}|${cgstRate}|${sgstRate}`;
-      const cur = hsnMap.get(key) ?? { hsn, taxable: 0, cgstRate, cgst: 0, sgstRate, sgst: 0 };
+      const igstRate = round2(Number(l.igst_rate || 0));
+      const key = `${hsn}|${cgstRate}|${sgstRate}|${igstRate}`;
+      const cur = hsnMap.get(key) ?? { hsn, taxable: 0, cgstRate, cgst: 0, sgstRate, sgst: 0, igstRate, igst: 0 };
       cur.taxable = round2(cur.taxable + Number(l.taxable_value || 0));
       cur.cgst = round2(cur.cgst + Number(l.cgst_amount || 0));
       cur.sgst = round2(cur.sgst + Number(l.sgst_amount || 0));
+      cur.igst = round2(cur.igst + Number(l.igst_amount || 0));
       hsnMap.set(key, cur);
     }
     const hsnRows = [...hsnMap.values()];
     const hsnTaxable = round2(hsnRows.reduce((s, r) => s + r.taxable, 0));
     const hsnCgst = round2(hsnRows.reduce((s, r) => s + r.cgst, 0));
     const hsnSgst = round2(hsnRows.reduce((s, r) => s + r.sgst, 0));
+    const hsnIgst = round2(hsnRows.reduce((s, r) => s + r.igst, 0));
     const hsnTable = hsnRows.map((r) => `<tr>
       <td>${escapeHtml(r.hsn)}</td>
       <td class="r">${formatInr(r.taxable)}</td>
@@ -2279,7 +2328,9 @@ ${this.invoicePayBlockHtml(pay)}
       <td class="r">${formatInr(r.cgst)}</td>
       <td class="c">${formatInr(r.sgstRate)}%</td>
       <td class="r">${formatInr(r.sgst)}</td>
-      <td class="r">${formatInr(r.cgst + r.sgst)}</td>
+      <td class="c">${formatInr(r.igstRate)}%</td>
+      <td class="r">${formatInr(r.igst)}</td>
+      <td class="r">${formatInr(r.cgst + r.sgst + r.igst)}</td>
     </tr>`).join('');
 
     const bank = company.bank_details ?? {};
@@ -2383,17 +2434,19 @@ table.grid th{background:#eee;font-size:12px}
     <thead>
       <tr>
         <th>#</th><th>Item name</th><th>HSN/SAC</th><th>Quantity</th><th>Unit</th>
-        <th>Price/Unit (₹)</th><th>Taxable amount</th><th>GST</th><th>Amount</th>
+        <th>Price/Unit (₹)</th><th>Taxable</th><th>CGST</th><th>SGST</th><th>IGST</th><th>Amount</th>
       </tr>
     </thead>
     <tbody>
-      ${itemRows || `<tr><td colspan="9" class="c">No items</td></tr>`}
+      ${itemRows || `<tr><td colspan="11" class="c">No items</td></tr>`}
       <tr>
         <td colspan="3" class="r"><strong>Total</strong></td>
         <td class="r"><strong>${formatQty(qtyTotal)}</strong></td>
         <td></td><td></td>
         <td class="r"><strong>${formatInr(taxableTotal)}</strong></td>
-        <td class="r"><strong>${formatInr(gstTotal)}</strong></td>
+        <td class="r"><strong>${formatInr(cgstTotal)}</strong></td>
+        <td class="r"><strong>${formatInr(sgstTotal)}</strong></td>
+        <td class="r"><strong>${formatInr(igstTotal)}</strong></td>
         <td class="r"><strong>${formatInr(amountTotal)}</strong></td>
       </tr>
     </tbody>
@@ -2406,11 +2459,14 @@ table.grid th{background:#eee;font-size:12px}
     </div>
     <div class="mid-right">
       <table>
-        <tr><th>Sub Total</th><td>₹ ${formatInr(amountTotal)}</td></tr>
+        <tr><th>Taxable value</th><td>₹ ${formatInr(taxableTotal)}</td></tr>
+        <tr><th>CGST</th><td>₹ ${formatInr(cgstTotal)}</td></tr>
+        <tr><th>SGST</th><td>₹ ${formatInr(sgstTotal)}</td></tr>
+        <tr><th>IGST</th><td>₹ ${formatInr(igstTotal)}</td></tr>
         ${shipping ? `<tr><th>Shipping</th><td>₹ ${formatInr(shipping)}</td></tr>` : ''}
         ${otherCharges ? `<tr><th>Other charges</th><td>₹ ${formatInr(otherCharges)}</td></tr>` : ''}
         ${discount ? `<tr><th>Discount</th><td>- ₹ ${formatInr(discount)}</td></tr>` : ''}
-        <tr><th>Total</th><td>₹ ${formatInr(total)}</td></tr>
+        <tr><th>Invoice value</th><td>₹ ${formatInr(total)}</td></tr>
         ${view.credit ? `<tr><th>Credit notes</th><td>- ₹ ${formatInr(view.credit)}</td></tr>` : ''}
         ${view.debit ? `<tr><th>Debit notes</th><td>₹ ${formatInr(view.debit)}</td></tr>` : ''}
         <tr><th>Received</th><td>₹ ${formatInr(paid)}</td></tr>
@@ -2425,12 +2481,13 @@ table.grid th{background:#eee;font-size:12px}
           <th rowspan="2">Taxable amount</th>
           <th colspan="2">CGST</th>
           <th colspan="2">SGST</th>
+          <th colspan="2">IGST</th>
           <th rowspan="2">Total Tax Amount</th>
         </tr>
-        <tr><th>Rate</th><th>Amount</th><th>Rate</th><th>Amount</th></tr>
+        <tr><th>Rate</th><th>Amount</th><th>Rate</th><th>Amount</th><th>Rate</th><th>Amount</th></tr>
       </thead>
       <tbody>
-        ${hsnTable || `<tr><td colspan="7" class="c">—</td></tr>`}
+        ${hsnTable || `<tr><td colspan="9" class="c">—</td></tr>`}
         <tr>
           <td class="r"><strong>Total</strong></td>
           <td class="r"><strong>${formatInr(hsnTaxable)}</strong></td>
@@ -2438,7 +2495,9 @@ table.grid th{background:#eee;font-size:12px}
           <td class="r"><strong>${formatInr(hsnCgst)}</strong></td>
           <td></td>
           <td class="r"><strong>${formatInr(hsnSgst)}</strong></td>
-          <td class="r"><strong>${formatInr(hsnCgst + hsnSgst)}</strong></td>
+          <td></td>
+          <td class="r"><strong>${formatInr(hsnIgst)}</strong></td>
+          <td class="r"><strong>${formatInr(hsnCgst + hsnSgst + hsnIgst)}</strong></td>
         </tr>
       </tbody>
     </table>` : ''}

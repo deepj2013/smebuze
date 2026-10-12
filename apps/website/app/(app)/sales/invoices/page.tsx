@@ -14,6 +14,10 @@ interface Invoice {
   invoice_date: string;
   due_date?: string | null;
   total: string | number;
+  taxable_value?: string | number;
+  cgst_amount?: string | number;
+  sgst_amount?: string | number;
+  igst_amount?: string | number;
   paid_amount?: string | number;
   balance_due?: string | number;
   payment_status?: string;
@@ -141,9 +145,37 @@ export default function InvoicesPage() {
       },
     },
     {
+      key: 'taxable_value',
+      label: 'Taxable',
+      cardLabel: 'Taxable',
+      className: 'text-right',
+      render: (r) => `₹${Number(r.taxable_value ?? 0).toFixed(2)}`,
+    },
+    {
+      key: 'cgst_amount',
+      label: 'CGST',
+      cardLabel: 'CGST',
+      className: 'text-right',
+      render: (r) => `₹${Number(r.cgst_amount ?? 0).toFixed(2)}`,
+    },
+    {
+      key: 'sgst_amount',
+      label: 'SGST',
+      cardLabel: 'SGST',
+      className: 'text-right',
+      render: (r) => `₹${Number(r.sgst_amount ?? 0).toFixed(2)}`,
+    },
+    {
+      key: 'igst_amount',
+      label: 'IGST',
+      cardLabel: 'IGST',
+      className: 'text-right',
+      render: (r) => `₹${Number(r.igst_amount ?? 0).toFixed(2)}`,
+    },
+    {
       key: 'total',
-      label: 'Total',
-      cardLabel: 'Total',
+      label: 'Invoice value',
+      cardLabel: 'Invoice value',
       className: 'text-right',
       render: (r) => `₹${Number(r.total).toFixed(2)}`,
     },

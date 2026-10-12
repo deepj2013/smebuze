@@ -16,6 +16,17 @@ interface Tenant {
   settings?: Record<string, unknown>;
 }
 
+type AccountKind = 'demo' | 'real';
+
+function accountKind(t: Tenant): AccountKind {
+  const saved = t.settings?.account_kind;
+  if (saved === 'demo' || saved === 'real') return saved;
+  const slug = t.slug.toLowerCase();
+  const name = t.name.toLowerCase();
+  if (slug.startsWith('demo') || slug.startsWith('pos-') || name.startsWith('demo ')) return 'demo';
+  return 'real';
+}
+
 const PLANS = ['basic', 'advanced', 'enterprise', 'ai_pro'];
 const FEATURES = ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'bulk_upload', 'audit', 'ai', 'whatsapp', 'storefront', 'catalog', 'lead_hub'];
 
@@ -35,8 +46,10 @@ export default function AdminTenantsPage() {
     business_type?: string;
     books_locked?: boolean;
     books_through?: string;
+    account_kind?: AccountKind;
   }>({});
   const [q, setQ] = useState('');
+  const [kindFilter, setKindFilter] = useState<'all' | AccountKind>('all');
   const [users, setUsers] = useState<{ id: string; email: string; name?: string | null; is_active?: boolean; email_verified?: boolean }[]>([]);
   const [userEdits, setUserEdits] = useState<Record<string, string>>({});
   const [userBusy, setUserBusy] = useState<string | null>(null);
@@ -67,6 +80,7 @@ export default function AdminTenantsPage() {
       business_type: String(t.settings?.business_type ?? ''),
       books_locked: Boolean((t.settings?.period_lock as { enabled?: boolean } | undefined)?.enabled),
       books_through: String((t.settings?.period_lock as { through?: string } | undefined)?.through ?? '').slice(0, 7),
+      account_kind: accountKind(t),
     });
     setUsers([]);
     setUserEdits({});
@@ -97,6 +111,7 @@ export default function AdminTenantsPage() {
           enabled: !!editForm.books_locked,
           through: editForm.books_through || '',
         },
+        account_kind: editForm.account_kind === 'real' ? 'real' : 'demo',
       },
     });
     if (err) setError(err);
@@ -108,8 +123,10 @@ export default function AdminTenantsPage() {
 
   const filtered = list.filter((t) => {
     const s = q.trim().toLowerCase();
-    if (!s) return true;
-    return t.name.toLowerCase().includes(s) || t.slug.toLowerCase().includes(s) || (t.plan ?? '').toLowerCase().includes(s);
+    const matchesText = !s || t.name.toLowerCase().includes(s) || t.slug.toLowerCase().includes(s) || (t.plan ?? '').toLowerCase().includes(s);
+    if (!matchesText) return false;
+    if (kindFilter === 'all') return true;
+    return accountKind(t) === kindFilter;
   });
 
   if (loading) return <p className="text-slate-600">Loading tenants…</p>;
@@ -118,7 +135,7 @@ export default function AdminTenantsPage() {
     <div>
       <h1 className="text-xl font-semibold text-slate-800 mb-1">Platform tenants</h1>
       <p className="text-sm text-slate-600 mb-4">
-        You are signed in as the universal (platform) admin. List every workspace, pause a tenant, change plan, features, licence, subscription end date, and business type. Open Configure to change login emails and send a forgot-password mail.
+        You are signed in as the universal (platform) admin. Mark each workspace as a demo or a real account, then pause it, change plan, features, licence, subscription end date, and business type. Open Configure to change login emails and send a forgot-password mail. Your menu lists every section a tenant can open.
       </p>
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
       {notice && <p className="mb-3 text-sm text-emerald-700">{notice}</p>}
@@ -131,6 +148,16 @@ export default function AdminTenantsPage() {
           className="rounded-lg border border-slate-300 px-3 py-2 text-sm w-64"
         />
         <span className="text-xs text-slate-500">{filtered.length} of {list.length} workspaces</span>
+        {(['all', 'demo', 'real'] as const).map((kind) => (
+          <button
+            key={kind}
+            type="button"
+            onClick={() => setKindFilter(kind)}
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${kindFilter === kind ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 border border-slate-300'}`}
+          >
+            {kind === 'all' ? 'All' : kind === 'demo' ? 'Demo' : 'Real'}
+          </button>
+        ))}
       </div>
       <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full text-sm min-w-[960px]">
@@ -140,6 +167,7 @@ export default function AdminTenantsPage() {
               <th className="text-left p-3 font-medium text-slate-700">Slug</th>
               <th className="text-left p-3 font-medium text-slate-700">Plan</th>
               <th className="text-left p-3 font-medium text-slate-700">Type</th>
+              <th className="text-left p-3 font-medium text-slate-700">Account</th>
               <th className="text-left p-3 font-medium text-slate-700">Active</th>
               <th className="text-left p-3 font-medium text-slate-700">Expires</th>
               <th className="p-3" />
@@ -150,7 +178,7 @@ export default function AdminTenantsPage() {
               <tr key={t.id} className="border-b border-slate-100 align-top">
                 {editingId === t.id ? (
                   <>
-                    <td className="p-3" colSpan={7}>
+                    <td className="p-3" colSpan={8}>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <label className="text-xs text-slate-600">Name
                           <input
@@ -210,6 +238,17 @@ export default function AdminTenantsPage() {
                             className="mt-1 block w-full border border-slate-300 rounded px-2 py-1.5 text-sm"
                           />
                         </label>
+                        <label className="text-xs text-slate-600">Account
+                          <select
+                            value={editForm.account_kind ?? 'real'}
+                            onChange={(e) => setEditForm((f) => ({ ...f, account_kind: e.target.value === 'demo' ? 'demo' : 'real' }))}
+                            className="mt-1 block w-full border border-slate-300 rounded px-2 py-1.5 text-sm"
+                          >
+                            <option value="demo">Demo account</option>
+                            <option value="real">Real account</option>
+                          </select>
+                        </label>
+                        <p className="text-xs text-slate-500 sm:col-span-2">Demo is a sample or trial workspace. Real is a paying customer. This label is for you only. It does not change what that workspace can open.</p>
                         <label className="text-sm text-slate-700 flex items-center gap-2">
                           <input
                             type="checkbox"
@@ -328,6 +367,11 @@ export default function AdminTenantsPage() {
                     <td className="p-3 text-slate-500 font-mono text-xs">{t.slug}</td>
                     <td className="p-3">{t.plan ?? '—'}</td>
                     <td className="p-3 text-slate-600">{String(t.settings?.business_type ?? '—')}</td>
+                    <td className="p-3">
+                      {accountKind(t) === 'demo'
+                        ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">Demo</span>
+                        : <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">Real</span>}
+                    </td>
                     <td className="p-3">{t.is_active === false ? <span className="text-red-600">Paused</span> : <span className="text-emerald-700">Active</span>}</td>
                     <td className="p-3">{t.subscription_ends_at ? String(t.subscription_ends_at).slice(0, 10) : '—'}</td>
                     <td className="p-3">
@@ -339,7 +383,7 @@ export default function AdminTenantsPage() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="p-6 text-center text-slate-500">No tenants match this search.</td>
+                <td colSpan={8} className="p-6 text-center text-slate-500">No tenants match this search.</td>
               </tr>
             )}
           </tbody>

@@ -511,16 +511,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     ? `${getStaticUrl(branding.logo_url)}${branding.updated_at ? `?t=${encodeURIComponent(branding.updated_at)}` : ''}`
     : null;
   const enabledModules = resolveEnabledModules(tenant?.settings ?? null, user?.allowed_modules);
-  const baseNav = isIceCrest
-    ? iceCrestNav
-    : isStarIce
-      ? starIceNav
-      : isFloorTenant
-        ? restaurantFloorNav
-        : isPosTenant
-          ? posNav
-          : nav;
-  let visibleNav = filterNavByAccess(baseNav, user?.permissions ?? [], enabledModules);
+  const baseNav = user?.isSuperAdmin
+    ? nav
+    : isIceCrest
+      ? iceCrestNav
+      : isStarIce
+        ? starIceNav
+        : isFloorTenant
+          ? restaurantFloorNav
+          : isPosTenant
+            ? posNav
+            : nav;
+  let visibleNav = filterNavByAccess(
+    baseNav,
+    user?.isSuperAdmin ? ['*'] : (user?.permissions ?? []),
+    user?.isSuperAdmin ? undefined : enabledModules,
+  );
   if (user?.isSuperAdmin && !visibleNav.some((i) => i.label === 'Admin')) {
     const adminItem = nav.find((i) => i.label === 'Admin');
     if (adminItem) visibleNav = [...visibleNav, adminItem];
@@ -911,7 +917,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </button>
           </div>
         </header>
-        <main id="main" className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-3 pb-[calc(5.25rem+var(--safe-area-bottom))] sm:p-6 sm:pb-[calc(5.25rem+var(--safe-area-bottom))] lg:pb-6">
+        <main id="main" className="min-h-0 flex-1 overflow-y-auto overflow-x-clip overscroll-y-auto p-3 pb-[calc(5.25rem+var(--safe-area-bottom))] sm:p-6 sm:pb-[calc(5.25rem+var(--safe-area-bottom))] lg:pb-6">
           {children}
         </main>
       </div>

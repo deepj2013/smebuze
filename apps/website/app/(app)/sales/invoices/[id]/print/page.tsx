@@ -15,7 +15,7 @@ interface InvoicePrintSource {
   company?: { name?: string; gstin?: string };
   customer?: { name?: string } | null;
   vendor?: { name?: string } | null;
-  lines?: Array<{ description?: string; qty?: string | number; taxable_value?: string | number }>;
+  lines?: Array<{ description?: string; qty?: string | number; taxable_value?: string | number; cgst_amount?: string | number; sgst_amount?: string | number; igst_amount?: string | number }>;
 }
 
 export default function InvoicePrintPage() {
@@ -28,6 +28,9 @@ export default function InvoicePrintPage() {
       if (!data) return;
       const total = Number(data.total ?? 0);
       const paid = Number(data.paid_amount ?? 0);
+      const lines = data.lines ?? [];
+      const sum = (key: 'taxable_value' | 'cgst_amount' | 'sgst_amount' | 'igst_amount') =>
+        lines.reduce((s, line) => s + Number(line[key] ?? 0), 0);
       setReceipt({
         company: data.company?.name || 'SMEBUZE',
         gstin: data.company?.gstin,
@@ -35,11 +38,15 @@ export default function InvoicePrintPage() {
         number: data.number || id,
         date: typeof data.invoice_date === 'string' ? data.invoice_date.slice(0, 10) : '',
         billTo: data.customer?.name || data.vendor?.name || 'Customer',
-        lines: (data.lines ?? []).map((l) => ({
+        lines: lines.map((l) => ({
           description: String(l.description ?? ''),
           qty: l.qty ?? '',
           amount: l.taxable_value ?? 0,
         })),
+        taxable: sum('taxable_value').toFixed(2),
+        cgst: sum('cgst_amount').toFixed(2),
+        sgst: sum('sgst_amount').toFixed(2),
+        igst: sum('igst_amount').toFixed(2),
         total: total.toFixed(2),
         paid: paid.toFixed(2),
         due: (total - paid).toFixed(2),

@@ -346,6 +346,10 @@ export interface ReceiptPayload {
   date: string;
   billTo: string;
   lines: ReceiptLine[];
+  taxable?: string;
+  cgst?: string;
+  sgst?: string;
+  igst?: string;
   total: string;
   paid?: string;
   due?: string;
@@ -374,7 +378,11 @@ export function buildReceiptEscPos(payload: ReceiptPayload, paper: PaperSize): U
     lines.push(row(`  ${l.qty}`, `Rs ${Number(l.amount).toFixed(2)}`));
   }
   lines.push(dash);
-  lines.push(row('TOTAL', `Rs ${payload.total}`));
+  if (payload.taxable) lines.push(row('Taxable', `Rs ${payload.taxable}`));
+  if (payload.cgst) lines.push(row('CGST', `Rs ${payload.cgst}`));
+  if (payload.sgst) lines.push(row('SGST', `Rs ${payload.sgst}`));
+  if (payload.igst) lines.push(row('IGST', `Rs ${payload.igst}`));
+  lines.push(row('Invoice value', `Rs ${payload.total}`));
   if (payload.paid) lines.push(row('Paid', `Rs ${payload.paid}`));
   if (payload.due) lines.push(row('Due', `Rs ${payload.due}`));
   lines.push(dash);

@@ -63,14 +63,21 @@ export class ReportsService {
       totalReceived: Math.round(totalReceived * 100) / 100,
       totalPending: Math.round(totalPending * 100) / 100,
       invoiceCount: filtered.length,
-      rows: filtered.slice(0, 100).map((inv) => ({
-        id: inv.id,
-        number: inv.number,
-        date: inv.invoice_date,
-        total: parseFloat(inv.total),
-        paid: parseFloat(inv.paid_amount),
-        due: parseFloat(inv.total) - parseFloat(inv.paid_amount),
-      })),
+      rows: filtered.slice(0, 100).map((inv) => {
+        const gst = inv as SalesInvoice & { taxable_value?: string; cgst_amount?: string; sgst_amount?: string; igst_amount?: string };
+        return {
+          id: inv.id,
+          number: inv.number,
+          date: inv.invoice_date,
+          taxable_value: Number(gst.taxable_value ?? inv.subtotal ?? 0),
+          cgst: Number(gst.cgst_amount ?? 0),
+          sgst: Number(gst.sgst_amount ?? 0),
+          igst: Number(gst.igst_amount ?? 0),
+          total: parseFloat(inv.total),
+          paid: parseFloat(inv.paid_amount),
+          due: parseFloat(inv.total) - parseFloat(inv.paid_amount),
+        };
+      }),
     };
   }
 
@@ -363,7 +370,20 @@ export class ReportsService {
       exported_at: new Date().toISOString(),
       tenant_id: ctx.tenantId,
       customers: customers.map((c) => ({ id: c.id, name: c.name, email: c.email, phone: c.phone, gstin: c.gstin })),
-      sales_invoices: invoices.map((i) => ({ id: i.id, number: i.number, date: i.invoice_date, total: i.total, status: i.status })),
+      sales_invoices: invoices.map((i) => {
+        const gst = i as SalesInvoice & { taxable_value?: string; cgst_amount?: string; sgst_amount?: string; igst_amount?: string };
+        return {
+          id: i.id,
+          number: i.number,
+          date: i.invoice_date,
+          taxable_value: gst.taxable_value ?? i.subtotal,
+          cgst: gst.cgst_amount ?? '0.00',
+          sgst: gst.sgst_amount ?? '0.00',
+          igst: gst.igst_amount ?? '0.00',
+          total: i.total,
+          status: i.status,
+        };
+      }),
       purchase_orders: orders.map((o) => ({ id: o.id, number: o.number, date: o.order_date, total: o.total, status: o.status })),
       vendors: vendors.map((v) => ({ id: v.id, name: v.name, email: v.email, phone: v.phone, gstin: v.gstin })),
       journal_entries: journalEntries.map((e) => ({ id: e.id, number: e.number, date: e.entry_date, total_debit: e.total_debit, total_credit: e.total_credit })),
@@ -429,15 +449,22 @@ export class ReportsService {
         dueTodayPayables: dueTodayPayables.length,
         dueTodayPayablesAmount: dueTodayPayables.reduce((s, o) => s + (Number((o as { due?: number }).due) || 0), 0),
       },
-      pendingReceivables: pendingInvoices.slice(0, 10).map((inv) => ({
-        id: inv.id,
-        number: inv.number,
-        buyer: (inv.customer as { name?: string } | null)?.name ?? (inv.vendor as { name?: string } | null)?.name ?? 'N/A',
-        total: parseFloat(inv.total) || 0,
-        paid: parseFloat(inv.paid_amount) || 0,
-        due: (parseFloat(inv.total) || 0) - (parseFloat(inv.paid_amount) || 0),
-        due_date: inv.due_date,
-      })),
+      pendingReceivables: pendingInvoices.slice(0, 10).map((inv) => {
+        const gst = inv as SalesInvoice & { taxable_value?: string; cgst_amount?: string; sgst_amount?: string; igst_amount?: string; balance_due?: string };
+        return {
+          id: inv.id,
+          number: inv.number,
+          buyer: (inv.customer as { name?: string } | null)?.name ?? (inv.vendor as { name?: string } | null)?.name ?? 'N/A',
+          taxable_value: Number(gst.taxable_value ?? inv.subtotal ?? 0),
+          cgst: Number(gst.cgst_amount ?? 0),
+          sgst: Number(gst.sgst_amount ?? 0),
+          igst: Number(gst.igst_amount ?? 0),
+          total: parseFloat(inv.total) || 0,
+          paid: parseFloat(inv.paid_amount) || 0,
+          due: Number(gst.balance_due ?? (parseFloat(inv.total) || 0) - (parseFloat(inv.paid_amount) || 0)),
+          due_date: inv.due_date,
+        };
+      }),
       pendingPayables: orders.slice(0, 10).map((o) => ({
         id: o.id,
         number: o.number,
@@ -676,6 +703,11 @@ export class ReportsService {
       total_invoiced: number;
       total_received: number;
       total_pending: number;
+      taxable_value: number;
+      cgst: number;
+      sgst: number;
+      igst: number;
+      invoice_value: number;
       invoice_count: number;
       invoices: Array<{
         id: string;
@@ -683,6 +715,11 @@ export class ReportsService {
         invoice_date: string;
         due_date: string | null;
         payment_status: string;
+        taxable_value: number;
+        cgst: number;
+        sgst: number;
+        igst: number;
+        invoice_value: number;
         total_invoiced: number;
         total_received: number;
         total_pending: number;
@@ -706,12 +743,22 @@ export class ReportsService {
         total_invoiced: number;
         total_received: number;
         total_pending: number;
+        taxable_value: number;
+        cgst: number;
+        sgst: number;
+        igst: number;
+        invoice_value: number;
         invoices: Array<{
           id: string;
           number: string;
           invoice_date: string;
           due_date: string | null;
           payment_status: string;
+          taxable_value: number;
+          cgst: number;
+          sgst: number;
+          igst: number;
+          invoice_value: number;
           total_invoiced: number;
           total_received: number;
           total_pending: number;
@@ -723,10 +770,24 @@ export class ReportsService {
       const cid = inv.customer_id ?? inv.vendor_id ?? 'unknown';
       if (customer_id && cid !== customer_id) continue;
       const name = inv.customer?.name ?? inv.vendor?.name ?? '—';
-      const view = inv as SalesInvoice & { net_amount?: string; balance_due?: string; payment_status?: string };
+      const view = inv as SalesInvoice & {
+        net_amount?: string;
+        balance_due?: string;
+        payment_status?: string;
+        taxable_value?: string;
+        cgst_amount?: string;
+        sgst_amount?: string;
+        igst_amount?: string;
+        invoice_value?: string;
+      };
       const invoiced = Math.round(Number(view.net_amount ?? inv.total) * 100) / 100;
       const received = Math.round(parseFloat(inv.paid_amount || '0') * 100) / 100;
       const pending = Math.round(Number(view.balance_due ?? invoiced - received) * 100) / 100;
+      const taxable = Math.round(Number(view.taxable_value ?? inv.subtotal ?? 0) * 100) / 100;
+      const cgst = Math.round(Number(view.cgst_amount ?? 0) * 100) / 100;
+      const sgst = Math.round(Number(view.sgst_amount ?? 0) * 100) / 100;
+      const igst = Math.round(Number(view.igst_amount ?? 0) * 100) / 100;
+      const invoiceValue = Math.round(Number(view.invoice_value ?? inv.total) * 100) / 100;
       const line = {
         id: inv.id,
         number: inv.number,
@@ -735,17 +796,39 @@ export class ReportsService {
         payment_status:
           view.payment_status ||
           (pending < -0.05 ? 'credit' : pending <= 0.05 ? 'paid' : received > 0.05 ? 'partial' : 'pending'),
+        taxable_value: taxable,
+        cgst,
+        sgst,
+        igst,
+        invoice_value: invoiceValue,
         total_invoiced: invoiced,
         total_received: received,
         total_pending: pending,
       };
       if (!byCustomer[cid]) {
-        byCustomer[cid] = { customer_name: name, party_type: partyType, total_invoiced: 0, total_received: 0, total_pending: 0, invoices: [] };
+        byCustomer[cid] = {
+          customer_name: name,
+          party_type: partyType,
+          total_invoiced: 0,
+          total_received: 0,
+          total_pending: 0,
+          taxable_value: 0,
+          cgst: 0,
+          sgst: 0,
+          igst: 0,
+          invoice_value: 0,
+          invoices: [],
+        };
       }
       byCustomer[cid].customer_name = name;
       byCustomer[cid].total_invoiced = Math.round((byCustomer[cid].total_invoiced + invoiced) * 100) / 100;
       byCustomer[cid].total_received = Math.round((byCustomer[cid].total_received + received) * 100) / 100;
       byCustomer[cid].total_pending = Math.round((byCustomer[cid].total_pending + pending) * 100) / 100;
+      byCustomer[cid].taxable_value = Math.round((byCustomer[cid].taxable_value + taxable) * 100) / 100;
+      byCustomer[cid].cgst = Math.round((byCustomer[cid].cgst + cgst) * 100) / 100;
+      byCustomer[cid].sgst = Math.round((byCustomer[cid].sgst + sgst) * 100) / 100;
+      byCustomer[cid].igst = Math.round((byCustomer[cid].igst + igst) * 100) / 100;
+      byCustomer[cid].invoice_value = Math.round((byCustomer[cid].invoice_value + invoiceValue) * 100) / 100;
       byCustomer[cid].invoices.push(line);
     }
     const rows = Object.entries(byCustomer).map(([cid, v]) => ({
@@ -755,6 +838,11 @@ export class ReportsService {
       total_invoiced: v.total_invoiced,
       total_received: v.total_received,
       total_pending: v.total_pending,
+      taxable_value: v.taxable_value,
+      cgst: v.cgst,
+      sgst: v.sgst,
+      igst: v.igst,
+      invoice_value: v.invoice_value,
       invoice_count: v.invoices.length,
       invoices: v.invoices.sort((a, b) => b.invoice_date.localeCompare(a.invoice_date)),
     }));

@@ -13,6 +13,10 @@ interface PendingRow {
   customer?: { name?: string } | null;
   vendor?: { name?: string } | null;
   total: string | number;
+  taxable_value?: string | number;
+  cgst_amount?: string | number;
+  sgst_amount?: string | number;
+  igst_amount?: string | number;
   paid_amount?: string | number;
   due_date?: string | null;
   balance_due?: string | number;
@@ -97,7 +101,11 @@ export default function PendingReceivablesPage() {
                 <th className="text-left p-3 font-medium text-slate-700">Party</th>
                 <th className="text-left p-3 font-medium text-slate-700">Due date</th>
                 <th className="text-left p-3 font-medium text-slate-700">Status</th>
-                <th className="text-right p-3 font-medium text-slate-700">Total</th>
+                <th className="text-right p-3 font-medium text-slate-700">Taxable</th>
+                <th className="text-right p-3 font-medium text-slate-700">CGST</th>
+                <th className="text-right p-3 font-medium text-slate-700">SGST</th>
+                <th className="text-right p-3 font-medium text-slate-700">IGST</th>
+                <th className="text-right p-3 font-medium text-slate-700">Invoice value</th>
                 <th className="text-right p-3 font-medium text-slate-700">Paid</th>
                 <th className="text-right p-3 font-medium text-slate-700">Due</th>
                 <th className="text-left p-3 font-medium text-slate-700">Action</th>
@@ -105,7 +113,7 @@ export default function PendingReceivablesPage() {
             </thead>
             <tbody>
               {list.length === 0 ? (
-                <tr><td colSpan={8} className="p-4 text-slate-500">No pending receivables.</td></tr>
+                <tr><td colSpan={12} className="p-4 text-slate-500">No pending receivables.</td></tr>
               ) : (
                 list.map((row) => (
                   <tr key={row.id} className="border-b border-slate-100 last:border-0">
@@ -116,6 +124,10 @@ export default function PendingReceivablesPage() {
                       {isOverdue(row.due_date, invoiceStanding(row).status) ? ' overdue' : ''}
                     </td>
                     <td className="p-3"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${standingClass(invoiceStanding(row).status)}`}>{standingLabel(invoiceStanding(row).status)}</span></td>
+                    <td className="p-3 text-right">₹{Number(row.taxable_value ?? 0).toFixed(2)}</td>
+                    <td className="p-3 text-right">₹{Number(row.cgst_amount ?? 0).toFixed(2)}</td>
+                    <td className="p-3 text-right">₹{Number(row.sgst_amount ?? 0).toFixed(2)}</td>
+                    <td className="p-3 text-right">₹{Number(row.igst_amount ?? 0).toFixed(2)}</td>
                     <td className="p-3 text-right">₹{Number(row.total).toFixed(2)}</td>
                     <td className="p-3 text-right">₹{Number(row.paid_amount ?? 0).toFixed(2)}</td>
                     <td className="p-3 text-right text-amber-700">₹{getDue(row).toFixed(2)}</td>

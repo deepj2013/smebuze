@@ -35,7 +35,7 @@ export class ReportsController {
   ) {
     const data = await this.reportsService.getSalesSummary(ctx, from, to, companyId);
     if (format === 'csv' && res) {
-      const csv = ['Invoice ID,Number,Date,Total,Paid,Due', ...data.rows.map((r) => `${r.id},${r.number},${r.date},${r.total},${r.paid},${r.due}`)].join('\n');
+      const csv = ['Invoice ID,Number,Date,Taxable,CGST,SGST,IGST,Invoice Value,Paid,Due', ...data.rows.map((r) => `${r.id},${r.number},${r.date},${r.taxable_value},${r.cgst},${r.sgst},${r.igst},${r.total},${r.paid},${r.due}`)].join('\n');
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename=sales-summary.csv');
       res.send(csv);
@@ -285,9 +285,9 @@ export class ReportsController {
     const data = await this.reportsService.getInvoiceVsPaymentReport(ctx, customerId);
     if (format === 'csv' && res && data.rows?.length) {
       const csv = [
-        'Customer ID,Customer Name,Total Invoiced,Total Received,Total Pending,Invoice Count',
+        'Customer ID,Customer Name,Taxable,CGST,SGST,IGST,Invoice Value,Total Invoiced,Total Received,Total Pending,Invoice Count',
         ...data.rows.map((r) =>
-          `${r.customer_id},${r.customer_name},${r.total_invoiced},${r.total_received},${r.total_pending},${r.invoice_count}`,
+          `${r.customer_id},${r.customer_name},${r.taxable_value},${r.cgst},${r.sgst},${r.igst},${r.invoice_value},${r.total_invoiced},${r.total_received},${r.total_pending},${r.invoice_count}`,
         ),
       ].join('\n');
       res.setHeader('Content-Type', 'text/csv');

@@ -16,7 +16,7 @@ interface DashboardData {
     dueTodayPayables?: number;
     dueTodayPayablesAmount?: number;
   };
-  pendingReceivables: { id: string; number: string; buyer: string; total: number; paid: number; due: number; due_date?: string }[];
+  pendingReceivables: { id: string; number: string; buyer: string; taxable_value?: number; cgst?: number; sgst?: number; igst?: number; total: number; paid: number; due: number; due_date?: string }[];
   pendingPayables: { id: string; number: string; vendor: string; total: number; paid: number; due: number }[];
 }
 
@@ -216,7 +216,11 @@ export default function DashboardPage() {
                       <tr className="border-b border-slate-200 text-slate-500">
                         <th className="py-1 pr-2 text-left">Invoice</th>
                         <th className="py-1 pr-2 text-left">Buyer</th>
-                        <th className="py-1 pr-2 text-right">Total</th>
+                        <th className="py-1 pr-2 text-right">Taxable</th>
+                        <th className="py-1 pr-2 text-right">CGST</th>
+                        <th className="py-1 pr-2 text-right">SGST</th>
+                        <th className="py-1 pr-2 text-right">IGST</th>
+                        <th className="py-1 pr-2 text-right">Invoice value</th>
                         <th className="py-1 pr-2 text-right">Due</th>
                       </tr>
                     </thead>
@@ -225,6 +229,10 @@ export default function DashboardPage() {
                         <tr key={inv.id} className="border-b border-slate-100 last:border-0">
                           <td className="py-1 pr-2">{inv.number}</td>
                           <td className="py-1 pr-2">{inv.buyer}</td>
+                          <td className="py-1 pr-2 text-right">₹{Number(inv.taxable_value ?? 0).toFixed(2)}</td>
+                          <td className="py-1 pr-2 text-right">₹{Number(inv.cgst ?? 0).toFixed(2)}</td>
+                          <td className="py-1 pr-2 text-right">₹{Number(inv.sgst ?? 0).toFixed(2)}</td>
+                          <td className="py-1 pr-2 text-right">₹{Number(inv.igst ?? 0).toFixed(2)}</td>
                           <td className="py-1 pr-2 text-right">₹{inv.total.toFixed(2)}</td>
                           <td className="py-1 pr-2 text-right text-amber-700">₹{inv.due.toFixed(2)}</td>
                         </tr>
