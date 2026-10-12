@@ -33,6 +33,7 @@ import {
   razorpayReady,
 } from '../common/tenant-razorpay';
 import { TenantContext } from '../common/tenant-context';
+import { assertBooksOpen, lockedThroughYmd, toYmd } from '../common/period-lock';
 import { CreateInvoiceDto, CreateInvoiceLineDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto, UpdateInvoiceLineDto } from './dto/update-invoice.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
@@ -210,9 +211,16 @@ export class SalesService {
     }
   }
 
+  private async assertBooksOpen(ctx: TenantContext, date: string | Date | null | undefined, label: string): Promise<void> {
+    if (!ctx.tenantId) return;
+    const tenant = await this.tenantRepo.findOne({ where: { id: ctx.tenantId } });
+    assertBooksOpen(lockedThroughYmd(tenant?.settings as Record<string, unknown>), date, label);
+  }
+
   async createInvoice(dto: CreateInvoiceDto, ctx: TenantContext): Promise<SalesInvoice> {
     const tenantId = this.assertTenantId(ctx);
     const invoiceTenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    assertBooksOpen(lockedThroughYmd(invoiceTenant?.settings as Record<string, unknown>), dto.invoice_date, 'An invoice');
     const isIceCrest = !!invoiceTenant && (invoiceTenant.settings?.business_type === 'ice_crest' || invoiceTenant.features?.includes('ice_crest'));
     if (isIceCrest) return this.createIceCrestInvoiceTransactional(dto, ctx);
     if (!dto.customer_id && !dto.vendor_id) {
@@ -372,6 +380,7 @@ export class SalesService {
       }
     }
 
+    await this.auditService.log(ctx, 'invoice.create', 'sales_invoice', savedInvoice.id, { number, total: savedInvoice.total, invoice_date: dto.invoice_date }).catch(() => undefined);
     return this.invoiceRepo.findOne({
       where: { id: savedInvoice.id },
       relations: ['customer', 'vendor', 'company', 'lines'],
@@ -383,7 +392,7 @@ export class SalesService {
     const tenantId = this.assertTenantId(ctx);
     if ((!dto.customer_id && !dto.vendor_id) || (dto.customer_id && dto.vendor_id)) throw new ForbiddenException('Provide exactly one bill-to customer or vendor.');
     if (!dto.lines?.length) throw new ForbiddenException('Invoice requires at least one line');
-    return this.dataSource.transaction('SERIALIZABLE', async (manager: EntityManager) => {
+    const savedIce = await this.dataSource.transaction('SERIALIZABLE', async (manager: EntityManager) => {
       const company = await manager.findOne(Company, { where: { id: dto.company_id, tenant_id: tenantId } });
       if (!company) throw new NotFoundException('Company not found');
       if (dto.customer_id && !(await manager.findOne(Customer,{where:{id:dto.customer_id,tenant_id:tenantId}}))) throw new NotFoundException('Customer not found');
@@ -443,6 +452,8 @@ export class SalesService {
       if(order){const active=await manager.count(StockReservation,{where:{sales_order_id:order.id,status:'active'}});if(active===0){order.status='invoiced';await manager.save(order);}}
       return manager.findOneOrFail(SalesInvoice,{where:{id:invoice.id},relations:['customer','vendor','company','lines']});
     });
+    await this.auditService.log(ctx, 'invoice.create', 'sales_invoice', savedIce.id, { number: savedIce.number, total: savedIce.total, invoice_date: dto.invoice_date }).catch(() => undefined);
+    return savedIce;
   }
 
   async updateInvoice(id: string, dto: UpdateInvoiceDto, ctx: TenantContext): Promise<SalesInvoice> {
@@ -455,6 +466,8 @@ export class SalesService {
     if (invoice.status === 'deleted') {
       throw new ForbiddenException('This invoice was deleted. Create a new invoice if you need to bill again.');
     }
+    await this.assertBooksOpen(ctx, invoice.invoice_date, 'This invoice');
+    if (dto.invoice_date) await this.assertBooksOpen(ctx, dto.invoice_date, 'This invoice');
     if (parseFloat(invoice.paid_amount) > 0) {
       throw new ForbiddenException('Cannot edit invoice that has payments; adjust payments first.');
     }
@@ -526,6 +539,7 @@ export class SalesService {
       });
     }
 
+    await this.auditService.log(ctx, 'invoice.update', 'sales_invoice', id, { number: invoice.number }).catch(() => undefined);
     return this.findOneInvoice(id, ctx);
   }
 
@@ -586,6 +600,7 @@ export class SalesService {
     if (invoice.status === 'deleted') {
       throw new ForbiddenException('Invoice is already deleted.');
     }
+    await this.assertBooksOpen(ctx, invoice.invoice_date, 'This invoice');
     if (parseFloat(invoice.paid_amount || '0') > 0) {
       throw new ForbiddenException(
         'This invoice has payments recorded. Remove or reverse payments first, then delete.',
@@ -689,6 +704,7 @@ export class SalesService {
     if (invoice.status === 'deleted') {
       throw new ForbiddenException('Cannot record payment on a deleted invoice.');
     }
+    await this.assertBooksOpen(ctx, dto.payment_date, 'A payment');
     const total = round2(parseFloat(invoice.total));
     const paid = round2(parseFloat(invoice.paid_amount));
     const notes = await this.noteTotals(invoice.id);
@@ -711,6 +727,13 @@ export class SalesService {
       paid_amount: newPaid.toFixed(2),
       status: newPaid >= net - 0.05 ? 'paid' : 'partial',
     });
+    await this.auditService.log(ctx, 'payment.receive', 'invoice_payment', invoiceId, {
+      invoice_number: invoice.number,
+      amount: dto.amount,
+      payment_date: dto.payment_date,
+      mode: dto.mode ?? 'cash',
+      reference: dto.reference ?? null,
+    }).catch(() => undefined);
     return this.findOneInvoice(invoiceId, ctx);
   }
 
@@ -727,6 +750,7 @@ export class SalesService {
     invoices: Array<{ invoice_id: string; number: string; amount: number; status: string }>;
   }> {
     const tenantId = this.assertTenantId(ctx);
+    await this.assertBooksOpen(ctx, dto.payment_date, 'A payment');
     const seen = new Set<string>();
     const lines = dto.allocations.map((line) => {
       if (seen.has(line.invoice_id)) throw new BadRequestException('Each invoice can appear only once on a receipt.');
@@ -735,7 +759,7 @@ export class SalesService {
     }).filter((line) => line.amount >= 0.01);
     if (!lines.length) throw new BadRequestException('Enter an amount on at least one invoice.');
 
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const invoices = await manager
         .getRepository(SalesInvoice)
         .createQueryBuilder('inv')
@@ -781,6 +805,161 @@ export class SalesService {
       const total = round2(applied.reduce((sum, row) => sum + row.amount, 0));
       return { receipt_group: receiptGroup, total, invoices: applied };
     });
+    await this.auditService.log(ctx, 'payment.receive', 'invoice_payment', result.receipt_group, {
+      total: result.total,
+      payment_date: dto.payment_date,
+      mode: dto.mode ?? 'cash',
+      reference: dto.reference ?? null,
+      invoices: result.invoices,
+    }).catch(() => undefined);
+    return result;
+  }
+
+  async listReceipts(ctx: TenantContext): Promise<{
+    receipts: Array<{
+      id: string;
+      payment_date: string;
+      mode: string;
+      reference: string | null;
+      total: number;
+      party_name: string;
+      created_at: string;
+      lines: Array<{ payment_id: string; invoice_id: string; invoice_number: string; amount: number }>;
+    }>;
+  }> {
+    const tenantId = this.assertTenantId(ctx);
+    const rows = await this.dataSource.query(
+      `SELECT p.id, p.invoice_id, p.amount, p.payment_date, p.mode, p.reference, p.receipt_group, p.created_at,
+              inv.number AS invoice_number,
+              COALESCE(c.name, v.name, '—') AS party_name
+       FROM invoice_payments p
+       INNER JOIN sales_invoices inv ON inv.id = p.invoice_id
+       LEFT JOIN customers c ON c.id = inv.customer_id
+       LEFT JOIN vendors v ON v.id = inv.vendor_id
+       WHERE inv.tenant_id = $1
+       ORDER BY p.payment_date DESC, p.created_at DESC
+       LIMIT 400`,
+      [tenantId],
+    ) as Array<{
+      id: string;
+      invoice_id: string;
+      amount: string;
+      payment_date: string | Date;
+      mode: string;
+      reference: string | null;
+      receipt_group: string | null;
+      created_at: string | Date;
+      invoice_number: string;
+      party_name: string;
+    }>;
+    const groups = new Map<string, {
+      id: string;
+      payment_date: string;
+      mode: string;
+      reference: string | null;
+      total: number;
+      party_name: string;
+      created_at: string;
+      lines: Array<{ payment_id: string; invoice_id: string; invoice_number: string; amount: number }>;
+    }>();
+    for (const row of rows) {
+      const key = row.receipt_group || row.id;
+      const amount = round2(parseFloat(row.amount || '0'));
+      const day = toYmd(row.payment_date) ?? '';
+      const created = row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at);
+      const existing = groups.get(key);
+      if (!existing) {
+        groups.set(key, {
+          id: key,
+          payment_date: day,
+          mode: row.mode,
+          reference: row.reference,
+          total: amount,
+          party_name: row.party_name,
+          created_at: created,
+          lines: [{ payment_id: row.id, invoice_id: row.invoice_id, invoice_number: row.invoice_number, amount }],
+        });
+      } else {
+        existing.total = round2(existing.total + amount);
+        existing.lines.push({ payment_id: row.id, invoice_id: row.invoice_id, invoice_number: row.invoice_number, amount });
+      }
+    }
+    return { receipts: [...groups.values()] };
+  }
+
+  /** Remove a mistaken receipt and put each invoice balance back. */
+  async deleteReceipt(id: string, ctx: TenantContext): Promise<{ ok: true; id: string; total: number; invoices: string[] }> {
+    const tenantId = this.assertTenantId(ctx);
+    const result = await this.dataSource.transaction(async (manager) => {
+      const hits = await manager.query(
+        `SELECT p.id, p.invoice_id, p.amount, p.payment_date, p.mode, p.reference, p.receipt_group, inv.number AS invoice_number
+         FROM invoice_payments p
+         INNER JOIN sales_invoices inv ON inv.id = p.invoice_id
+         WHERE inv.tenant_id = $1 AND (p.id = $2 OR p.receipt_group = $2)`,
+        [tenantId, id],
+      ) as Array<{ id: string; invoice_id: string; amount: string; payment_date: string | Date; mode: string; reference: string | null; receipt_group: string | null; invoice_number: string }>;
+      if (!hits.length) throw new NotFoundException('Receipt not found');
+      const group = hits.find((row) => row.receipt_group)?.receipt_group;
+      const rows = group
+        ? await manager.query(
+          `SELECT p.id, p.invoice_id, p.amount, p.payment_date, p.mode, p.reference, p.receipt_group, inv.number AS invoice_number
+           FROM invoice_payments p
+           INNER JOIN sales_invoices inv ON inv.id = p.invoice_id
+           WHERE inv.tenant_id = $1 AND p.receipt_group = $2`,
+          [tenantId, group],
+        ) as typeof hits
+        : hits;
+      for (const row of rows) {
+        await this.assertBooksOpen(ctx, row.payment_date, 'This receipt');
+      }
+      const invoices = await manager
+        .getRepository(SalesInvoice)
+        .createQueryBuilder('inv')
+        .where('inv.tenant_id = :tenantId', { tenantId })
+        .andWhere('inv.id IN (:...ids)', { ids: [...new Set(rows.map((row) => row.invoice_id))] })
+        .setLock('pessimistic_write')
+        .getMany();
+      const byInvoice = new Map<string, number>();
+      for (const row of rows) {
+        byInvoice.set(row.invoice_id, round2((byInvoice.get(row.invoice_id) || 0) + parseFloat(row.amount || '0')));
+      }
+      const numbers: string[] = [];
+      for (const invoice of invoices) {
+        const remove = byInvoice.get(invoice.id) || 0;
+        const paid = round2(parseFloat(invoice.paid_amount || '0'));
+        const newPaid = round2(Math.max(0, paid - remove));
+        const notes = await this.noteTotals(invoice.id);
+        const net = round2(parseFloat(invoice.total || '0') + notes.debit - notes.credit);
+        const status = invoice.status === 'deleted'
+          ? 'deleted'
+          : newPaid <= 0.05
+            ? 'issued'
+            : newPaid >= net - 0.05
+              ? 'paid'
+              : 'partial';
+        await manager.update(SalesInvoice, invoice.id, { paid_amount: newPaid.toFixed(2), status });
+        numbers.push(invoice.number);
+      }
+      await manager.delete(InvoicePayment, { id: In(rows.map((row) => row.id)) });
+      const total = round2(rows.reduce((sum, row) => sum + parseFloat(row.amount || '0'), 0));
+      return {
+        id: group || id,
+        total,
+        invoices: numbers,
+        payment_date: rows[0]?.payment_date,
+        mode: rows[0]?.mode,
+        reference: rows[0]?.reference,
+      };
+    });
+    await this.auditService.log(ctx, 'payment.delete', 'invoice_payment', result.id, {
+      total: result.total,
+      invoices: result.invoices,
+      payment_date: result.payment_date,
+      mode: result.mode,
+      reference: result.reference,
+      rolled_back: true,
+    }).catch(() => undefined);
+    return { ok: true, id: result.id, total: result.total, invoices: result.invoices };
   }
 
   async createPaymentLink(invoiceId: string, ctx: TenantContext): Promise<{ enabled: boolean; url?: string }> {
@@ -1285,6 +1464,7 @@ export class SalesService {
     ctx: TenantContext,
   ): Promise<SalesInvoice> {
     const tenantId = this.assertTenantId(ctx);
+    await this.assertBooksOpen(ctx, dto.invoice_date, 'An invoice');
     if (!dto.challan_ids?.length) throw new ForbiddenException('Select at least one delivery challan.');
     const company = await this.companyRepo.findOne({ where: { id: dto.company_id, tenant_id: tenantId } });
     if (!company) throw new NotFoundException('Company not found');
@@ -1422,6 +1602,7 @@ export class SalesService {
     ctx: TenantContext,
   ): Promise<CreditNote> {
     const tenantId = this.assertTenantId(ctx);
+    await this.assertBooksOpen(ctx, dto.note_date, 'A credit note');
     const invoice = await this.invoiceRepo.findOne({ where: { id: dto.invoice_id, tenant_id: tenantId } });
     if (!invoice) throw new NotFoundException('Invoice not found');
     if (invoice.status === 'deleted') throw new ForbiddenException('Cannot add a credit note to a deleted invoice.');
@@ -1470,6 +1651,7 @@ export class SalesService {
       const net = round2(parseFloat(invoice.total) + notes.debit - notes.credit - amount);
       await this.invoiceRepo.update(invoice.id, { status: paid >= net - 0.05 ? (paid > 0.05 || net <= 0.05 ? 'paid' : invoice.status) : paid > 0.05 ? 'partial' : 'issued' });
     }
+    await this.auditService.log(ctx, 'credit_note.create', 'credit_note', note.id, { number: note.number, invoice_id: invoice.id, amount, note_date: dto.note_date }).catch(() => undefined);
     return note;
   }
 
@@ -1512,6 +1694,7 @@ export class SalesService {
     ctx: TenantContext,
   ): Promise<SalesDebitNote> {
     const tenantId = this.assertTenantId(ctx);
+    await this.assertBooksOpen(ctx, dto.note_date, 'A debit note');
     const invoice = await this.invoiceRepo.findOne({ where: { id: dto.invoice_id, tenant_id: tenantId } });
     if (!invoice) throw new NotFoundException('Invoice not found');
     if (invoice.status === 'deleted') throw new ForbiddenException('Cannot add a debit note to a deleted invoice.');
@@ -1556,6 +1739,7 @@ export class SalesService {
     await this.invoiceRepo.update(invoice.id, {
       status: paid >= net - 0.05 ? 'paid' : paid > 0.05 ? 'partial' : 'issued',
     });
+    await this.auditService.log(ctx, 'debit_note.create', 'sales_debit_note', note.id, { number: note.number, invoice_id: invoice.id, amount, note_date: dto.note_date }).catch(() => undefined);
     return note;
   }
 

@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { CurrentTenant } from '../common/tenant-context';
@@ -10,6 +10,20 @@ import { AuditService } from './audit.service';
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
+
+  @Get('platform')
+  @RequirePermissions('admin.tenant.view')
+  async platform(
+    @CurrentTenant() ctx: TenantContext,
+    @Query('tenant_id') tenantId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (!ctx.isSuperAdmin) throw new ForbiddenException('Only the platform admin can read every workspace log.');
+    return this.auditService.findPlatform({
+      tenantId: tenantId || undefined,
+      limit: limit ? parseInt(limit, 10) : 200,
+    });
+  }
 
   @Get()
   @RequirePermissions('org.user.view')

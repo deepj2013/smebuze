@@ -198,6 +198,7 @@ const nav: Array<{
     module: 'organization',
     children: [
       { label: 'Tenants', href: '/admin/tenants', icon: Building2, permission: 'admin.tenant.view' },
+      { label: 'Activity log', href: '/admin/activity', icon: FileText, permission: 'admin.tenant.view' },
       { label: 'Licences', href: '/admin/licenses', icon: KeyRound, permission: 'admin.tenant.view' },
       { label: 'BDE pipeline', href: '/admin/bde', icon: UserPlus, permission: 'admin.bde.leads' },
       { label: 'Partners & coupons', href: '/admin/partners', icon: Megaphone, permission: 'admin.partner.manage' },

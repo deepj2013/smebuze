@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, Res, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as fs from 'fs';
@@ -109,6 +109,18 @@ export class SalesController {
   @RequirePermissions('sales.invoice.create')
   async receiveClubPayment(@Body() dto: ReceivePaymentDto, @CurrentTenant() ctx: TenantContext) {
     return this.salesService.receiveClubPayment(dto, ctx);
+  }
+
+  @Get('payments/receipts')
+  @RequirePermissions('sales.invoice.view')
+  async listReceipts(@CurrentTenant() ctx: TenantContext) {
+    return this.salesService.listReceipts(ctx);
+  }
+
+  @Delete('payments/receipts/:id')
+  @RequirePermissions('sales.invoice.create')
+  async deleteReceipt(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
+    return this.salesService.deleteReceipt(id, ctx);
   }
 
   @Post('invoices/:id/payment')

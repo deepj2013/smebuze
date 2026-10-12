@@ -33,6 +33,8 @@ export default function AdminTenantsPage() {
     license_key?: string;
     is_active?: boolean;
     business_type?: string;
+    books_locked?: boolean;
+    books_through?: string;
   }>({});
   const [q, setQ] = useState('');
   const [users, setUsers] = useState<{ id: string; email: string; name?: string | null; is_active?: boolean; email_verified?: boolean }[]>([]);
@@ -63,6 +65,8 @@ export default function AdminTenantsPage() {
       license_key: t.license_key ?? '',
       is_active: t.is_active !== false,
       business_type: String(t.settings?.business_type ?? ''),
+      books_locked: Boolean((t.settings?.period_lock as { enabled?: boolean } | undefined)?.enabled),
+      books_through: String((t.settings?.period_lock as { through?: string } | undefined)?.through ?? '').slice(0, 7),
     });
     setUsers([]);
     setUserEdits({});
@@ -87,7 +91,13 @@ export default function AdminTenantsPage() {
       subscription_ends_at: editForm.subscription_ends_at || null,
       license_key: editForm.license_key || null,
       is_active: editForm.is_active,
-      settings: { business_type: editForm.business_type || 'trading' },
+      settings: {
+        business_type: editForm.business_type || 'trading',
+        period_lock: {
+          enabled: !!editForm.books_locked,
+          through: editForm.books_through || '',
+        },
+      },
     });
     if (err) setError(err);
     else {
@@ -234,6 +244,25 @@ export default function AdminTenantsPage() {
                             Also include <code>lead_hub</code> in Features above, or leave Features empty for all modules.
                           </span>
                         </div>
+                      </div>
+                      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={!!editForm.books_locked}
+                            onChange={(e) => setEditForm((f) => ({ ...f, books_locked: e.target.checked }))}
+                          />
+                          Lock closed months
+                        </label>
+                        <p className="mt-1 text-xs text-slate-600">When this is on, invoices, credit notes, debit notes, and payment receipts dated on or before the end of the chosen month cannot be added, edited, or deleted. Turn it off to allow corrections.</p>
+                        <label className="mt-2 block text-xs font-medium text-slate-700">Books closed through
+                          <input
+                            type="month"
+                            value={editForm.books_through ?? ''}
+                            onChange={(e) => setEditForm((f) => ({ ...f, books_through: e.target.value }))}
+                            className="mt-1 block rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          />
+                        </label>
                       </div>
                       <div className="mt-3 flex gap-2">
                         <button type="button" onClick={handleSave} className="rounded-lg bg-brand-600 text-white px-3 py-1.5 text-sm font-medium">Save workspace</button>

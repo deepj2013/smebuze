@@ -154,7 +154,9 @@ const MONEY: GuideBlock = {
     { q: 'Why is the due amount different from the invoice total?', a: 'Credit notes reduce it. Debit notes increase it. Payments reduce what is left. The pending figure is total, plus issued debit notes, minus issued credit notes, minus payments.' },
     { q: 'I typed a payment on the wrong customer.', a: 'Receive payment refuses a mix of customers on one receipt. If a single payment was saved on the wrong bill, record it against the right bill and reverse the wrong one with your accountant before the return is filed.' },
     { q: 'The customer paid more than one bill but less than the full dues.', a: 'Type only what they paid. Oldest bills fill first. The last bill stays partial. Later bills stay pending. You can move amounts between lines before you save.' },
-    { q: 'Where do I see the receipt afterwards?', a: 'Each invoice shows the payment on that invoice. The shared receipt is the same date, mode and reference on those bills.' },
+    { q: 'Where do I see the receipt afterwards?', a: 'Sales → Receive payment, under Receipts. Every payment is listed there with the customer, invoices, date, and amount.' },
+    { q: 'I saved a receipt on the wrong bills.', a: 'On that same Receipts list, tap Delete. The money is taken off those invoices and they show as due again. Then enter the receipt correctly.' },
+    { q: 'The screen says books are closed.', a: 'The platform admin locked that month for this workspace. You cannot add, change, or delete an invoice, credit note, debit note, or payment dated in a closed month until they open it.' },
   ],
 };
 

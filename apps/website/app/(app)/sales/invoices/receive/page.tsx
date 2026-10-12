@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiDelete, apiGet, apiPost } from '@/lib/api';
 import { limitDecimalPlaces } from '@/lib/money';
 import { invoiceStanding, isOverdue } from '@/lib/invoice-standing';
 
@@ -30,6 +30,17 @@ function partyKey(row: OpenInvoice): string {
 function partyName(row: OpenInvoice): string {
   return row.customer?.name || row.vendor?.name || 'Unknown party';
 }
+
+type ReceiptLine = { payment_id: string; invoice_id: string; invoice_number: string; amount: number };
+type Receipt = {
+  id: string;
+  payment_date: string;
+  mode: string;
+  reference: string | null;
+  total: number;
+  party_name: string;
+  lines: ReceiptLine[];
+};
 
 function money(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(n || 0);
@@ -60,13 +71,34 @@ export default function ReceivePaymentPage() {
   const [reference, setReference] = useState('');
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
-    const res = await apiGet<{ invoices?: OpenInvoice[] }>('sales/invoices/pending');
-    if (res.error) setError(res.error);
-    else setList(res.data?.invoices ?? []);
+    const [pending, saved] = await Promise.all([
+      apiGet<{ invoices?: OpenInvoice[] }>('sales/invoices/pending'),
+      apiGet<{ receipts?: Receipt[] }>('sales/payments/receipts'),
+    ]);
+    if (pending.error) setError(pending.error);
+    else setList(pending.data?.invoices ?? []);
+    if (!saved.error) setReceipts(saved.data?.receipts ?? []);
     setLoading(false);
+  };
+
+  const removeReceipt = async (row: Receipt) => {
+    const bills = row.lines.map((line) => line.invoice_number).join(', ');
+    const ok = window.confirm(`Delete this receipt of ${money(row.total)} for ${row.party_name}? ${bills} will go back to unpaid for this amount.`);
+    if (!ok) return;
+    setDeletingId(row.id);
+    setError(null);
+    const res = await apiDelete(`sales/payments/receipts/${row.id}`);
+    setDeletingId(null);
+    if (res.error) setError(res.error);
+    else {
+      setNotice('Receipt deleted. Those invoices show the amount as due again.');
+      await load();
+    }
   };
 
   useEffect(() => {
@@ -261,6 +293,48 @@ export default function ReceivePaymentPage() {
           </button>
         </form>
       )}
+
+      <section className="mt-8">
+        <h2 className="text-lg font-bold text-slate-900">Receipts</h2>
+        <p className="mt-1 text-sm text-slate-600">Every payment saved for this workspace. Delete a receipt only if it was entered by mistake. The invoices go back to the amount due before that receipt.</p>
+        {!receipts.length ? (
+          <p className="mt-3 text-sm text-slate-500">No receipts yet.</p>
+        ) : (
+          <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="bg-slate-50 text-left text-slate-600">
+                <tr>
+                  {['Date', 'Customer', 'Invoices', 'Mode', 'Reference', 'Amount', ''].map((h) => (
+                    <th key={h || 'act'} className="p-2 font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {receipts.map((row) => (
+                  <tr key={row.id} className="border-t border-slate-100">
+                    <td className="p-2 whitespace-nowrap">{row.payment_date}</td>
+                    <td className="p-2">{row.party_name}</td>
+                    <td className="p-2">{row.lines.map((line) => `${line.invoice_number} ${money(line.amount)}`).join(', ')}</td>
+                    <td className="p-2 uppercase">{row.mode}</td>
+                    <td className="p-2">{row.reference || '—'}</td>
+                    <td className="p-2 whitespace-nowrap text-right tabular-nums">{money(row.total)}</td>
+                    <td className="p-2 text-right">
+                      <button
+                        type="button"
+                        disabled={deletingId === row.id}
+                        onClick={() => void removeReceipt(row)}
+                        className="text-sm font-semibold text-red-700 hover:underline disabled:opacity-50"
+                      >
+                        {deletingId === row.id ? 'Deleting…' : 'Delete'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
