@@ -33,6 +33,13 @@ const ITEM_COLUMNS: Record<string, string> = {
   pack_qty: 'pack_qty',
   for_sale: 'for_sale',
   opening_qty: 'opening_qty',
+  sale_mode: 'sale_mode',
+};
+
+const MENU_COLUMNS: Record<string, string> = {
+  category: 'category',
+  subcategory: 'subcategory',
+  name: 'name',
 };
 
 export interface BulkPreviewRow {
@@ -233,12 +240,53 @@ export class BulkUploadService {
             for_sale: forSale,
             for_consume: true,
             opening_qty: wholeOpening ? opening : undefined,
+            sale_mode: String(normalized.sale_mode || '').trim().toLowerCase() === 'loose' ? 'loose' : 'fixed',
           }, ctx);
           if (opening != null && opening > 0 && !wholeOpening) {
             const warehouseId = await this.inventory.getDefaultWarehouse(ctx);
             if (warehouseId) await this.inventory.receiveMeasured(ctx, warehouseId, saved.id, opening);
           }
         }
+        result.inserted++;
+      } catch (e) {
+        result.failed++;
+        result.errors.push({ rowIndex: i + 1, message: e instanceof Error ? e.message : 'Insert failed' });
+      }
+    }
+    return result;
+  }
+
+  previewMenu(rows: Record<string, unknown>[]): { preview: BulkPreviewRow[]; validCount: number } {
+    const preview: BulkPreviewRow[] = [];
+    let validCount = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const normalized = this.normalizeMenuRow(rows[i]);
+      const errors = normalized.category ? [] : ['category is required'];
+      if (errors.length === 0) validCount++;
+      preview.push({ index: i + 1, data: normalized, errors });
+    }
+    return { preview, validCount };
+  }
+
+  private normalizeMenuRow(row: Record<string, unknown>): { category: string; subcategory: string } {
+    const normalized = this.normalizeRow(row, MENU_COLUMNS);
+    const category = String(normalized.category || normalized.name || '').trim();
+    const subcategory = String(normalized.subcategory || '').trim();
+    return { category, subcategory };
+  }
+
+  async importMenu(rows: Record<string, unknown>[], ctx: TenantContext): Promise<BulkResult> {
+    this.assertTenantId(ctx);
+    const result: BulkResult = { inserted: 0, failed: 0, errors: [] };
+    for (let i = 0; i < rows.length; i++) {
+      const row = this.normalizeMenuRow(rows[i]);
+      if (!row.category) {
+        result.failed++;
+        result.errors.push({ rowIndex: i + 1, message: 'category is required' });
+        continue;
+      }
+      try {
+        await this.inventory.importMenuRow(row.category, row.subcategory, ctx);
         result.inserted++;
       } catch (e) {
         result.failed++;

@@ -12,6 +12,7 @@ import { DecimalInput } from '../../../../components/NumberField';
 import { parseNonNeg, splitItemGst } from '@/lib/item-pricing';
 import { parseMoney, parseQty, round2 } from '@/lib/money';
 import { DepartmentItemFields } from '../../../DepartmentItemFields';
+import SaleStyleField from '../../../SaleStyleField';
 
 function validateHsnSac(v: string): string | null {
   if (!v.trim()) return null;
@@ -30,6 +31,7 @@ export default function EditItemPage() {
   const [barcode, setBarcode] = useState('');
   const [description, setDescription] = useState('');
   const [unit, setUnit] = useState('pcs');
+  const [saleMode, setSaleMode] = useState<'fixed' | 'loose'>('fixed');
   const [category, setCategory] = useState('');
   const [hsnSac, setHsnSac] = useState('9983');
   const [reorderLevel, setReorderLevel] = useState('');
@@ -63,6 +65,8 @@ export default function EditItemPage() {
         setBarcode((d.barcode as string) ?? '');
         setDescription((d.description as string) ?? '');
         setUnit((d.unit as string) ?? 'pcs');
+        const meta = d.metadata as { sale_mode?: string } | undefined;
+        setSaleMode(meta?.sale_mode === 'loose' ? 'loose' : 'fixed');
         setCategory((d.category as string) ?? '');
         setHsnSac((d.hsn_sac as string) ?? '9983');
         setReorderLevel(d.reorder_level != null ? String(d.reorder_level) : '');
@@ -169,6 +173,7 @@ export default function EditItemPage() {
       image_urls: imageUrls,
       description: description || undefined,
       unit: unit || undefined,
+      sale_mode: saleMode,
       category: category || undefined,
       hsn_sac: hsnSac.trim() || undefined,
     };
@@ -277,6 +282,7 @@ export default function EditItemPage() {
               <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
               <CategoryPicker value={category} onChange={setCategory} />
             </div>
+            <SaleStyleField value={saleMode} unit={unit} onChange={setSaleMode} />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>

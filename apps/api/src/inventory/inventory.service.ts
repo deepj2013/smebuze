@@ -184,6 +184,13 @@ export class InventoryService {
     }
   }
 
+  async importMenuRow(category: string, subcategory: string | null | undefined, ctx: TenantContext) {
+    const parent = category.trim();
+    if (!parent) return;
+    await this.ensureCategory(parent, ctx);
+    if (subcategory?.trim()) await this.ensureSubcategory(parent, subcategory, ctx);
+  }
+
   async ensureCategory(name: string, ctx: TenantContext) {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -295,6 +302,7 @@ export class InventoryService {
       variant_shape: string;
       pack_source_id: string | null;
       pack_qty: number | null;
+      sale_mode: string;
     }>,
     ctx: TenantContext,
   ) {
@@ -332,6 +340,7 @@ export class InventoryService {
       for_sale: forSale,
       for_consume: forConsume,
       portal_listed: dto.portal_listed === true,
+      metadata: { sale_mode: dto.sale_mode === 'loose' ? 'loose' : 'fixed' },
     });
     await this.assertPackLink(item.pack_source_id, item.pack_qty, null, ctx);
     const saved = await this.itemRepo.save(item);
@@ -431,6 +440,7 @@ export class InventoryService {
       variant_shape: string | null;
       pack_source_id: string | null;
       pack_qty: number | null;
+      sale_mode: string;
     }>,
     ctx: TenantContext,
   ) {
@@ -471,6 +481,9 @@ export class InventoryService {
       this.assertSaleOrConsume(forSale, forConsume);
       item.for_sale = forSale;
       item.for_consume = forConsume;
+    }
+    if (dto.sale_mode === 'loose' || dto.sale_mode === 'fixed') {
+      item.metadata = { ...(item.metadata || {}), sale_mode: dto.sale_mode };
     }
     if (dto.portal_listed !== undefined) item.portal_listed = Boolean(dto.portal_listed);
     if (dto.is_active !== undefined) item.is_active = Boolean(dto.is_active);
@@ -601,6 +614,11 @@ export class InventoryService {
       await this.deductMeasured(ctx, warehouseId, item.pack_source_id, need);
       return;
     }
+    const loose = item.metadata?.sale_mode === 'loose' || Math.abs(quantity - Math.round(quantity)) > 0.00005;
+    if (loose) {
+      await this.deductMeasured(ctx, warehouseId, itemId, quantity);
+      return;
+    }
     await this.deductStock(ctx, warehouseId, itemId, quantity);
   }
 
@@ -610,6 +628,11 @@ export class InventoryService {
     const perPack = Number(item.pack_qty ?? 0);
     if (item.pack_source_id && Number.isFinite(perPack) && perPack > 0) {
       await this.receiveMeasured(ctx, warehouseId, item.pack_source_id, quantity * perPack);
+      return;
+    }
+    const loose = item.metadata?.sale_mode === 'loose' || Math.abs(quantity - Math.round(quantity)) > 0.00005;
+    if (loose) {
+      await this.receiveMeasured(ctx, warehouseId, itemId, quantity);
       return;
     }
     await this.receiveStock(ctx, warehouseId, itemId, quantity);

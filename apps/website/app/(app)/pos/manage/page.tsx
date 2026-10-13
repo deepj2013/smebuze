@@ -52,6 +52,7 @@ const emptyItem = {
   barcode: '',
   category: '',
   unit: 'pcs',
+  sale_mode: 'fixed' as 'fixed' | 'loose',
   cost_price: '',
   mrp: '',
   sale_price: '',
@@ -142,6 +143,7 @@ export default function PosManagePage() {
       barcode: form.barcode.trim() || undefined,
       category: form.category || (selected !== 'all' && selected !== 'uncat' ? selected : undefined),
       unit: form.unit || 'pcs',
+      sale_mode: form.sale_mode,
     };
     if (form.cost_price !== '') body.cost_price = parseMoney(form.cost_price);
     if (form.mrp !== '') body.mrp = parseMoney(form.mrp);
@@ -249,6 +251,13 @@ export default function PosManagePage() {
               <label className="text-xs font-medium text-slate-600">
                 Unit
                 <input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]" />
+              </label>
+              <label className="text-xs font-medium text-slate-600 sm:col-span-2">
+                How this is sold
+                <select value={form.sale_mode} onChange={(e) => setForm({ ...form, sale_mode: e.target.value === 'loose' ? 'loose' : 'fixed' })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]">
+                  <option value="fixed">Fixed — one tap adds 1</option>
+                  <option value="loose">Loose — by weight or by rupees</option>
+                </select>
               </label>
               <label className="text-xs font-medium text-slate-600">
                 Cost price

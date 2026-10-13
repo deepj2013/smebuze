@@ -57,8 +57,20 @@ import {
   validateSeriesConfig,
 } from '../common/document-series';
 
+function round4(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.round((n + Number.EPSILON) * 10000) / 10000;
+}
+
+/** Whole quantities stay "2.00". Loose quantities keep four decimals, such as 0.5000 kg. */
+function qtyStr(n: number): string {
+  const q = round4(n);
+  if (Math.abs(q - Math.round(q)) < 0.00005) return round2(q).toFixed(2);
+  return q.toFixed(4);
+}
+
 function gstLine(qty: number, rate: number, cgstRate = 0, sgstRate = 0, igstRate = 0) {
-  const q = roundQty(qty);
+  const q = round4(qty);
   const r = round2(rate);
   const taxable = round2(q * r);
   const cgst = round2(cgstRate);
@@ -244,7 +256,7 @@ export class SalesService {
       const mrp = Number(item.mrp ?? 0);
       if (!(mrp > 0)) continue;
       const maxDisc = Math.min(100, Math.max(0, Number(item.discount_percent ?? 0)));
-      const qty = Math.max(0, Math.round(Number(line.qty) || 0));
+      const qty = round4(Number(line.qty) || 0);
       const rate = round2(Number(line.rate) || 0);
       const cgst = dto.gst_applicable === false ? 0 : round2(Number(line.cgst_rate) || 0);
       const sgst = dto.gst_applicable === false ? 0 : round2(Number(line.sgst_rate) || 0);
@@ -381,7 +393,7 @@ export class SalesService {
         item_id: lineDto.item_id ?? null,
         hsn_sac: lineDto.hsn_sac,
         description: lineDto.description,
-        qty: moneyStr(gst.qty),
+        qty: qtyStr(gst.qty),
         unit: lineDto.unit ?? 'pcs',
         rate: moneyStr(gst.rate),
         taxable_value: moneyStr(gst.taxable),
@@ -445,6 +457,8 @@ export class SalesService {
     const tenantId = this.assertTenantId(ctx);
     if ((!dto.customer_id && !dto.vendor_id) || (dto.customer_id && dto.vendor_id)) throw new ForbiddenException('Provide exactly one bill-to customer or vendor.');
     if (!dto.lines?.length) throw new ForbiddenException('Invoice requires at least one line');
+    // Ice Crest bills whole blocks/pieces only — do not inherit POS loose-sale decimals.
+    const iceLines = dto.lines.map((line) => ({ ...line, qty: roundQty(line.qty) }));
     const savedIce = await this.dataSource.transaction('SERIALIZABLE', async (manager: EntityManager) => {
       const company = await manager.findOne(Company, { where: { id: dto.company_id, tenant_id: tenantId } });
       if (!company) throw new NotFoundException('Company not found');
@@ -459,8 +473,8 @@ export class SalesService {
         if (['cancelled','closed'].includes(order.status)) throw new ForbiddenException('Cannot invoice a cancelled or closed sales order');
       }
       const required = new Map<string,number>();
-      for (const line of dto.lines) {
-        if (!Number.isFinite(line.qty) || line.qty <= 0) throw new ForbiddenException('Every invoice quantity must be greater than zero');
+      for (const line of iceLines) {
+        if (!Number.isFinite(line.qty) || line.qty <= 0) throw new ForbiddenException('Every invoice quantity must be a whole number greater than zero');
         if (line.item_id) required.set(line.item_id,(required.get(line.item_id)??0)+line.qty);
       }
       const lockedStocks = new Map<string,Stock>();
@@ -488,8 +502,8 @@ export class SalesService {
         customer_id:dto.customer_id??null,vendor_id:dto.vendor_id??null,sales_order_id:dto.sales_order_id??null,number,invoice_date:new Date(dto.invoice_date),
         due_date:dto.due_date?new Date(dto.due_date):null,status:'issued',subtotal:'0',tax_amount:'0',total:'0',paid_amount:'0',shipping_charges:moneyStr(dto.shipping_charges??0),
         other_charges:moneyStr(dto.other_charges??0),discount_amount:moneyStr(dto.discount_amount??0),gst_applicable:dto.gst_applicable!==false,stock_deducted_at:null,created_by:ctx.userId}));
-      for (let i=0;i<dto.lines.length;i++) {
-        const l=dto.lines[i], g=gstLine(l.qty,l.rate,dto.gst_applicable===false?0:l.cgst_rate??0,dto.gst_applicable===false?0:l.sgst_rate??0,dto.gst_applicable===false?0:l.igst_rate??0);
+      for (let i=0;i<iceLines.length;i++) {
+        const l=iceLines[i], g=gstLine(l.qty,l.rate,dto.gst_applicable===false?0:l.cgst_rate??0,dto.gst_applicable===false?0:l.sgst_rate??0,dto.gst_applicable===false?0:l.igst_rate??0);
         subtotal=round2(subtotal+g.taxable);taxAmount=round2(taxAmount+g.tax);
         await manager.save(SalesInvoiceLine,manager.create(SalesInvoiceLine,{invoice_id:invoice.id,item_id:l.item_id??null,hsn_sac:l.hsn_sac,description:l.description,qty:moneyStr(g.qty),unit:l.unit??'pcs',rate:moneyStr(g.rate),taxable_value:moneyStr(g.taxable),cgst_rate:moneyStr(g.cgst),cgst_amount:moneyStr(g.cgstAmount),sgst_rate:moneyStr(g.sgst),sgst_amount:moneyStr(g.sgstAmount),igst_rate:moneyStr(g.igst),igst_amount:moneyStr(g.igstAmount),sort_order:i}));
       }
@@ -571,7 +585,7 @@ export class SalesService {
           item_id: lineDto.item_id ?? null,
           hsn_sac: lineDto.hsn_sac,
           description: lineDto.description,
-          qty: moneyStr(gst.qty),
+          qty: qtyStr(gst.qty),
           unit: lineDto.unit ?? 'pcs',
           rate: moneyStr(gst.rate),
           taxable_value: moneyStr(gst.taxable),
@@ -1239,14 +1253,14 @@ export class SalesService {
   private async createIceCrestSalesOrderTransactional(dto: Parameters<SalesService['createSalesOrder']>[0],ctx:TenantContext):Promise<SalesOrder>{
     const tenantId=this.assertTenantId(ctx);
     if(!dto.lines?.length)throw new ForbiddenException('Ice Crest sales orders require at least one SKU line');
-    const lines=dto.lines;
+    const lines=dto.lines.map((l)=>({...l,qty:roundQty(l.qty)}));
     return this.dataSource.transaction('SERIALIZABLE',async manager=>{
       if(!(await manager.findOne(Company,{where:{id:dto.company_id,tenant_id:tenantId}})))throw new NotFoundException('Company not found');
       if(dto.customer_id&&!(await manager.findOne(Customer,{where:{id:dto.customer_id,tenant_id:tenantId}})))throw new NotFoundException('Customer not found');
       const warehouse=await manager.findOne(Warehouse,{where:{tenant_id:tenantId,is_default:true}})??await manager.findOne(Warehouse,{where:{tenant_id:tenantId},order:{created_at:'ASC'}});
       if(!warehouse)throw new ForbiddenException('Create a warehouse before creating a sales order');
       const required=new Map<string,number>();let total=0;
-      for(const l of lines){if(!l.item_id)throw new ForbiddenException('Every Ice Crest order line must select an SKU');if(!Number.isFinite(l.qty)||l.qty<=0)throw new ForbiddenException('Every order quantity must be greater than zero');required.set(l.item_id,(required.get(l.item_id)??0)+l.qty);total+=l.qty*l.rate;}
+      for(const l of lines){if(!l.item_id)throw new ForbiddenException('Every Ice Crest order line must select an SKU');if(!Number.isFinite(l.qty)||l.qty<=0)throw new ForbiddenException('Every order quantity must be a whole number greater than zero');required.set(l.item_id,(required.get(l.item_id)??0)+l.qty);total+=l.qty*l.rate;}
       const locked=new Map<string,Stock>();
       for(const [itemId,qty] of required){const stock=await manager.getRepository(Stock).createQueryBuilder('s').setLock('pessimistic_write').where('s.tenant_id=:tenantId AND s.warehouse_id=:warehouseId AND s.item_id=:itemId',{tenantId,warehouseId:warehouse.id,itemId}).getOne();if(!stock)throw new ForbiddenException(`No stock record for item ${itemId}`);const available=Number(stock.quantity)-Number(stock.reserved);if(available<qty)throw new ForbiddenException(`Insufficient available stock: have ${available}, need ${qty}`);locked.set(itemId,stock);}
       const order=await manager.save(SalesOrder,manager.create(SalesOrder,{tenant_id:tenantId,company_id:dto.company_id,branch_id:dto.branch_id??null,customer_id:dto.customer_id??null,quotation_id:dto.quotation_id??null,number:dto.number?.trim()||`SO-${Date.now()}`,order_date:new Date(dto.order_date),status:'confirmed',total:total.toFixed(2),tax_amount:'0',created_by:ctx.userId,requirement_given_by:dto.requirement_given_by??null,requirement_channel:dto.requirement_channel??null,requirement_proof_ref:dto.requirement_proof_ref??null,stock_reserved_at:new Date(),reservation_released_at:null}));

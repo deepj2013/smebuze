@@ -66,40 +66,51 @@ NEXT_PUBLIC_API_URL=https://api.smebuze.com
 
 ## 3. Demo logins
 
-**Password for all seeded users:** `Password123`
+**Password for every row below:** `Password123`
 
-Each row is a **separate tenant** — data never mixes (CRM, stock, payroll, expenses stay inside that slug).
+Several people can share one tenant slug. Stock, bills, CRM, payroll, and expenses stay inside that slug and never mix with another row’s slug. Leave the slug empty for the three platform logins.
 
-| User | Email | Tenant slug |
-|------|--------|-------------|
-| Super Admin | `superadmin@smebuzz.com` | *(leave empty / Platform admin)* |
-| BDE (sales pipeline) | `bde@smebuze.local` | *(Platform admin)* |
-| Marketing partner | `partner@smebuze.local` | *(Platform admin)* |
-| Trading desk (main demo) | `admin@demo.com` | `demo` |
-| Restaurant admin | `restaurant@smebuze.local` | `pos-restaurant` |
-| Restaurant waiter | `waiter@smebuze.local` | `pos-restaurant` |
-| Restaurant kitchen | `kitchen@smebuze.local` | `pos-restaurant` |
-| Cafe | `cafe@smebuze.local` | `pos-cafe` |
-| Sweet shop | `sweets@smebuze.local` | `pos-sweets` |
-| Bakery | `bakery@smebuze.local` | `pos-bakery` |
-| Garment | `garment@smebuze.local` | `pos-garment` |
-| Kirana | `kirana@smebuze.local` | `pos-kirana` |
-| Department store | `dept@smebuze.local` | `pos-dept` |
-| Pharmacy | `pharmacy@smebuze.local` | `pos-pharmacy` |
-| Hardware | `hardware@smebuze.local` | `pos-hardware` |
-| Electronics | `electronics@smebuze.local` | `pos-electronics` |
-| Jewellery | `jewellery@smebuze.local` | `pos-jewellery` |
-| Auto parts | `autoparts@smebuze.local` | `pos-autoparts` |
-| Florist | `florist@smebuze.local` | `pos-florist` |
-| Stationery | `stationery@smebuze.local` | `pos-stationery` |
-| Salon | `salon@smebuze.local` | `pos-salon` |
-| Clinic | `clinic@smebuze.local` | `pos-clinic` |
-| Services | `services@smebuze.local` | `demo-services` |
-| Coaching | `coaching@smebuze.local` | `demo-coaching` |
-| Hotel | `hotel@smebuze.local` | `demo-hotel` |
-| Manufacturing | `mfg@smebuze.local` | `demo-mfg` |
-| Transporter / fleet | `transport@smebuze.local` | `demo-transport` |
-| Ice Crest (after `seed:ice-crest`) | `info@icecrest.in` | `ice-crest` |
+| User | Email | Tenant type | Tenant slug |
+|------|--------|-------------|-------------|
+| Super Admin | `superadmin@smebuzz.com` | Platform admin | *(leave empty)* |
+| BDE (sales pipeline) | `bde@smebuze.local` | Platform admin | *(leave empty)* |
+| Marketing partner | `partner@smebuze.local` | Platform admin | *(leave empty)* |
+| Trading desk — admin | `admin@demo.com` | Trading / wholesale | `demo` |
+| Trading desk — sales | `sales@demo.com` | Trading / wholesale | `demo` |
+| Trading desk — purchase | `purchase@demo.com` | Trading / wholesale | `demo` |
+| Trading desk — staff | `staff@demo.com` | Trading / wholesale | `demo` |
+| Trading desk — viewer | `viewer@demo.com` | Trading / wholesale | `demo` |
+| Restaurant admin | `restaurant@smebuze.local` | Dine-in restaurant | `pos-restaurant` |
+| Restaurant waiter | `waiter@smebuze.local` | Dine-in restaurant | `pos-restaurant` |
+| Restaurant kitchen | `kitchen@smebuze.local` | Dine-in restaurant | `pos-restaurant` |
+| Cafe admin | `cafe@smebuze.local` | Cafe / QSR | `pos-cafe` |
+| Cafe waiter | `cafe-waiter@smebuze.local` | Cafe / QSR | `pos-cafe` |
+| Cafe kitchen | `cafe-kitchen@smebuze.local` | Cafe / QSR | `pos-cafe` |
+| Sweet shop | `sweets@smebuze.local` | Sweet shop | `pos-sweets` |
+| Bakery | `bakery@smebuze.local` | Bakery | `pos-bakery` |
+| Garment | `garment@smebuze.local` | Garment shop | `pos-garment` |
+| Kirana | `kirana@smebuze.local` | Kirana / single store | `pos-kirana` |
+| Department store (demo) | `dept@smebuze.local` | Department store | `pos-dept` |
+| Pharmacy | `pharmacy@smebuze.local` | Pharmacy / medical store | `pos-pharmacy` |
+| Hardware | `hardware@smebuze.local` | Hardware / sanitary | `pos-hardware` |
+| Electronics | `electronics@smebuze.local` | Electronics / mobiles | `pos-electronics` |
+| Jewellery | `jewellery@smebuze.local` | Jewellery shop | `pos-jewellery` |
+| Auto parts | `autoparts@smebuze.local` | Auto parts | `pos-autoparts` |
+| Florist | `florist@smebuze.local` | Florist / gifts | `pos-florist` |
+| Stationery | `stationery@smebuze.local` | Stationery / books | `pos-stationery` |
+| Salon | `salon@smebuze.local` | Salon / spa | `pos-salon` |
+| Clinic | `clinic@smebuze.local` | Clinic / diagnostic | `pos-clinic` |
+| Services | `services@smebuze.local` | Services / general | `demo-services` |
+| Coaching | `coaching@smebuze.local` | Coaching / tuition | `demo-coaching` |
+| Hotel | `hotel@smebuze.local` | Hotel / lodging | `demo-hotel` |
+| Manufacturing | `mfg@smebuze.local` | Manufacturing / job work | `demo-mfg` |
+| Transporter / fleet | `transport@smebuze.local` | Transporter / fleet | `demo-transport` |
+| Ice Crest (after `seed:ice-crest`) | `info@icecrest.in` | Ice factory | `ice-crest` |
+| Sagar General Store (created by migration) | `admin@sagargeneral.store` | Department store | `sagar-general-store` |
+
+`pos-restaurant` and `pos-cafe` each have an admin, a waiter, and a kitchen login. `demo` has admin, sales, purchase, staff, and viewer. Every other slug in this table has one login.
+
+Sagar is a real shop workspace, not a demo seed. The migration creates it once. Ice Crest appears only after `npm run seed:ice-crest`.
 
 New signups must verify email (OTP) before login.
 

@@ -796,16 +796,35 @@ async function seedVariant(db, hash, v) {
     let row = await db.query('SELECT id FROM items WHERE tenant_id = $1 AND sku = $2 LIMIT 1', [tenantId, it.sku]);
     if (!row.rows.length) {
       row = await db.query(
-        `INSERT INTO items (tenant_id, company_id, sku, barcode, name, category, unit, hsn_sac, mrp, cost_price, sale_price, tax_rate, reorder_level, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, true)
+        `INSERT INTO items (tenant_id, company_id, sku, barcode, name, category, unit, hsn_sac, mrp, cost_price, sale_price, tax_rate, reorder_level, is_active, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, true, $14::jsonb)
          RETURNING id`,
-        [tenantId, companyId, it.sku, it.barcode || null, it.name, it.category, it.unit, it.hsn_sac, it.mrp, it.cost, it.sale, it.tax, it.reorder],
+        [
+          tenantId,
+          companyId,
+          it.sku,
+          it.barcode || null,
+          it.name,
+          it.category,
+          it.unit,
+          it.hsn_sac,
+          it.mrp,
+          it.cost,
+          it.sale,
+          it.tax,
+          it.reorder,
+          JSON.stringify({
+            sale_mode: ['kg', 'g', 'gm', 'ltr', 'l', 'ml'].includes(String(it.unit || '').toLowerCase()) ? 'loose' : 'fixed',
+          }),
+        ],
       );
     } else {
+      const saleMode = ['kg', 'g', 'gm', 'ltr', 'l', 'ml'].includes(String(it.unit || '').toLowerCase()) ? 'loose' : 'fixed';
       await db.query(
-        `UPDATE items SET barcode = $3, name = $4, category = $5, unit = $6, hsn_sac = $7, mrp = $8, cost_price = $9, sale_price = $10, tax_rate = $11, reorder_level = $12
+        `UPDATE items SET barcode = $3, name = $4, category = $5, unit = $6, hsn_sac = $7, mrp = $8, cost_price = $9, sale_price = $10, tax_rate = $11, reorder_level = $12,
+          metadata = COALESCE(metadata, '{}'::jsonb) || $13::jsonb
          WHERE tenant_id = $1 AND sku = $2`,
-        [tenantId, it.sku, it.barcode || null, it.name, it.category, it.unit, it.hsn_sac, it.mrp, it.cost, it.sale, it.tax, it.reorder],
+        [tenantId, it.sku, it.barcode || null, it.name, it.category, it.unit, it.hsn_sac, it.mrp, it.cost, it.sale, it.tax, it.reorder, JSON.stringify({ sale_mode: saleMode })],
       );
     }
     const itemId = row.rows[0].id;

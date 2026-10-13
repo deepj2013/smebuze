@@ -28,6 +28,12 @@ import {
   razorpayWebhookUrl,
   RazorpayPublicSettings,
 } from '../common/tenant-razorpay';
+import {
+  HardwareDeviceConfig,
+  parseTenantHardware,
+  publicHardware,
+  sanitizeHardwarePatch,
+} from '../common/tenant-hardware';
 
 @Injectable()
 export class OrganizationService {
@@ -424,6 +430,60 @@ export class OrganizationService {
       expires_at: i.expires_at.toISOString(),
       used_at: i.used_at?.toISOString() ?? null,
     }));
+  }
+
+  async getHardware(ctx: TenantContext) {
+    const tenantId = this.assertTenantId(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Workspace not found');
+    return publicHardware(parseTenantHardware(tenant.settings as Record<string, unknown>));
+  }
+
+  async saveHardware(
+    ctx: TenantContext,
+    body: Partial<{ devices: HardwareDeviceConfig[]; local_agent_url: string }>,
+  ) {
+    const tenantId = this.assertTenantId(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Workspace not found');
+    const current = parseTenantHardware(tenant.settings as Record<string, unknown>);
+    const next = sanitizeHardwarePatch(body, current);
+    tenant.settings = { ...(tenant.settings ?? {}), hardware: next };
+    await this.tenantRepo.save(tenant);
+    await this.auditService.log(ctx, 'hardware.update', 'tenant', tenantId, {
+      enabled: next.devices.filter((d) => d.enabled).map((d) => d.id),
+    }).catch(() => {});
+    return publicHardware(next);
+  }
+
+  async getNavMenu(ctx: TenantContext): Promise<{ nav_hidden: string[] }> {
+    const tenantId = this.assertTenantId(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Workspace not found');
+    const raw = (tenant.settings as Record<string, unknown> | undefined)?.nav_hidden;
+    const nav_hidden = Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string') : [];
+    return { nav_hidden };
+  }
+
+  async saveNavMenu(ctx: TenantContext, navHidden: string[]): Promise<{ nav_hidden: string[] }> {
+    const tenantId = this.assertTenantId(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Workspace not found');
+    const locked = new Set([
+      'menu:Organization',
+      'item:/organization/menus',
+      'item:/organization/companies',
+      'item:/organization/users',
+      'item:/help',
+      'menu:Admin',
+      'item:/admin/tenants',
+    ]);
+    const cleaned = (Array.isArray(navHidden) ? navHidden : [])
+      .filter((k): k is string => typeof k === 'string' && k.length > 0 && !locked.has(k));
+    tenant.settings = { ...(tenant.settings ?? {}), nav_hidden: cleaned };
+    await this.tenantRepo.save(tenant);
+    await this.auditService.log(ctx, 'nav_menu.update', 'tenant', tenantId, { hidden: cleaned.length }).catch(() => {});
+    return { nav_hidden: cleaned };
   }
 
   async getBranding(ctx: TenantContext): Promise<TenantBranding> {

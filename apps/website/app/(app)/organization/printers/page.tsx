@@ -197,6 +197,13 @@ export default function PrintersPage() {
           Add printer
         </button>
       </PageHeader>
+      <p className="mb-4 text-sm text-slate-600">
+        Scanners, PIN pads and planned devices:{' '}
+        <Link href="/organization/devices" className="font-medium text-brand-700 hover:underline">
+          Organization → Devices
+        </Link>
+        .
+      </p>
 
       {mobile && (
         <div className="mb-6 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-slate-700 space-y-2">

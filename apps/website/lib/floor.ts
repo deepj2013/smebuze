@@ -17,6 +17,8 @@ export type FloorTicket = {
   covers: number;
   kitchen_status: KitchenStatus;
   waiter_name: string;
+  guest_name?: string;
+  guest_phone?: string;
   note: string;
   status: string;
   total: number;
@@ -28,6 +30,26 @@ export type FloorTicket = {
   tenant_name?: string;
   tenant_slug?: string;
   lines: FloorLine[];
+};
+
+export type DeliveryOrder = {
+  id: string;
+  number: string;
+  name: string;
+  phone: string;
+  address: string;
+  status: string;
+  total: number;
+  created_at: string;
+  lines: FloorLine[];
+};
+
+export type CounterBoard = {
+  tables: string[];
+  open: FloorTicket[];
+  by_table: Record<string, FloorTicket | null>;
+  deliveries: DeliveryOrder[];
+  saved_id?: string | null;
 };
 
 export type FloorSnapshot = {

@@ -6,8 +6,10 @@ import { apiPost } from '@/lib/api';
 export default function BulkUploadPage() {
   const [customersFile, setCustomersFile] = useState<File | null>(null);
   const [itemsFile, setItemsFile] = useState<File | null>(null);
+  const [menuFile, setMenuFile] = useState<File | null>(null);
   const [customersResult, setCustomersResult] = useState<string | null>(null);
   const [itemsResult, setItemsResult] = useState<string | null>(null);
+  const [menuResult, setMenuResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +46,25 @@ export default function BulkUploadPage() {
     }
   };
 
+  const uploadMenu = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!menuFile) return;
+    setError(null);
+    setMenuResult(null);
+    setLoading(true);
+    try {
+      const text = await menuFile.text();
+      const rows = parseCsv(text);
+      const { data, error: err } = await apiPost<{ received?: number; inserted?: number; failed?: number; message?: string }>('bulk-upload/categories', { rows });
+      setLoading(false);
+      if (err) setError(err);
+      else setMenuResult(data?.message ?? `Saved ${data?.inserted ?? 0} of ${data?.received ?? 0}. Failed ${data?.failed ?? 0}.`);
+    } catch {
+      setLoading(false);
+      setError('Failed to read file.');
+    }
+  };
+
   const uploadItems = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!itemsFile) return;
@@ -67,6 +88,22 @@ export default function BulkUploadPage() {
     <div>
       <h1 className="text-2xl font-bold text-slate-900 mb-4">Bulk upload</h1>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
+      <div className="mb-8 rounded-xl border border-slate-200 bg-white p-6">
+        <h2 className="font-semibold text-slate-900 mb-2">Upload categories and subcategories (CSV)</h2>
+        <p className="text-sm text-slate-500 mb-2">Use this first when moving a menu from another billing system. One row is a category. Fill subcategory when that category has one. The same category can repeat for each subcategory.</p>
+        <a
+          href="data:text/csv;charset=utf-8,category,subcategory%0ADelicious%20Sweets,%0ADelicious%20Sweets,Ladoo%0ANamkeen,Mixture"
+          download="smebuzz-categories-sample.csv"
+          className="text-sm text-brand-600 hover:text-brand-700 font-medium"
+        >
+          Download sample CSV
+        </a>
+        <form onSubmit={uploadMenu} className="mt-4 space-y-3">
+          <input type="file" accept=".csv,.txt" onChange={(e) => setMenuFile(e.target.files?.[0] ?? null)} className="block w-full text-sm text-slate-600 file:mr-4 file:rounded file:border-0 file:bg-brand-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100" />
+          <button type="submit" disabled={loading || !menuFile} className="rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50">Upload categories</button>
+        </form>
+        {menuResult && <p className="mt-3 text-sm text-green-700">{menuResult}</p>}
+      </div>
       <div className="grid gap-8 sm:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-6">
           <h2 className="font-semibold text-slate-900 mb-2">Upload customers (CSV)</h2>
@@ -87,9 +124,9 @@ export default function BulkUploadPage() {
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-6">
           <h2 className="font-semibold text-slate-900 mb-2">Upload items (CSV)</h2>
-          <p className="text-sm text-slate-500 mb-2">Headers: name, sku, unit, category, hsn_sac, description. A shop sheet can also include barcode, mrp, cost_price, discount_percent, tax_rate, subcategory, variant_size, variant_shape, pack_sku, pack_qty, for_sale, opening_qty. Upload the loose bulk item before the pack that uses it. A file with only the first headers still imports the same way.</p>
+          <p className="text-sm text-slate-500 mb-2">Headers: name, sku, unit, category, subcategory, sale_mode, hsn_sac, description. sale_mode is fixed or loose. A shop sheet can also include barcode, mrp, cost_price, discount_percent, tax_rate, variant_size, variant_shape, pack_sku, pack_qty, for_sale, opening_qty. Upload categories first, then items. A file with only the first old headers still imports.</p>
           <a
-            href="data:text/csv;charset=utf-8,name,sku,unit,category,hsn_sac,description%0ASample%20Item,SKU001,nos,General,998314,Sample%20product"
+            href="data:text/csv;charset=utf-8,name,sku,unit,category,subcategory,sale_mode,mrp%0AKaju%20Katli,KK250,pcs,Delicious%20Sweets,,fixed,450%0ABesan%20Ladoo,BL1,kg,Delicious%20Sweets,Ladoo,loose,320"
             download="smebuzz-items-sample.csv"
             className="text-sm text-brand-600 hover:text-brand-700 font-medium"
           >

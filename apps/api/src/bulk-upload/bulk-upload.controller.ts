@@ -34,6 +34,25 @@ export class BulkUploadController {
     };
   }
 
+  @Post('categories/preview')
+  async previewCategories(
+    @Body() body: { rows: Record<string, unknown>[] },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    void ctx;
+    return this.bulkUploadService.previewMenu(body.rows ?? []);
+  }
+
+  @Post('categories')
+  async uploadCategories(
+    @Body() body: { rows: Record<string, unknown>[] },
+    @CurrentTenant() ctx: TenantContext,
+  ): Promise<{ received: number; inserted: number; failed: number; errors: BulkResult['errors'] }> {
+    const rows = body.rows ?? [];
+    const result = await this.bulkUploadService.importMenu(rows, ctx);
+    return { received: rows.length, inserted: result.inserted, failed: result.failed, errors: result.errors };
+  }
+
   @Post('items/preview')
   async previewItems(
     @Body() body: { rows: Record<string, unknown>[] },

@@ -96,6 +96,20 @@ export class TenantService {
         const features = new Set([...(tenant.features ?? []), ...pack.features]);
         tenant.features = [...features];
       }
+      if (Array.isArray(next.nav_hidden)) {
+        const locked = new Set([
+          'menu:Organization',
+          'item:/organization/menus',
+          'item:/organization/companies',
+          'item:/organization/users',
+          'item:/help',
+          'menu:Admin',
+          'item:/admin/tenants',
+        ]);
+        next.nav_hidden = next.nav_hidden.filter(
+          (k): k is string => typeof k === 'string' && k.length > 0 && !locked.has(k),
+        );
+      }
       tenant.settings = next;
     }
     return this.tenantRepo.save(tenant);

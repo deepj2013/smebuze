@@ -30,6 +30,15 @@ export function ToInteger() {
   });
 }
 
+/** Keep up to 4 decimal places so a loose sale can be 0.5 kg or a rupee amount. Whole numbers stay whole. */
+export function To4Decimals() {
+  return Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return value;
+    const n = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(n) ? Math.round((n + Number.EPSILON) * 10000) / 10000 : value;
+  });
+}
+
 /** Round incoming JSON numbers/strings to 2 decimal places before validation. */
 export function To2Decimals() {
   return Transform(({ value }) => {

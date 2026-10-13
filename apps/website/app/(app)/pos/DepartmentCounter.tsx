@@ -16,6 +16,8 @@ import {
   loadOutbox,
   printCounterSlip,
   queueBill,
+  rememberCounterCustomer,
+  shopFromCompany,
   saveHeld,
   setCounterLang,
   syncOutbox,
@@ -23,6 +25,8 @@ import {
   type HeldBill,
 } from '@/lib/counter-desk';
 import { Banknote, CreditCard, Minus, Plus, Search, Smartphone, Trash2, Users } from 'lucide-react';
+import LooseAsk from './LooseAsk';
+import { isLooseItem } from '@/lib/loose-sale';
 
 interface ShelfItem {
   id: string;
@@ -42,6 +46,7 @@ interface ShelfItem {
   pack_qty?: string | number | null;
   source_stock?: number | null;
   current_stock?: number;
+  metadata?: Record<string, unknown> | null;
 }
 
 interface CategoryRow {
@@ -53,6 +58,7 @@ interface CategoryRow {
 interface Customer {
   id: string;
   name: string;
+  phone?: string | null;
   tags?: string[];
   segment?: string | null;
 }
@@ -134,8 +140,15 @@ export default function DepartmentCounter() {
   const [customerId, setCustomerId] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
   const [department, setDepartment] = useState('all');
+  const [menuQuery, setMenuQuery] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
+  const [savedGuest, setSavedGuest] = useState<{ id: string; name: string; phone: string } | null>(null);
+  const [orderType, setOrderType] = useState<'takeaway' | 'dinein' | 'delivery'>('takeaway');
+  const [looseItem, setLooseItem] = useState<ShelfItem | null>(null);
   const [subcategory, setSubcategory] = useState('all');
   const [query, setQuery] = useState('');
+  const [shortCode, setShortCode] = useState('');
   const [payMode, setPayMode] = useState<PayMode>('cash');
   const [billDiscount, setBillDiscount] = useState('');
   const [cashTendered, setCashTendered] = useState('');
@@ -143,7 +156,7 @@ export default function DepartmentCounter() {
   const [cartOpen, setCartOpen] = useState(false);
   const [scanHint, setScanHint] = useState<string | null>(null);
   const [lastBill, setLastBill] = useState<{ id: string; number: string; total: number; credit: boolean } | null>(null);
-  const [companyName, setCompanyName] = useState('Shop');
+  const [shop, setShop] = useState<{ company: string; gstin?: string; phone?: string; address: string[] }>({ company: 'Shop', address: [] });
   const [tenantKey, setTenantKey] = useState('');
   const [lang, setLang] = useState<CounterLang>('en');
   const [seeCost, setSeeCost] = useState(false);
@@ -168,7 +181,7 @@ export default function DepartmentCounter() {
     (async () => {
       const [custRes, coRes, meRes] = await Promise.all([
         apiGet<Customer[] | { data: Customer[] }>('crm/customers'),
-        apiGet<{ id: string; name?: string }[] | { data: { id: string; name?: string }[] }>('organization/companies'),
+        apiGet<{ id: string; name?: string; gstin?: string | null; address?: Record<string, unknown> | null }[] | { data: { id: string; name?: string; gstin?: string | null; address?: Record<string, unknown> | null }[] }>('organization/companies'),
         apiGet<{ user?: { permissions?: string[]; isSuperAdmin?: boolean }; tenant?: { id?: string; slug?: string } }>('auth/me'),
       ]);
       const custList = Array.isArray(custRes.data) ? custRes.data : custRes.data?.data ?? [];
@@ -176,7 +189,7 @@ export default function DepartmentCounter() {
       setCustomers(custList);
       if (coList[0]) {
         setCompanyId(coList[0].id);
-        if (coList[0].name) setCompanyName(coList[0].name);
+        setShop(shopFromCompany(coList[0]));
       }
       const walkIn = custList.find(isWalkIn);
       if (walkIn) setCustomerId(walkIn.id);
@@ -205,39 +218,45 @@ export default function DepartmentCounter() {
     return () => window.removeEventListener('online', run);
   }, [load, success]);
 
-  const parents = useMemo(
-    () => categories.filter((c) => !c.parent_id).sort((a, b) => a.name.localeCompare(b.name)),
-    [categories],
-  );
-  const children = useMemo(() => {
-    if (department === 'all') return categories.filter((c) => c.parent_id);
-    const parent = parents.find((p) => p.name === department);
-    return categories.filter((c) => c.parent_id && parent && c.parent_id === parent.id);
-  }, [categories, department, parents]);
-
+  const parents = useMemo(() => {
+    const q = menuQuery.trim().toLowerCase();
+    return categories
+      .filter((c) => !c.parent_id)
+      .filter((c) => !q || c.name.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [categories, menuQuery]);
   const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const code = shortCode.trim().toLowerCase();
     return items.filter((i) => {
       if (department !== 'all' && (i.category || '') !== department) return false;
       if (subcategory !== 'all' && (i.subcategory || '') !== subcategory) return false;
-      if (!q) return true;
-      return [i.name, i.sku, i.barcode, i.variant_size, i.variant_shape, i.subcategory]
-        .some((part) => (part || '').toLowerCase().includes(q));
+      const sku = (i.sku || '').toLowerCase();
+      const barcode = (i.barcode || '').toLowerCase();
+      if (code && !sku.startsWith(code) && !barcode.startsWith(code)) return false;
+      if (!tokens.length) return true;
+      const hay = [i.name, i.sku, i.barcode, i.variant_size, i.variant_shape, i.subcategory].join(' ').toLowerCase();
+      return tokens.every((token) => hay.includes(token));
     });
-  }, [items, department, subcategory, query]);
+  }, [items, department, subcategory, query, shortCode]);
 
-  const addItem = useCallback((item: ShelfItem) => {
+  const addItem = useCallback((item: ShelfItem, qty = 1) => {
+    if (qty === 1 && isLooseItem(item)) {
+      setLooseItem(item);
+      return;
+    }
+    const addQty = qty > 0 ? qty : 1;
     const mrp = num(item.mrp);
     const maxDiscount = Math.min(100, Math.max(0, num(item.discount_percent)));
     setCart((prev) => {
       const existing = prev.find((l) => l.item_id === item.id);
-      if (existing) return prev.map((l) => (l.item_id === item.id ? { ...l, qty: l.qty + 1 } : l));
+      if (existing) return prev.map((l) => (l.item_id === item.id ? { ...l, qty: Math.round((l.qty + addQty) * 10000) / 10000 } : l));
       return [
         ...prev,
         {
           item_id: item.id,
           name: item.name,
-          qty: 1,
+          qty: addQty,
           mrp,
           maxDiscount,
           discountPercent: maxDiscount,
@@ -351,7 +370,13 @@ export default function DepartmentCounter() {
     const credit = payMode === 'credit';
     const invoiceBody = {
         company_id: companyId,
-        customer_id: customerId,
+        customer_id: (await rememberCounterCustomer({
+          name: guestName,
+          phone: guestPhone,
+          customers,
+          fallbackId: customerId,
+          companyId,
+        }))?.id || customerId,
         invoice_date: today,
         due_date: credit ? monthEnd() : today,
         gst_applicable: priced.some((row) => row.line.taxRate > 0),
@@ -372,7 +397,13 @@ export default function DepartmentCounter() {
       mode: payMode,
       reference: payMode === 'cash' ? 'Counter cash' : payMode === 'upi' ? 'Counter UPI' : 'Counter card',
     };
-    const slipLines = priced.map(({ line, money }) => ({ description: line.name, qty: line.qty, amount: money.inclusive }));
+    const slipLines = priced.map(({ line, money }) => ({
+      description: line.name,
+      qty: line.qty,
+      rate: line.qty > 0 ? round2(money.inclusive / line.qty) : money.rate,
+      amount: money.inclusive,
+    }));
+    const paidBy = credit ? 'Credit' : payMode === 'upi' ? 'UPI' : payMode === 'card' ? 'Card' : 'Cash';
     const finishLocal = (number: string, note: string) => {
       setCart([]);
       setBillDiscount('');
@@ -380,7 +411,7 @@ export default function DepartmentCounter() {
       setCartOpen(false);
       success(note);
       void printCounterSlip({
-        company: companyName,
+        ...shop,
         number,
         date: today,
         billTo: selected?.name || 'Customer',
@@ -392,6 +423,7 @@ export default function DepartmentCounter() {
         total: totals.total,
         paid: credit ? 0 : totals.total,
         due: credit ? totals.total : 0,
+        paidBy,
         footer: note,
       }).catch(() => undefined);
     };
@@ -499,8 +531,37 @@ export default function DepartmentCounter() {
 
   const cartPanel = (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="font-semibold text-slate-900">Bill</h2>
+      <div className="grid grid-cols-3 gap-1">
+        {(['takeaway', 'dinein', 'delivery'] as const).map((id) => (
+          <button key={id} type="button" onClick={() => setOrderType(id)} className={`h-7 rounded text-[11px] font-semibold ${orderType === id ? 'bg-sky-500 text-white' : 'border border-slate-200'}`}>
+            {id === 'dinein' ? 'Dine-in' : id === 'takeaway' ? 'Takeaway' : 'Delivery'}
+          </button>
+        ))}
+      </div>
+      <div className="mt-1 rounded border border-slate-200 bg-slate-50 p-1.5">
+        <div className="grid grid-cols-2 gap-1">
+          <input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Name" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
+          <input value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} inputMode="tel" placeholder="Mobile" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
+        </div>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => void rememberCounterCustomer({ name: guestName, phone: guestPhone, customers, fallbackId: customerId, companyId }).then((saved) => {
+              if (!saved) { showError('Enter a mobile number to remember this customer.'); return; }
+              setSavedGuest(saved);
+              setCustomerId(saved.id);
+              setCustomers((prev) => (prev.some((c) => c.id === saved.id) ? prev : [{ id: saved.id, name: saved.name, phone: saved.phone }, ...prev]));
+              success(`${saved.name} saved for wishes and offers.`);
+            })}
+            className="h-6 rounded bg-slate-800 px-2 text-[11px] font-semibold text-white"
+          >
+            Save
+          </button>
+          <span className="truncate text-[11px] text-slate-600">{savedGuest ? `${savedGuest.name} · ${savedGuest.phone}` : 'Saved here for wishes'}</span>
+        </div>
+      </div>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-900">Bill</h2>
         <span className="text-xs text-slate-500">{cart.length} item{cart.length === 1 ? '' : 's'}</span>
       </div>
       <label className="mt-2 text-xs font-medium text-slate-600">Customer</label>
@@ -668,14 +729,11 @@ export default function DepartmentCounter() {
         </button>
       </div>
       <aside className="hidden lg:flex lg:min-h-0 lg:flex-col lg:overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2">
-        <p className="px-2 py-1 text-xs font-semibold uppercase text-slate-500">Departments</p>
+        <p className="px-2 py-1 text-xs font-semibold uppercase text-slate-500">Menu</p>
+        <input value={menuQuery} onChange={(e) => setMenuQuery(e.target.value)} placeholder="Search category" className="mb-1 h-8 rounded border border-slate-300 px-2 text-xs" />
         <button type="button" onClick={() => { setDepartment('all'); setSubcategory('all'); }} className={`rounded-lg px-3 py-2 text-left text-sm min-h-[40px] ${department === 'all' ? 'bg-brand-600 text-white' : 'hover:bg-slate-50'}`}>All</button>
         {parents.map((p) => (
           <button key={p.id} type="button" onClick={() => { setDepartment(p.name); setSubcategory('all'); }} className={`rounded-lg px-3 py-2 text-left text-sm min-h-[40px] ${department === p.name ? 'bg-brand-600 text-white' : 'hover:bg-slate-50'}`}>{p.name}</button>
-        ))}
-        {children.length > 0 && <p className="mt-3 px-2 py-1 text-xs font-semibold uppercase text-slate-500">Subcategory</p>}
-        {children.map((c) => (
-          <button key={c.id} type="button" onClick={() => setSubcategory(c.name)} className={`rounded-lg px-3 py-2 text-left text-sm min-h-[40px] ${subcategory === c.name ? 'bg-slate-900 text-white' : 'hover:bg-slate-50'}`}>{c.name}</button>
         ))}
       </aside>
 
@@ -692,27 +750,34 @@ export default function DepartmentCounter() {
                 void applyCode(query);
               }}
               autoFocus
-              placeholder="Search or scan barcode"
-              className="w-full rounded-xl border border-slate-300 py-3 pl-10 pr-3 text-base min-h-[48px]"
+              placeholder="Search by name"
+              className="w-full rounded-md border border-slate-300 py-2.5 pl-10 pr-3 text-sm min-h-[44px]"
             />
           </div>
+          <input
+            value={shortCode}
+            onChange={(e) => setShortCode(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              const code = shortCode.trim();
+              if (!code) return;
+              void applyCode(code);
+              setShortCode('');
+            }}
+            placeholder="Short code"
+            className="w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm min-h-[44px] sm:w-40"
+          />
           <BarcodeCapture onDetected={applyCode} label="Scan" />
         </div>
         {scanHint && <p className="mb-2 text-xs font-medium text-emerald-700">Last scan: {scanHint}</p>}
+        <input value={menuQuery} onChange={(e) => setMenuQuery(e.target.value)} placeholder="Search category" className="mb-2 h-8 w-full rounded border border-slate-300 px-2 text-xs lg:hidden" />
         <div className="mb-2 flex gap-2 overflow-x-auto pb-1 lg:hidden">
           <button type="button" onClick={() => { setDepartment('all'); setSubcategory('all'); }} className={`shrink-0 rounded-full px-3 py-2 text-sm min-h-[40px] ${department === 'all' ? 'bg-brand-600 text-white' : 'border border-slate-200 bg-white'}`}>All</button>
           {parents.map((p) => (
             <button key={p.id} type="button" onClick={() => { setDepartment(p.name); setSubcategory('all'); }} className={`shrink-0 rounded-full px-3 py-2 text-sm min-h-[40px] ${department === p.name ? 'bg-brand-600 text-white' : 'border border-slate-200 bg-white'}`}>{p.name}</button>
           ))}
         </div>
-        {children.length > 0 && (
-          <div className="mb-3 flex gap-2 overflow-x-auto pb-1 lg:hidden">
-            <button type="button" onClick={() => setSubcategory('all')} className={`shrink-0 rounded-full px-3 py-1.5 text-xs min-h-[36px] ${subcategory === 'all' ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white'}`}>All in {department === 'all' ? 'store' : department}</button>
-            {children.map((c) => (
-              <button key={c.id} type="button" onClick={() => setSubcategory(c.name)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs min-h-[36px] ${subcategory === c.name ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white'}`}>{c.name}</button>
-            ))}
-          </div>
-        )}
         {visible.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
             <p className="font-semibold text-slate-900">No products in this shelf</p>
@@ -728,13 +793,11 @@ export default function DepartmentCounter() {
                 ? Math.floor(num(item.source_stock) / num(item.pack_qty))
                 : null;
               return (
-                <button key={item.id} type="button" onClick={() => addItem(item)} className="rounded-xl border border-slate-200 bg-white p-3 text-left min-h-[108px] hover:border-brand-400">
-                  <p className="font-semibold text-slate-900 line-clamp-2">{item.name}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">{[item.subcategory, item.variant_size, item.variant_shape].filter(Boolean).join(' · ')}</p>
-                  {item.barcode && <p className="font-mono text-[10px] text-slate-400">{item.barcode}</p>}
-                  <p className="mt-2 font-bold text-brand-700">₹{shelf.toFixed(2)}</p>
-                  {disc > 0 && <p className="text-xs text-slate-400 line-through">MRP ₹{mrp.toFixed(2)}</p>}
-                  {packs != null && <p className={`text-xs ${packs <= 0 ? 'font-medium text-amber-700' : 'text-slate-500'}`}>Packs left {packs}</p>}
+                <button key={item.id} type="button" onClick={() => addItem(item)} className="relative min-h-[72px] rounded-md border border-sky-300 bg-white px-2 py-2 text-left hover:bg-sky-50">
+                  <p className="pr-12 text-sm font-medium leading-snug text-slate-800 line-clamp-2">{item.name}</p>
+                  <span className="absolute right-2 top-2 text-xs font-semibold text-slate-600">₹{shelf.toFixed(0)}</span>
+                  {disc > 0 && <p className="text-[10px] text-slate-400 line-through">MRP ₹{mrp.toFixed(0)}</p>}
+                  {packs != null && packs <= 0 && <p className="text-[10px] font-medium text-amber-700">Out of packs</p>}
                 </button>
               );
             })}
@@ -758,6 +821,19 @@ export default function DepartmentCounter() {
             {cartPanel}
           </div>
         </div>
+      )}
+      {looseItem && (
+        <LooseAsk
+          name={looseItem.name}
+          unit={looseItem.unit || 'kg'}
+          rate={round2(num(looseItem.mrp) * (1 - num(looseItem.discount_percent) / 100))}
+          onClose={() => setLooseItem(null)}
+          onAdd={(qty) => {
+            const item = looseItem;
+            setLooseItem(null);
+            addItem(item, qty);
+          }}
+        />
       )}
     </div>
   );

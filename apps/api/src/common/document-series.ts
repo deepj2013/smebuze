@@ -11,6 +11,10 @@ export interface DocumentSeriesConfig {
   prefix: string;
   separator: '-' | '/';
   include_fy: boolean;
+  /** before: INV/2627/0001. after: 0001/2026-27. */
+  fy_position: 'before' | 'after';
+  /** short: 2627. full: 2026-27. */
+  fy_format: 'short' | 'full';
   pad: number;
   start_number: number;
   effective_from: string;
@@ -26,10 +30,10 @@ const TABLES: Record<SeriesKind, string> = {
 };
 
 export const DEFAULT_SERIES: DocumentSeriesSettings = {
-  invoice: { enabled: false, prefix: 'INV', separator: '/', include_fy: true, pad: 4, start_number: 1, effective_from: '' },
-  credit_note: { enabled: false, prefix: 'CN', separator: '/', include_fy: true, pad: 4, start_number: 1, effective_from: '' },
-  sales_debit_note: { enabled: false, prefix: 'DN', separator: '/', include_fy: true, pad: 4, start_number: 1, effective_from: '' },
-  purchase_debit_note: { enabled: false, prefix: 'PDN', separator: '/', include_fy: true, pad: 4, start_number: 1, effective_from: '' },
+  invoice: { enabled: false, prefix: 'INV', separator: '/', include_fy: true, fy_position: 'before', fy_format: 'short', pad: 4, start_number: 1, effective_from: '' },
+  credit_note: { enabled: false, prefix: 'CN', separator: '/', include_fy: true, fy_position: 'before', fy_format: 'short', pad: 4, start_number: 1, effective_from: '' },
+  sales_debit_note: { enabled: false, prefix: 'DN', separator: '/', include_fy: true, fy_position: 'before', fy_format: 'short', pad: 4, start_number: 1, effective_from: '' },
+  purchase_debit_note: { enabled: false, prefix: 'PDN', separator: '/', include_fy: true, fy_position: 'before', fy_format: 'short', pad: 4, start_number: 1, effective_from: '' },
 };
 
 export const CREDIT_NOTE_REASONS = [
@@ -69,11 +73,19 @@ export function noteAffectsBalance(status: string | null | undefined): boolean {
   return status === 'issued' || status === 'posted';
 }
 
-/** Indian FY code. 9 Oct 2026 → 2627 (1 Apr 2026 – 31 Mar 2027). */
-export function financialYearCode(isoDate: string): string {
+/** Indian financial year. 9 Oct 2026 → short 2627, full 2026-27 (1 Apr 2026 – 31 Mar 2027). */
+export function financialYearParts(isoDate: string): { short: string; full: string } {
   const [y, m] = isoDate.slice(0, 10).split('-').map(Number);
-  const start = m >= 4 ? y : y - 1;
-  return `${String(start).slice(-2)}${String(start + 1).slice(-2)}`;
+  const start = (m || 1) >= 4 ? y : y - 1;
+  const end = start + 1;
+  return {
+    short: `${String(start).slice(-2)}${String(end).slice(-2)}`,
+    full: `${start}-${String(end).slice(-2)}`,
+  };
+}
+
+export function financialYearCode(isoDate: string): string {
+  return financialYearParts(isoDate).short;
 }
 
 export function isoDateOnly(value: string | Date | null | undefined): string {
@@ -86,13 +98,16 @@ export function normalizeSeriesConfig(raw: unknown, fallback: DocumentSeriesConf
   const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const pad = Number(r.pad);
   const start = Number(r.start_number);
-  const prefix = String(r.prefix ?? fallback.prefix).trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+  const prefixSource = r.prefix === undefined || r.prefix === null ? fallback.prefix : String(r.prefix);
+  const prefix = prefixSource.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
   const from = typeof r.effective_from === 'string' ? r.effective_from.slice(0, 10) : '';
   return {
     enabled: r.enabled === true,
-    prefix: prefix || fallback.prefix,
+    prefix,
     separator: r.separator === '-' ? '-' : '/',
     include_fy: r.include_fy !== false,
+    fy_position: r.fy_position === 'after' ? 'after' : 'before',
+    fy_format: r.fy_format === 'full' ? 'full' : 'short',
     pad: Number.isFinite(pad) ? Math.min(6, Math.max(3, Math.round(pad))) : fallback.pad,
     start_number: Number.isFinite(start) && start >= 1 ? Math.round(start) : fallback.start_number,
     effective_from: /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : '',
@@ -109,22 +124,33 @@ export function parseDocumentSeries(settings: Record<string, unknown> | null | u
   };
 }
 
+function seriesYear(cfg: DocumentSeriesConfig, isoDate: string): string {
+  if (!cfg.include_fy) return '';
+  const parts = financialYearParts(isoDate);
+  return cfg.fy_format === 'full' ? parts.full : parts.short;
+}
+
 export function formatSeriesNumber(cfg: DocumentSeriesConfig, seq: number, isoDate: string): string {
   const body = String(seq).padStart(cfg.pad, '0');
-  if (cfg.include_fy) return `${cfg.prefix}${cfg.separator}${financialYearCode(isoDate)}${cfg.separator}${body}`;
-  return `${cfg.prefix}${cfg.separator}${body}`;
+  const year = seriesYear(cfg, isoDate);
+  const bits: string[] = [];
+  if (cfg.prefix) bits.push(cfg.prefix);
+  if (year && cfg.fy_position !== 'after') bits.push(year);
+  bits.push(body);
+  if (year && cfg.fy_position === 'after') bits.push(year);
+  return bits.join(cfg.separator);
 }
 
 export function validateSeriesConfig(cfg: DocumentSeriesConfig): string | null {
   if (!cfg.enabled) return null;
-  if (!/^[A-Z0-9]{1,8}$/.test(cfg.prefix)) return 'Prefix must be 1–8 letters or digits.';
+  if (cfg.prefix && !/^[A-Z0-9]{1,8}$/.test(cfg.prefix)) return 'Prefix must be 1–8 letters or digits, or leave it blank.';
   if (cfg.separator !== '-' && cfg.separator !== '/') return 'Separator must be - or /.';
   if (cfg.pad < 3 || cfg.pad > 6) return 'Number width must be 3 to 6 digits.';
   if (cfg.start_number < 1) return 'Starting number must be 1 or more.';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(cfg.effective_from)) return 'Choose the date this series starts.';
   const sample = formatSeriesNumber(cfg, cfg.start_number, cfg.effective_from);
   if (sample.length > 16) {
-    return `Sample number ${sample} is ${sample.length} characters. GST allows 16. Shorten the prefix or digit width.`;
+    return `Sample number ${sample} is ${sample.length} characters. GST allows 16. Shorten the prefix, use the short year, or reduce the digit width.`;
   }
   return null;
 }
@@ -135,10 +161,14 @@ function escapeReg(value: string): string {
 
 export function nextSeriesSequence(cfg: DocumentSeriesConfig, existingNumbers: string[], isoDate: string): number {
   const sep = escapeReg(cfg.separator);
-  const prefix = escapeReg(cfg.prefix);
-  const re = cfg.include_fy
-    ? new RegExp(`^${prefix}${sep}${financialYearCode(isoDate)}${sep}(\\d+)$`)
-    : new RegExp(`^${prefix}${sep}(\\d+)$`);
+  const year = seriesYear(cfg, isoDate);
+  const prefixRe = cfg.prefix ? `${escapeReg(cfg.prefix)}${sep}` : '';
+  const yearRe = year ? escapeReg(year) : '';
+  const re = year && cfg.fy_position === 'after'
+    ? new RegExp(`^${prefixRe}(\\d+)${sep}${yearRe}$`)
+    : year
+      ? new RegExp(`^${prefixRe}${yearRe}${sep}(\\d+)$`)
+      : new RegExp(`^${prefixRe}(\\d+)$`);
   let max = cfg.start_number - 1;
   for (const n of existingNumbers) {
     const match = re.exec(String(n).trim());
@@ -172,7 +202,7 @@ export function describeSeries(cfg: DocumentSeriesConfig, isoDate: string, exist
   }
   const number = formatSeriesNumber(cfg, nextSeriesSequence(cfg, existingNumbers, isoDate), isoDate);
   if (number.length > 16) {
-    return { applies: false, number: null, message: `${number} is longer than 16 characters. Shorten the prefix.` };
+    return { applies: false, number: null, message: `${number} is longer than 16 characters. Shorten the prefix or use the short year.` };
   }
   return { applies: true, number, message: `Next number on ${isoDate} is ${number}.` };
 }
@@ -219,7 +249,7 @@ export async function allocateDocumentNumber(
     const seq = nextSeriesSequence(cfg, numbers, date) + attempt;
     const number = formatSeriesNumber(cfg, seq, date);
     if (number.length > 16) {
-      throw new BadRequestException(`Series number ${number} exceeds 16 characters. Shorten the prefix under Invoice series.`);
+      throw new BadRequestException(`Series number ${number} exceeds 16 characters. Shorten the prefix or use the short year under Invoice series.`);
     }
     if (!numbers.includes(number)) return number;
   }

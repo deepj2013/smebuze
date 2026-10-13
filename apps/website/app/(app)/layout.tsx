@@ -45,11 +45,13 @@ import {
   Ticket,
   KeyRound,
   Handshake,
+  Cable,
 } from 'lucide-react';
 import { parseTenantBranding } from '@/lib/branding';
 import { getStaticUrl } from '@/lib/api';
 import { isFloorBusinessType, isPosBusinessType } from '@/lib/business-types';
 import { needsWorkspaceSetup, resolveEnabledModules } from '@/lib/workspace-setup';
+import { filterNavByHidden, parseNavHidden } from '@/lib/nav-menu-config';
 import { applyWorkspaceThemeVars, resolveWorkspaceTheme } from '@/lib/variant-theme';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -182,7 +184,9 @@ const nav: Array<{
       { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
       { label: 'Roles', href: '/organization/roles', icon: Layers, permission: 'org.role.manage' },
       { label: 'Departments', href: '/organization/departments', icon: Layers, permission: 'org.user.view' },
+      { label: 'Menus', href: '/organization/menus', icon: ListOrdered, permission: 'org.company.update' },
       { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
+      { label: 'Devices', href: '/organization/devices', icon: Cable, permission: 'org.company.update' },
       { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
       { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
       { label: 'Public website', href: '/website', icon: Store, permission: 'org.company.update' },
@@ -277,7 +281,9 @@ const starIceNav: typeof nav = [
       { label: 'Companies', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
       { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
       { label: 'Roles', href: '/organization/roles', icon: Layers, permission: 'org.role.manage' },
+      { label: 'Menus', href: '/organization/menus', icon: ListOrdered, permission: 'org.company.update' },
       { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
+      { label: 'Devices', href: '/organization/devices', icon: Cable, permission: 'org.company.update' },
       { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
       { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
       { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
@@ -340,7 +346,9 @@ const iceCrestNav: typeof nav = [
   { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
     { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
     { label: 'Users & roles', href: '/organization/users', icon: Users, permission: 'org.user.view' },
+    { label: 'Menus', href: '/organization/menus', icon: ListOrdered, permission: 'org.company.update' },
     { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
+    { label: 'Devices', href: '/organization/devices', icon: Cable, permission: 'org.company.update' },
     { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
     { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
     { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
@@ -366,6 +374,9 @@ const restaurantFloorNav: typeof nav = [
   { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
     { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
     { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
+    { label: 'Menus', href: '/organization/menus', icon: ListOrdered, permission: 'org.company.update' },
+    { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
+    { label: 'Devices', href: '/organization/devices', icon: Cable, permission: 'org.company.update' },
     { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
     { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
     { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
@@ -393,8 +404,10 @@ const departmentStoreNav: typeof nav = [
   { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
     { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
     { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
+    { label: 'Menus', href: '/organization/menus', icon: ListOrdered, permission: 'org.company.update' },
     { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
     { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
+    { label: 'Devices', href: '/organization/devices', icon: Cable, permission: 'org.company.update' },
   ]},
 ];
 
@@ -422,6 +435,9 @@ const posNav: typeof nav = [
   { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
     { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
     { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
+    { label: 'Menus', href: '/organization/menus', icon: ListOrdered, permission: 'org.company.update' },
+    { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
+    { label: 'Devices', href: '/organization/devices', icon: Cable, permission: 'org.company.update' },
     { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
     { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
     { label: 'Public website', href: '/website', icon: Store, permission: 'org.company.update' },
@@ -558,6 +574,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     user?.isSuperAdmin ? ['*'] : (user?.permissions ?? []),
     user?.isSuperAdmin ? undefined : enabledModules,
   );
+  // Ice Crest keeps its dedicated sidebar; menu show/hide is for other shop types.
+  if (!user?.isSuperAdmin && !isIceCrest) {
+    visibleNav = filterNavByHidden(visibleNav, parseNavHidden(tenant?.settings ?? null));
+  }
   if (user?.isSuperAdmin && !visibleNav.some((i) => i.label === 'Admin')) {
     const adminItem = nav.find((i) => i.label === 'Admin');
     if (adminItem) visibleNav = [...visibleNav, adminItem];

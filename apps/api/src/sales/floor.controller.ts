@@ -55,6 +55,59 @@ export class FloorController {
     return this.floor.setKitchenStatus(ctx, id, body.kitchen_status);
   }
 
+  @Get('counter')
+  @RequirePermissions('sales.order.view')
+  counter(@CurrentTenant() ctx: TenantContext) {
+    return this.floor.counterBoard(ctx);
+  }
+
+  @Post('counter/table')
+  @RequirePermissions('sales.order.create')
+  saveTable(
+    @Body()
+    body: {
+      company_id?: string;
+      table_no: string;
+      customer_id?: string;
+      guest_name?: string;
+      guest_phone?: string;
+      bill_total?: number;
+      release?: boolean;
+      lines: Array<{ item_id: string; qty: number; rate?: number }>;
+    },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.floor.saveTableTab(ctx, body);
+  }
+
+  @Post('counter/delivery')
+  @RequirePermissions('sales.order.create')
+  saveDelivery(
+    @Body()
+    body: {
+      id?: string;
+      company_id?: string;
+      customer_id?: string;
+      name?: string;
+      phone?: string;
+      address?: string;
+      bill_total?: number;
+      lines: Array<{ item_id: string; qty: number; rate?: number }>;
+    },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.floor.saveDelivery(ctx, body);
+  }
+
+  @Post('counter/close')
+  @RequirePermissions('sales.order.create')
+  closeCounter(
+    @Body() body: { kind?: 'table' | 'delivery'; id?: string; table_no?: string; invoice_id?: string },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.floor.closeCounter(ctx, body || {});
+  }
+
   @Post('tickets/:id/bill')
   @RequirePermissions('sales.invoice.create')
   bill(

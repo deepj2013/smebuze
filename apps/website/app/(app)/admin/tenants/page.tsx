@@ -1,8 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { SIGNUP_BUSINESS_TYPES } from '@/lib/business-types';
+import {
+  NAV_LOCKED_KEYS,
+  NAV_MENU_CATALOG,
+  navKey,
+  parseNavHidden,
+  sanitizeNavHidden,
+} from '@/lib/nav-menu-config';
 
 interface Tenant {
   id: string;
@@ -28,7 +35,28 @@ function accountKind(t: Tenant): AccountKind {
 }
 
 const PLANS = ['basic', 'advanced', 'enterprise', 'ai_pro'];
+/** Core modules. Empty Features = all core modules. Opt-in packs below are only on when listed. */
 const FEATURES = ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'bulk_upload', 'audit', 'ai', 'whatsapp', 'storefront', 'catalog', 'lead_hub'];
+/** Must be turned on by universal admin for that tenant — not self-serve onboarding. */
+const OPT_IN_PACKS = [
+  { id: 'recipe_production', label: 'Recipe / production costing', hint: 'Raw materials → finished goods (e.g. Gulab Jamun). Tenant admin then maintains recipes.' },
+  { id: 'accounting_export', label: 'Accounting export', hint: 'Export day-book files for Tally, Busy, Marg upload. No live login to those apps.' },
+] as const;
+
+function featureList(raw: string | undefined): string[] {
+  return (raw || '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+function hasOptIn(raw: string | undefined, id: string): boolean {
+  return featureList(raw).includes(id);
+}
+
+function setOptIn(raw: string | undefined, id: string, on: boolean): string {
+  const set = new Set(featureList(raw));
+  if (on) set.add(id);
+  else set.delete(id);
+  return Array.from(set).join(', ');
+}
 
 export default function AdminTenantsPage() {
   const [list, setList] = useState<Tenant[]>([]);
@@ -47,12 +75,15 @@ export default function AdminTenantsPage() {
     books_locked?: boolean;
     books_through?: string;
     account_kind?: AccountKind;
+    nav_hidden?: string[];
   }>({});
   const [q, setQ] = useState('');
   const [kindFilter, setKindFilter] = useState<'all' | AccountKind>('all');
   const [users, setUsers] = useState<{ id: string; email: string; name?: string | null; is_active?: boolean; email_verified?: boolean }[]>([]);
   const [userEdits, setUserEdits] = useState<Record<string, string>>({});
   const [userBusy, setUserBusy] = useState<string | null>(null);
+  const [menusOpen, setMenusOpen] = useState(false);
+  const hiddenSet = useMemo(() => new Set(editForm.nav_hidden ?? []), [editForm.nav_hidden]);
 
   const load = async () => {
     const { data, error: err } = await apiGet<Tenant[] | { data: Tenant[] }>('tenants');
@@ -66,10 +97,38 @@ export default function AdminTenantsPage() {
     load();
   }, []);
 
+  const toggleNavKey = (key: string, show: boolean) => {
+    if (NAV_LOCKED_KEYS.has(key)) return;
+    setEditForm((f) => {
+      const next = new Set(f.nav_hidden ?? []);
+      if (show) next.delete(key);
+      else next.add(key);
+      return { ...f, nav_hidden: Array.from(next) };
+    });
+  };
+
+  const toggleNavGroup = (label: string, childKeys: string[], show: boolean) => {
+    const groupKey = navKey({ label });
+    setEditForm((f) => {
+      const next = new Set(f.nav_hidden ?? []);
+      if (show) {
+        next.delete(groupKey);
+        childKeys.forEach((k) => next.delete(k));
+      } else {
+        if (!NAV_LOCKED_KEYS.has(groupKey)) next.add(groupKey);
+        childKeys.forEach((k) => {
+          if (!NAV_LOCKED_KEYS.has(k)) next.add(k);
+        });
+      }
+      return { ...f, nav_hidden: Array.from(next) };
+    });
+  };
+
   const handleEdit = (t: Tenant) => {
     setEditingId(t.id);
     setError(null);
     setNotice(null);
+    setMenusOpen(false);
     setEditForm({
       name: t.name,
       plan: t.plan ?? 'basic',
@@ -81,6 +140,7 @@ export default function AdminTenantsPage() {
       books_locked: Boolean((t.settings?.period_lock as { enabled?: boolean } | undefined)?.enabled),
       books_through: String((t.settings?.period_lock as { through?: string } | undefined)?.through ?? '').slice(0, 7),
       account_kind: accountKind(t),
+      nav_hidden: parseNavHidden(t.settings ?? null),
     });
     setUsers([]);
     setUserEdits({});
@@ -112,6 +172,7 @@ export default function AdminTenantsPage() {
           through: editForm.books_through || '',
         },
         account_kind: editForm.account_kind === 'real' ? 'real' : 'demo',
+        nav_hidden: sanitizeNavHidden(editForm.nav_hidden ?? []),
       },
     });
     if (err) setError(err);
@@ -135,7 +196,7 @@ export default function AdminTenantsPage() {
     <div>
       <h1 className="text-xl font-semibold text-slate-800 mb-1">Platform tenants</h1>
       <p className="text-sm text-slate-600 mb-4">
-        You are signed in as the universal (platform) admin. Mark each workspace as a demo or a real account, then pause it, change plan, features, licence, subscription end date, and business type. Open Configure to change login emails and send a forgot-password mail. Your menu lists every section a tenant can open.
+        You are signed in as the universal (platform) admin. You set up each tenant account here — demo vs real, plan, business type, which menus/submenus that workspace shows, and opt-in packs such as recipe costing or Tally/Busy/Marg export. Shop staff do not turn packs on themselves. Tenant admins can also hide menus under Organization → Menus for their own workspace.
       </p>
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
       {notice && <p className="mb-3 text-sm text-emerald-700">{notice}</p>}
@@ -257,6 +318,24 @@ export default function AdminTenantsPage() {
                           />
                           Workspace is active (uncheck to pause login)
                         </label>
+                        <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50/80 p-3 space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-amber-950">Opt-in packs (you enable per tenant)</p>
+                          <p className="text-xs text-amber-900/90">These stay off until you tick them. They do not appear on cashier or staff menus as setup. After you enable, the tenant admin can use the screens.</p>
+                          {OPT_IN_PACKS.map((pack) => (
+                            <label key={pack.id} className="flex items-start gap-2 text-sm text-slate-800">
+                              <input
+                                type="checkbox"
+                                className="mt-1"
+                                checked={hasOptIn(editForm.features, pack.id)}
+                                onChange={(e) => setEditForm((f) => ({ ...f, features: setOptIn(f.features, pack.id, e.target.checked) }))}
+                              />
+                              <span>
+                                <span className="font-medium">{pack.label}</span>
+                                <span className="block text-xs text-slate-600">{pack.hint}</span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
                         <div className="sm:col-span-2 flex flex-wrap gap-2 items-center">
                           <button
                             type="button"
@@ -280,9 +359,87 @@ export default function AdminTenantsPage() {
                             Toggle Lead hub (live feeds + ingest)
                           </button>
                           <span className="text-xs text-slate-500">
-                            Also include <code>lead_hub</code> in Features above, or leave Features empty for all modules.
+                            Also include <code>lead_hub</code> in Features above, or leave Features empty for all core modules (opt-in packs still need a tick).
                           </span>
                         </div>
+                      </div>
+                      <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+                        <button
+                          type="button"
+                          onClick={() => setMenusOpen((o) => !o)}
+                          className="flex w-full items-center justify-between text-left text-sm font-semibold text-slate-900"
+                        >
+                          <span>Menus &amp; submenus for this tenant</span>
+                          <span className="text-xs font-normal text-slate-500">
+                            {(editForm.nav_hidden?.length ?? 0) > 0
+                              ? `${editForm.nav_hidden!.length} hidden · ${menusOpen ? 'Hide' : 'Edit'}`
+                              : menusOpen
+                                ? 'Hide'
+                                : 'Show all · Edit'}
+                          </span>
+                        </button>
+                        <p className="mt-1 text-xs text-slate-600">
+                          Untick to hide from this workspace sidebar. Shop type and permissions still apply. Tenant admin can change the same list under Organization → Menus.
+                        </p>
+                        {menusOpen && (
+                          <div className="mt-3 max-h-80 space-y-2 overflow-y-auto border-t border-slate-100 pt-3">
+                            <div className="mb-2 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditForm((f) => ({ ...f, nav_hidden: [] }))}
+                                className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700"
+                              >
+                                Show all
+                              </button>
+                            </div>
+                            {NAV_MENU_CATALOG.map((node) => {
+                              const groupKey = navKey(node);
+                              const childKeys = (node.children || []).map((c) => navKey(c));
+                              const groupLocked = NAV_LOCKED_KEYS.has(groupKey);
+                              const groupOn = !hiddenSet.has(groupKey);
+                              return (
+                                <div key={groupKey} className="rounded-lg border border-slate-100 bg-slate-50/80 p-2">
+                                  <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                                    <input
+                                      type="checkbox"
+                                      checked={groupOn}
+                                      disabled={groupLocked}
+                                      onChange={(e) =>
+                                        node.children?.length
+                                          ? toggleNavGroup(node.label, childKeys, e.target.checked)
+                                          : toggleNavKey(groupKey, e.target.checked)
+                                      }
+                                    />
+                                    {node.label}
+                                    {groupLocked && <span className="text-[10px] font-normal text-slate-500">Always on</span>}
+                                  </label>
+                                  {node.children && (
+                                    <ul className="mt-1 space-y-0.5 border-l border-slate-200 pl-3">
+                                      {node.children.map((child) => {
+                                        const key = navKey(child);
+                                        const locked = NAV_LOCKED_KEYS.has(key);
+                                        return (
+                                          <li key={key}>
+                                            <label className="flex items-center gap-2 text-xs text-slate-700">
+                                              <input
+                                                type="checkbox"
+                                                checked={!hiddenSet.has(key) && groupOn}
+                                                disabled={locked || !groupOn}
+                                                onChange={(e) => toggleNavKey(key, e.target.checked)}
+                                              />
+                                              {child.label}
+                                              {locked && <span className="text-[10px] text-slate-400">Always on</span>}
+                                            </label>
+                                          </li>
+                                        );
+                                      })}
+                                    </ul>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                       <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
                         <label className="flex items-center gap-2 text-sm font-medium text-slate-800">

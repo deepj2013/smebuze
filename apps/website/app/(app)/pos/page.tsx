@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPatch, apiPost } from '@/lib/api';
+import LooseAsk from './LooseAsk';
+import { formatLooseQty, isLooseItem } from '@/lib/loose-sale';
 import { useToast } from '../components/ToastContext';
 import { businessTypeMeta, isFloorBusinessType, isStockTrackedPos, posSellingRate } from '@/lib/business-types';
-import { Minus, Plus, Search, Trash2, Banknote, Smartphone, CreditCard } from 'lucide-react';
-import PosSwitcher from '../components/PosSwitcher';
-import FloorSwitcher from '../components/FloorSwitcher';
+import { Minus, Plus, Search, Banknote, Smartphone, CreditCard, ShoppingBag, UtensilsCrossed, Bike } from 'lucide-react';
 import BarcodeCapture from '../components/BarcodeCapture';
 import { useHidBarcode } from '@/lib/use-hid-barcode';
 import { playScanBeep } from '@/lib/pos-beep';
@@ -18,11 +18,13 @@ import {
   loadOutbox,
   printCounterSlip,
   queueBill,
+  rememberCounterCustomer,
   saveHeld,
+  shopFromCompany,
   syncOutbox,
   type HeldBill,
 } from '@/lib/counter-desk';
-import { KITCHEN_LABEL, statusClass, type FloorSnapshot, type FloorTicket } from '@/lib/floor';
+import { minutesAgo, type CounterBoard, type DeliveryOrder, type FloorLine } from '@/lib/floor';
 import DepartmentCounter from './DepartmentCounter';
 
 interface PosItem {
@@ -37,13 +39,14 @@ interface PosItem {
   sale_price?: string | number | null;
   discount_percent?: string | number | null;
   tax_rate?: string | number | null;
-  image_urls?: string[];
   current_stock?: number;
+  metadata?: Record<string, unknown> | null;
 }
 
 interface Customer {
   id: string;
   name: string;
+  phone?: string | null;
   tags?: string[];
   segment?: string | null;
 }
@@ -51,6 +54,8 @@ interface Customer {
 interface Company {
   id: string;
   name: string;
+  gstin?: string | null;
+  address?: Record<string, unknown> | null;
 }
 
 interface CartLine {
@@ -64,6 +69,15 @@ interface CartLine {
 }
 
 type PayMode = 'cash' | 'upi' | 'card' | 'credit';
+type OrderType = 'takeaway' | 'dinein' | 'delivery';
+
+const ORDER_TYPES: { id: OrderType; label: string; hint: string }[] = [
+  { id: 'takeaway', label: 'Takeaway', hint: 'Pay and go' },
+  { id: 'dinein', label: 'Dine-in', hint: 'Tables' },
+  { id: 'delivery', label: 'Delivery', hint: 'Address' },
+];
+
+const MODE_ICON = { takeaway: ShoppingBag, dinein: UtensilsCrossed, delivery: Bike };
 
 function monthEnd(): string {
   const d = new Date();
@@ -81,7 +95,23 @@ export default function PosPage() {
   const [customerId, setCustomerId] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
   const [category, setCategory] = useState('all');
+  const [menuQuery, setMenuQuery] = useState('');
   const [query, setQuery] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
+  const [guestAddress, setGuestAddress] = useState('');
+  const [savedGuest, setSavedGuest] = useState<{ id: string; name: string; phone: string } | null>(null);
+  const [orderType, setOrderType] = useState<OrderType>('takeaway');
+  const [activeTable, setActiveTable] = useState<string | null>(null);
+  const [activeDeliveryId, setActiveDeliveryId] = useState<string | null>(null);
+  const [board, setBoard] = useState<CounterBoard | null>(null);
+  const [editingTables, setEditingTables] = useState(false);
+  const [tableDraft, setTableDraft] = useState<string[]>([]);
+  const [newTable, setNewTable] = useState('');
+  const [savingTables, setSavingTables] = useState(false);
+  const [clock, setClock] = useState(0);
+  const [looseItem, setLooseItem] = useState<PosItem | null>(null);
+  const [shortCode, setShortCode] = useState('');
   const [payMode, setPayMode] = useState<PayMode>('cash');
   const [cashTendered, setCashTendered] = useState('');
   const [busy, setBusy] = useState(false);
@@ -89,9 +119,6 @@ export default function PosPage() {
   const [short, setShort] = useState<{ item_id: string; name: string; current_stock: number }[]>([]);
   const [todayBills, setTodayBills] = useState<{ id: string; number: string; total?: string | number }[]>([]);
   const [scanHint, setScanHint] = useState<string | null>(null);
-  const [floor, setFloor] = useState<FloorSnapshot | null>(null);
-  const [billBusy, setBillBusy] = useState<string | null>(null);
-  const [showTakeaway, setShowTakeaway] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [tenantKey, setTenantKey] = useState('');
   const [held, setHeld] = useState<HeldBill[]>([]);
@@ -140,10 +167,12 @@ export default function PosPage() {
       if (cancelled) return;
       setBusinessType(type);
       if (type === 'department_store') return;
-      if (isFloorBusinessType(type)) {
-        apiGet<FloorSnapshot>('sales/floor').then((r) => { if (r.data) setFloor(r.data); });
-      }
+      const pullBoard = async () => {
+        const { data } = await apiGet<CounterBoard>('sales/floor/counter');
+        if (!cancelled && data && Array.isArray(data.tables)) setBoard(data);
+      };
       await loadCatalog();
+      await pullBoard();
       const [custRes, coRes] = await Promise.all([
         apiGet<Customer[] | { data: Customer[] }>('crm/customers'),
         apiGet<Company[] | { data: Company[] }>('organization/companies'),
@@ -156,12 +185,17 @@ export default function PosPage() {
       const walkIn = custList.find((c) => c.tags?.includes('walk_in') || /walk-?in/i.test(c.name));
       if (walkIn) setCustomerId(walkIn.id);
       else if (custList[0]) setCustomerId(custList[0].id);
-      timer = window.setInterval(() => { loadCatalog(); }, 20000);
+      timer = window.setInterval(() => { loadCatalog(); void pullBoard(); }, 20000);
     })();
     return () => {
       cancelled = true;
       if (timer) window.clearInterval(timer);
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock((n) => n + 1), 30000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const categories = useMemo(() => {
@@ -172,31 +206,43 @@ export default function PosPage() {
     return ['all', ...Array.from(set).sort()];
   }, [items]);
 
+  const shownCategories = useMemo(() => {
+    const q = menuQuery.trim().toLowerCase();
+    if (!q) return categories;
+    return categories.filter((c) => c === 'all' || c.toLowerCase().includes(q));
+  }, [categories, menuQuery]);
+
   const visibleItems = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const code = shortCode.trim().toLowerCase();
     return items.filter((i) => {
       if (category !== 'all' && (i.category || '') !== category) return false;
-      if (!q) return true;
-      return (
-        i.name.toLowerCase().includes(q) ||
-        (i.sku || '').toLowerCase().includes(q) ||
-        (i.barcode || '').toLowerCase().includes(q)
-      );
+      const sku = (i.sku || '').toLowerCase();
+      const barcode = (i.barcode || '').toLowerCase();
+      if (code && !sku.startsWith(code) && !barcode.startsWith(code)) return false;
+      if (!tokens.length) return true;
+      const hay = `${i.name.toLowerCase()} ${sku} ${barcode}`;
+      return tokens.every((token) => hay.includes(token));
     });
-  }, [items, category, query]);
+  }, [items, category, query, shortCode]);
 
-  const addItem = useCallback((item: PosItem) => {
+  const addItem = useCallback((item: PosItem, qty = 1) => {
+    if (qty === 1 && isLooseItem(item)) {
+      setLooseItem(item);
+      return;
+    }
     const rate = posSellingRate(item);
     const tax = Number(item.tax_rate ?? 0);
+    const addQty = qty > 0 ? qty : 1;
     setCart((prev) => {
-      const existing = prev.find((l) => l.item_id === item.id);
-      if (existing) return prev.map((l) => (l.item_id === item.id ? { ...l, qty: l.qty + 1 } : l));
+      const existing = prev.find((l) => l.item_id === item.id && l.rate === rate);
+      if (existing) return prev.map((l) => (l.item_id === item.id && l.rate === rate ? { ...l, qty: Math.round((l.qty + addQty) * 10000) / 10000 } : l));
       return [
         ...prev,
         {
           item_id: item.id,
           name: item.name,
-          qty: 1,
+          qty: addQty,
           rate,
           tax_rate: tax,
           hsn_sac: item.hsn_sac || '9983',
@@ -204,6 +250,7 @@ export default function PosPage() {
         },
       ];
     });
+    setCartOpen(true);
   }, []);
 
   const applyCode = useCallback(
@@ -246,7 +293,8 @@ export default function PosPage() {
   const setQty = (itemId: string, qty: number) => {
     setCart((prev) => {
       if (qty <= 0) return prev.filter((l) => l.item_id !== itemId);
-      return prev.map((l) => (l.item_id === itemId ? { ...l, qty: round2(qty) } : l));
+      const next = Math.round(qty * 10000) / 10000;
+      return prev.map((l) => (l.item_id === itemId ? { ...l, qty: next } : l));
     });
   };
 
@@ -264,9 +312,9 @@ export default function PosPage() {
   const tendered = Number(cashTendered || 0);
   const change = payMode === 'cash' && tendered > 0 ? Math.max(0, tendered - totals.total) : 0;
 
-  const shopCounter = !!businessType && businessType !== 'ice_crest' && businessType !== 'department_store' && !floorMode;
+  const shopCounter = !!businessType && businessType !== 'ice_crest' && businessType !== 'department_store';
 
-  const charge = async () => {
+  const charge = async (printSlip = true) => {
     if (!cart.length) {
       showError('Add at least one item to the bill.');
       return;
@@ -275,11 +323,34 @@ export default function PosPage() {
       showError('Company is missing. Add one under Organization.');
       return;
     }
-    if (!customerId) {
+    if (!customerId && !guestPhone.trim()) {
       showError('Choose Walk-in / Counter or a customer.');
       return;
     }
-    if (payMode === 'credit' && /walk-?in/i.test(customers.find((c) => c.id === customerId)?.name || '')) {
+    if (orderType === 'dinein' && !activeTable) {
+      showError('Choose a table for dine-in.');
+      return;
+    }
+    if (orderType === 'delivery' && guestAddress.trim().length < 3) {
+      showError('Add the delivery address.');
+      return;
+    }
+    const remembered = await rememberCounterCustomer({
+      name: guestName,
+      phone: guestPhone,
+      address: orderType === 'delivery' ? guestAddress : undefined,
+      customers,
+      fallbackId: customerId,
+      companyId,
+    });
+    const billCustomerId = remembered?.id || customerId;
+    if (remembered) {
+      setSavedGuest(remembered);
+      setCustomerId(remembered.id);
+      setCustomers((prev) => (prev.some((c) => c.id === remembered.id) ? prev.map((c) => (c.id === remembered.id ? { ...c, name: remembered.name, phone: remembered.phone } : c)) : [{ id: remembered.id, name: remembered.name, phone: remembered.phone, tags: ['counter'] }, ...prev]));
+    }
+    const billName = remembered?.name || customers.find((c) => c.id === billCustomerId)?.name || '';
+    if (payMode === 'credit' && /walk-?in/i.test(billName) && !remembered) {
       showError('Credit needs a named customer, not Walk-in.');
       return;
     }
@@ -291,7 +362,7 @@ export default function PosPage() {
     const credit = shopCounter && payMode === 'credit';
     const invoiceBody = {
       company_id: companyId,
-      customer_id: customerId,
+      customer_id: billCustomerId,
       invoice_date: today,
       due_date: credit ? monthEnd() : today,
       gst_applicable: cart.some((l) => l.tax_rate > 0),
@@ -313,41 +384,99 @@ export default function PosPage() {
       amount: totals.total,
       payment_date: today,
       mode: payMode === 'credit' ? 'cash' : payMode,
-      reference: payMode === 'cash' ? 'POS cash' : payMode === 'upi' ? 'POS UPI' : 'POS card',
+      reference: `POS ${orderType} ${payMode}`,
     };
     const clearBill = () => {
       setCart([]);
       setCashTendered('');
       setCartOpen(false);
+      setGuestName('');
+      setGuestPhone('');
+      setGuestAddress('');
+      setSavedGuest(null);
+      setActiveTable(null);
+      setActiveDeliveryId(null);
+    };
+    const place = orderType === 'dinein' && activeTable
+      ? `Dine-in · Table ${activeTable}`
+      : orderType === 'delivery'
+        ? `Delivery · ${guestAddress.trim()}`
+        : 'Takeaway';
+    const paidBy = credit ? 'Credit' : payMode === 'upi' ? 'UPI' : payMode === 'card' ? 'Card' : 'Cash';
+    const printSlipNow = (number: string, total: number, footer?: string) => {
+      if (!printSlip) return;
+      void printCounterSlip({
+        ...shopFromCompany(companies.find((c) => c.id === companyId)),
+        number,
+        date: today,
+        billTo: orderType === 'dinein' && activeTable
+          ? `Table ${activeTable}`
+          : remembered?.name || customers.find((c) => c.id === billCustomerId)?.name || 'Walk-in',
+        lines: cart.map((l) => ({ description: l.name, qty: l.qty, rate: l.rate, amount: round2(l.qty * l.rate) })),
+        taxable: totals.subtotal,
+        cgst: round2(totals.tax / 2),
+        sgst: round2(totals.tax / 2),
+        total,
+        paid: credit ? 0 : total,
+        due: credit ? total : 0,
+        paidBy,
+        footer: footer || [place, remembered?.phone].filter(Boolean).join(' · '),
+      }).catch(() => undefined);
     };
     if (shopCounter && typeof navigator !== 'undefined' && navigator.onLine === false) {
       const queued = queueBill({ invoice: invoiceBody, payment: paymentBody });
       setWaiting(loadOutbox().length);
       clearBill();
       success('Saved on this device. Stock updates when the internet is back.');
-      void printCounterSlip({
-        company: companies.find((c) => c.id === companyId)?.name || 'Shop',
-        number: queued.id,
-        date: today,
-        billTo: customers.find((c) => c.id === customerId)?.name || 'Customer',
-        lines: cart.map((l) => ({ description: l.name, qty: l.qty, amount: round2(l.qty * l.rate) })),
-        taxable: totals.subtotal,
-        total: totals.total,
-        paid: credit ? 0 : totals.total,
-        due: credit ? totals.total : 0,
-        footer: 'Waiting to sync. Stock is not updated yet.',
-      }).catch(() => undefined);
+      printSlipNow(queued.id, totals.total, 'Waiting to sync. Stock is not updated yet.');
       return;
     }
     setBusy(true);
     try {
+      const serviceLines = cart.map((l) => ({ item_id: l.item_id, qty: l.qty, rate: l.rate }));
+      let deliveryId = activeDeliveryId;
+      if (orderType === 'dinein' && activeTable) {
+        const parked = await apiPost<CounterBoard>('sales/floor/counter/table', {
+          company_id: companyId,
+          table_no: activeTable,
+          customer_id: billCustomerId,
+          guest_name: guestName,
+          guest_phone: guestPhone,
+          bill_total: totals.total,
+          lines: serviceLines,
+        });
+        if (parked.error) {
+          showError(parked.error);
+          return;
+        }
+        if (parked.data) setBoard(parked.data);
+      }
+      if (orderType === 'delivery') {
+        const parked = await apiPost<CounterBoard>('sales/floor/counter/delivery', {
+          id: activeDeliveryId || undefined,
+          company_id: companyId,
+          customer_id: billCustomerId,
+          name: guestName,
+          phone: guestPhone,
+          address: guestAddress.trim(),
+          bill_total: totals.total,
+          lines: serviceLines,
+        });
+        if (parked.error || !parked.data?.saved_id) {
+          showError(parked.error || 'Could not save this delivery.');
+          return;
+        }
+        deliveryId = parked.data.saved_id;
+        setBoard(parked.data);
+      }
       const { data: invoice, error: invErr } = await apiPost<{ id: string; number: string; total: string | number }>('sales/invoices', invoiceBody);
       if (invErr || !invoice?.id) {
         if (shopCounter && isNetworkError(invErr)) {
-          queueBill({ invoice: invoiceBody, payment: paymentBody });
+          const queued = queueBill({ invoice: invoiceBody, payment: paymentBody });
           setWaiting(loadOutbox().length);
           clearBill();
           success('Saved on this device. Stock updates when the internet is back.');
+          printSlipNow(queued.id, totals.total, 'Waiting to sync. Stock is not updated yet.');
           return;
         }
         showError(invErr || 'Could not create the bill.');
@@ -362,27 +491,23 @@ export default function PosPage() {
         success(`Credit bill ${invoice.number} · ₹${total.toFixed(2)}`);
       }
       setLastBill({ id: invoice.id, number: invoice.number, total });
-      clearBill();
-      if (shopCounter) {
-        void printCounterSlip({
-          company: companies.find((c) => c.id === companyId)?.name || 'Shop',
-          number: invoice.number,
-          date: today,
-          billTo: customers.find((c) => c.id === customerId)?.name || 'Customer',
-          lines: cart.map((l) => ({ description: l.name, qty: l.qty, amount: round2(l.qty * l.rate) })),
-          taxable: totals.subtotal,
-          total,
-          paid: credit ? 0 : total,
-          due: credit ? total : 0,
-        }).catch(() => undefined);
+      if (orderType === 'dinein' && activeTable) {
+        const closed = await apiPost<CounterBoard>('sales/floor/counter/close', { kind: 'table', table_no: activeTable, invoice_id: invoice.id });
+        if (closed.data) setBoard(closed.data);
+      } else if (orderType === 'delivery' && deliveryId) {
+        const closed = await apiPost<CounterBoard>('sales/floor/counter/close', { kind: 'delivery', id: deliveryId, invoice_id: invoice.id });
+        if (closed.data) setBoard(closed.data);
       }
+      clearBill();
+      if (shopCounter) printSlipNow(invoice.number, total);
       loadCatalog();
     } catch (err) {
       if (shopCounter && (err instanceof TypeError || isNetworkError(err instanceof Error ? err.message : ''))) {
-        queueBill({ invoice: invoiceBody, payment: paymentBody });
+        const queued = queueBill({ invoice: invoiceBody, payment: paymentBody });
         setWaiting(loadOutbox().length);
         clearBill();
         success('Saved on this device. Stock updates when the internet is back.');
+        printSlipNow(queued.id, totals.total, 'Waiting to sync. Stock is not updated yet.');
         return;
       }
       showError(err instanceof Error ? err.message : 'Could not create the bill.');
@@ -439,476 +564,673 @@ export default function PosPage() {
     void applyCode(q);
   };
 
-  const billTable = async (ticket: FloorTicket, mode: PayMode) => {
-    setBillBusy(ticket.id);
-    try {
-      const { data, error } = await apiPost<{ invoice?: { id: string; number: string; total: string | number } }>(
-        `sales/floor/tickets/${ticket.id}/bill`,
-        { mode },
-      );
+  const onShortKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const code = shortCode.trim().toLowerCase();
+    if (!code) return;
+    const hits = items.filter((i) => (i.sku || '').toLowerCase().startsWith(code) || (i.barcode || '').toLowerCase().startsWith(code));
+    if (hits.length === 1) {
+      addItem(hits[0]);
+      setShortCode('');
+      setScanHint(hits[0].name);
+      playScanBeep(true);
+      return;
+    }
+    void applyCode(shortCode.trim());
+    setShortCode('');
+  };
+
+  const billOf = (rows: CartLine[]) => {
+    let subtotal = 0;
+    let tax = 0;
+    for (const l of rows) {
+      const taxable = round2(l.qty * l.rate);
+      subtotal = round2(subtotal + taxable);
+      tax = round2(tax + round2(taxable * (Number(l.tax_rate) / 100)));
+    }
+    return round2(subtotal + tax);
+  };
+
+  const cartFromLines = (lines: FloorLine[]): CartLine[] =>
+    lines.filter((l) => l.item_id).map((l) => {
+      const item = items.find((i) => i.id === l.item_id);
+      return {
+        item_id: l.item_id as string,
+        name: l.name,
+        qty: l.qty,
+        rate: l.rate,
+        tax_rate: Number(item?.tax_rate || 0),
+        hsn_sac: item?.hsn_sac || '',
+        unit: l.unit || item?.unit || 'pcs',
+      };
+    });
+
+  const parkTable = async (table: string, rows: CartLine[], release = false) => {
+    const { data, error } = await apiPost<CounterBoard>('sales/floor/counter/table', {
+      company_id: companyId,
+      table_no: table,
+      customer_id: customerId || undefined,
+      guest_name: guestName,
+      guest_phone: guestPhone,
+      bill_total: billOf(rows),
+      release,
+      lines: rows.map((l) => ({ item_id: l.item_id, qty: l.qty, rate: l.rate })),
+    });
+    if (data) setBoard(data);
+    return error;
+  };
+
+  const selectTable = async (name: string) => {
+    if (name === activeTable) return;
+    if (activeTable) {
+      const sitting = board?.by_table?.[activeTable];
+      const emptySit = !cart.length && !!sitting && sitting.lines.length === 0;
+      const error = cart.length ? await parkTable(activeTable, cart) : emptySit ? await parkTable(activeTable, [], true) : null;
       if (error) {
         showError(error);
         return;
       }
-      const inv = data?.invoice;
-      success(`${ticket.table_no} billed${inv?.number ? ` · ${inv.number}` : ''}`);
-      if (inv?.id) setLastBill({ id: inv.id, number: inv.number, total: Number(inv.total ?? ticket.total) });
-      const floorRes = await apiGet<FloorSnapshot>('sales/floor');
-      if (floorRes.data) setFloor(floorRes.data);
-      loadCatalog();
-    } finally {
-      setBillBusy(null);
     }
+    const tab = board?.by_table?.[name];
+    setActiveTable(name);
+    if (tab && tab.lines.length) {
+      setCart(cartFromLines(tab.lines));
+      setGuestName(tab.guest_name || '');
+      setGuestPhone(tab.guest_phone || '');
+    } else {
+      setCart([]);
+      if (!tab) {
+        const error = await parkTable(name, []);
+        if (error) showError(error);
+      }
+    }
+    setCartOpen(true);
+  };
+
+  const saveRunning = async () => {
+    if (!cart.length) {
+      showError('Add at least one item.');
+      return;
+    }
+    setBusy(true);
+    try {
+      if (orderType === 'dinein') {
+        if (!activeTable) {
+          showError('Choose a table first.');
+          return;
+        }
+        const error = await parkTable(activeTable, cart);
+        if (error) {
+          showError(error);
+          return;
+        }
+        success(`${activeTable} saved. Seated time keeps running.`);
+        return;
+      }
+      if (guestAddress.trim().length < 3) {
+        showError('Add the delivery address.');
+        return;
+      }
+      const remembered = await rememberCounterCustomer({
+        name: guestName,
+        phone: guestPhone,
+        address: guestAddress,
+        customers,
+        fallbackId: customerId,
+        companyId,
+      });
+      if (remembered) setCustomerId(remembered.id);
+      const { data, error } = await apiPost<CounterBoard>('sales/floor/counter/delivery', {
+        id: activeDeliveryId || undefined,
+        company_id: companyId,
+        customer_id: remembered?.id || customerId || undefined,
+        name: guestName,
+        phone: guestPhone,
+        address: guestAddress.trim(),
+        bill_total: totals.total,
+        lines: cart.map((l) => ({ item_id: l.item_id, qty: l.qty, rate: l.rate })),
+      });
+      if (error || !data) {
+        showError(error || 'Could not save this delivery.');
+        return;
+      }
+      setBoard(data);
+      if (data.saved_id) setActiveDeliveryId(data.saved_id);
+      success('Delivery is on the list.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const selectDelivery = (row: DeliveryOrder) => {
+    setActiveDeliveryId(row.id);
+    setGuestName(row.name || '');
+    setGuestPhone(row.phone || '');
+    setGuestAddress(row.address || '');
+    setCart(cartFromLines(row.lines));
+    setCartOpen(true);
+  };
+
+  const startDelivery = () => {
+    setActiveDeliveryId(null);
+    setGuestName('');
+    setGuestPhone('');
+    setGuestAddress('');
+    setSavedGuest(null);
+    setCart([]);
+  };
+
+  const saveTableList = async () => {
+    if (!tableDraft.length) {
+      showError('Add at least one table.');
+      return;
+    }
+    setSavingTables(true);
+    const { error } = await apiPatch('sales/floor/tables', { tables: tableDraft });
+    setSavingTables(false);
+    if (error) {
+      showError(error);
+      return;
+    }
+    const { data } = await apiGet<CounterBoard>('sales/floor/counter');
+    if (data) setBoard(data);
+    setEditingTables(false);
+    success('Tables saved.');
   };
 
   if (!businessType) return <p className="text-slate-600">Loading counter…</p>;
   if (businessType === 'department_store') return <DepartmentCounter />;
 
+  const saveGuest = async () => {
+    if (!guestPhone.trim()) {
+      showError('Enter a mobile number to remember this customer.');
+      return;
+    }
+    const remembered = await rememberCounterCustomer({
+      name: guestName,
+      phone: guestPhone,
+      address: orderType === 'delivery' ? guestAddress : undefined,
+      customers,
+      fallbackId: customerId,
+      companyId,
+    });
+    if (!remembered) return;
+    setSavedGuest(remembered);
+    setCustomerId(remembered.id);
+    setCustomers((prev) => (prev.some((c) => c.id === remembered.id) ? prev.map((c) => (c.id === remembered.id ? { ...c, name: remembered.name, phone: remembered.phone } : c)) : [{ id: remembered.id, name: remembered.name, phone: remembered.phone, tags: ['counter'] }, ...prev]));
+    success(`${remembered.name} saved for wishes and offers.`);
+  };
+
+  const qtyOf = (itemId: string) => cart.find((line) => line.item_id === itemId)?.qty ?? 0;
+  const payButtons = ([
+    { id: 'cash' as const, label: 'Cash', icon: Banknote },
+    { id: 'upi' as const, label: 'UPI', icon: Smartphone },
+    { id: 'card' as const, label: 'Card', icon: CreditCard },
+  ]);
+
+  const activeTab = activeTable ? board?.by_table?.[activeTable] ?? null : null;
+  void clock;
+
+  const billPanel = (
+    <>
+      {orderType === 'dinein' && (
+        <div className="mb-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2">
+          <p className="text-sm font-semibold text-slate-900">{activeTable ? `Table ${activeTable}` : 'Choose a table'}</p>
+          <p className="text-xs text-slate-500">{activeTab ? `Seated ${minutesAgo(activeTab.created_at)}` : 'Seated time starts when you open the table'}</p>
+        </div>
+      )}
+      <div className="rounded border border-slate-200 bg-slate-50 p-1.5">
+        <div className="grid grid-cols-2 gap-1">
+          <input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Name" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
+          <input value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} inputMode="tel" placeholder="Mobile" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
+        </div>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <button type="button" onClick={() => void saveGuest()} className="h-6 rounded bg-slate-800 px-2 text-[11px] font-semibold text-white">Save</button>
+          <span className="truncate text-[11px] text-slate-600">{savedGuest ? `${savedGuest.name} · ${savedGuest.phone}` : 'Saved here for wishes'}</span>
+        </div>
+        {orderType === 'delivery' && (
+          <textarea
+            value={guestAddress}
+            onChange={(e) => setGuestAddress(e.target.value)}
+            placeholder="Delivery address"
+            rows={2}
+            className="mt-1 w-full resize-none rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+          />
+        )}
+      </div>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-900">Bill</h2>
+        <span className="text-base font-bold tabular-nums text-slate-900">₹{totals.total.toFixed(2)}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-[1fr_3rem_4rem_4.5rem] gap-1 px-1 text-[11px] font-semibold uppercase text-slate-500">
+        <span>Item</span><span className="text-right">Qty</span><span className="text-right">Rate</span><span className="text-right">Amt</span>
+      </div>
+      <ul className="mt-1 min-h-[80px] flex-1 space-y-1 overflow-y-auto">
+        {cart.length === 0 && <li className="px-1 text-sm text-slate-500">Tap an item to add it.</li>}
+        {cart.map((l) => {
+          const loose = isLooseItem({ unit: l.unit, metadata: items.find((i) => i.id === l.item_id)?.metadata });
+          return (
+          <li key={`${l.item_id}-${l.rate}`} className="grid grid-cols-[1fr_4.5rem_3.5rem_4rem] items-center gap-1 rounded-md px-1 py-1 text-sm hover:bg-slate-50">
+            <div className="min-w-0">
+              <p className="truncate font-medium text-slate-900">{l.name}</p>
+              <button type="button" onClick={() => setQty(l.item_id, 0)} className="text-[11px] text-slate-400 hover:text-red-600">Remove</button>
+            </div>
+            {loose ? (
+              <input
+                type="text"
+                inputMode="decimal"
+                value={String(l.qty)}
+                onChange={(e) => {
+                  const n = Number(e.target.value.replace(/[^\d.]/g, ''));
+                  if (Number.isFinite(n)) setQty(l.item_id, n);
+                }}
+                className="h-7 w-full rounded border border-slate-200 px-1 text-right text-xs font-semibold"
+                title={formatLooseQty(l.qty, l.unit)}
+              />
+            ) : (
+              <div className="flex items-center justify-end gap-0.5">
+                <button type="button" onClick={() => setQty(l.item_id, l.qty - 1)} className="rounded border p-0.5"><Minus className="h-3 w-3" /></button>
+                <span className="w-6 text-center text-xs font-semibold">{l.qty}</span>
+                <button type="button" onClick={() => setQty(l.item_id, l.qty + 1)} className="rounded border p-0.5"><Plus className="h-3 w-3" /></button>
+              </div>
+            )}
+            <span className="text-right text-xs tabular-nums">{l.rate.toFixed(2)}</span>
+            <span className="text-right text-xs font-semibold tabular-nums">{round2(l.qty * l.rate).toFixed(2)}</span>
+          </li>
+          );
+        })}
+      </ul>
+      <div className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-sm">
+        <div className="flex justify-between text-slate-600"><span>Taxable</span><span className="tabular-nums">₹{totals.subtotal.toFixed(2)}</span></div>
+        <div className="flex justify-between text-slate-600"><span>GST</span><span className="tabular-nums">₹{totals.tax.toFixed(2)}</span></div>
+        <div className="flex justify-between text-base font-bold text-slate-900"><span>Bill amount</span><span className="tabular-nums">₹{totals.total.toFixed(2)}</span></div>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-1">
+        {payButtons.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => setPayMode(m.id)}
+            className={`flex h-8 items-center justify-center gap-1 rounded border text-[11px] font-semibold ${
+              payMode === m.id ? 'border-sky-400 bg-sky-100 text-sky-900' : 'border-slate-200 text-slate-700'
+            }`}
+          >
+            <m.icon className="h-3 w-3" />
+            {m.label}
+          </button>
+        ))}
+      </div>
+      {shopCounter && (
+        <button type="button" onClick={() => setPayMode('credit')} className={`mt-2 w-full rounded-lg border py-2 text-xs font-semibold min-h-[40px] ${payMode === 'credit' ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-slate-200'}`}>
+          Credit (month end)
+        </button>
+      )}
+      {payMode === 'cash' && (
+        <label className="mt-2 block text-xs font-medium text-slate-600">
+          Cash received
+          <input
+            type="text"
+            inputMode="decimal"
+            value={cashTendered}
+            onChange={(e) => setCashTendered(limitDecimalPlaces(e.target.value))}
+            placeholder={totals.total ? totals.total.toFixed(2) : '0'}
+            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[40px]"
+          />
+          {tendered > 0 && <span className="mt-1 block text-sm text-slate-800">Change ₹{change.toFixed(2)}</span>}
+        </label>
+      )}
+      {shopCounter && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button type="button" onClick={holdBill} disabled={cart.length === 0} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold disabled:opacity-50">Hold</button>
+          {held.map((bill) => (
+            <button key={bill.id} type="button" onClick={() => recallBill(bill)} className="rounded-lg bg-amber-50 px-2 py-2 text-left text-xs font-medium text-amber-950">{bill.label}</button>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 grid grid-cols-3 gap-1">
+        <button type="button" onClick={() => (orderType === 'takeaway' ? void charge(false) : void saveRunning())} disabled={busy || cart.length === 0} className="h-9 rounded bg-pink-500 text-xs font-semibold text-white disabled:opacity-50">
+          {busy ? '…' : orderType === 'dinein' ? 'Save table' : orderType === 'delivery' ? 'Save delivery' : 'Save'}
+        </button>
+        <button type="button" onClick={() => void charge(true)} disabled={busy || cart.length === 0} className="h-9 rounded bg-pink-500 text-xs font-semibold text-white disabled:opacity-50">
+          {busy ? '…' : 'Save & Print'}
+        </button>
+        <button type="button" onClick={() => {
+          if (orderType === 'dinein' && activeTable && cart.length === 0) void parkTable(activeTable, [], true);
+          setCart([]);
+          setCashTendered('');
+          setCartOpen(false);
+          setActiveTable(null);
+          setActiveDeliveryId(null);
+          setGuestAddress('');
+        }} className="h-9 rounded bg-pink-500 text-xs font-semibold text-white">
+          Close
+        </button>
+      </div>
+      {lastBill && (
+        <Link href={`/sales/invoices/${lastBill.id}/print`} target="_blank" className="mt-2 block text-center text-sm font-medium text-brand-700 hover:underline">
+          Open bill {lastBill.number}
+        </Link>
+      )}
+      {short.length > 0 && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2">
+          <p className="text-[11px] font-semibold uppercase text-amber-900">Short items</p>
+          <ul className="mt-1 max-h-20 space-y-0.5 overflow-y-auto">
+            {short.slice(0, 6).map((s) => (
+              <li key={s.item_id} className="flex justify-between text-[11px] text-amber-950">
+                <span className="truncate pr-2">{s.name}</span>
+                <span className="tabular-nums">{s.current_stock}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {todayBills.length > 0 && (
+        <div className="mt-2">
+          <p className="text-[11px] font-semibold uppercase text-slate-500">Today</p>
+          <ul className="mt-1 space-y-0.5">
+            {todayBills.slice(0, 4).map((b) => (
+              <li key={b.id} className="flex justify-between text-[11px] text-slate-600">
+                <span>{b.number}</span>
+                <span className="tabular-nums">₹{Number(b.total ?? 0).toFixed(2)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  );
+
   return (
-    <div className="flex flex-col lg:flex-row gap-4 min-h-[calc(100vh-8rem)] pb-28 lg:pb-0">
-      <div className="flex-1 min-w-0">
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-3 pb-24 md:pb-4">
       {shopCounter && waiting > 0 && (
-        <p className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
           {waiting} bill(s) are on this device. Stock updates after they sync.
         </p>
       )}
-      {floorMode ? <FloorSwitcher role="POS / Cashier" /> : <PosSwitcher />}
-        <div
-          className="rounded-2xl p-4 sm:p-5 mb-4 text-white"
-          style={{ background: 'linear-gradient(135deg, var(--tenant-hero-from, #075985), var(--tenant-hero-to, #0284c7))' }}
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-white/80">Counter</p>
-              <h1 className="text-xl sm:text-2xl font-bold">{meta.counterLabel}</h1>
-              <p className="text-sm text-white/90">
-                {floorMode
-                  ? 'Settle open tables from the kitchen tickets, or bill a walk-in at the counter.'
-                  : `Scan with a USB/Bluetooth reader, use the phone camera, or tap ${meta.itemLabel}s. Cash, UPI or card.`}
-              </p>
-              {scanHint && <p className="mt-1 text-xs font-medium text-emerald-100">Last scan: {scanHint}</p>}
-            </div>
-            <Link
-              href={floorMode ? '/pos/floor' : '/pos/manage'}
-              className="rounded-xl bg-white/95 px-4 py-2.5 text-sm font-semibold hover:bg-white min-h-[44px] inline-flex items-center justify-center"
-              style={{ color: 'var(--tenant-accent)' }}
+      <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
+        {ORDER_TYPES.map((row) => {
+          const Icon = MODE_ICON[row.id];
+          const on = orderType === row.id;
+          return (
+            <button
+              key={row.id}
+              type="button"
+              onClick={() => {
+                if (row.id === orderType) return;
+                if (orderType === 'dinein') {
+                  setCart([]);
+                  setActiveTable(null);
+                  setCashTendered('');
+                }
+                if (orderType === 'delivery' && row.id !== 'delivery') {
+                  setCart([]);
+                  setActiveDeliveryId(null);
+                  setGuestAddress('');
+                  setGuestName('');
+                  setGuestPhone('');
+                }
+                setOrderType(row.id);
+              }}
+              className={`flex h-12 items-center justify-center gap-2 border-r border-slate-200 text-sm font-semibold last:border-r-0 ${on ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'}`}
             >
-              {floorMode ? 'Restaurant admin' : 'Manage shop'}
-            </Link>
-          </div>
-        </div>
-
-        {floorMode && (
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-              <p className="text-xs font-semibold uppercase text-amber-900">Open tables — settle here (no menu needed)</p>
-              <button
-                type="button"
-                onClick={() => setShowTakeaway((v) => !v)}
-                className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-950"
-              >
-                {showTakeaway ? 'Hide takeaway menu' : 'Show takeaway / walk-in menu'}
-              </button>
-            </div>
-            {(floor?.open?.length ?? 0) === 0 ? (
-              <p className="text-sm text-amber-900/80">No open tables. Waiter sends food to kitchen first — or open takeaway menu above.</p>
-            ) : (
-              <div className="mt-2 grid sm:grid-cols-2 gap-2">
-                {floor!.open.map((t) => (
-                  <div key={t.id} className="rounded-lg bg-white border border-amber-100 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-bold text-slate-900">{t.table_no}</p>
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusClass(t.kitchen_status)}`}>
-                        {KITCHEN_LABEL[t.kitchen_status]}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">{t.lines.map((l) => `${l.qty}× ${l.name}`).join(', ')}</p>
-                    <p className="mt-1 font-semibold">₹{t.total.toFixed(0)}</p>
-                    <div className="mt-2 flex gap-2">
-                      <button
-                        type="button"
-                        disabled={billBusy === t.id}
-                        onClick={() => void billTable(t, 'upi')}
-                        className="flex-1 rounded-lg bg-brand-600 text-white py-2 text-xs font-semibold disabled:opacity-50"
-                      >
-                        UPI
-                      </button>
-                      <button
-                        type="button"
-                        disabled={billBusy === t.id}
-                        onClick={() => void billTable(t, 'cash')}
-                        className="flex-1 rounded-lg border border-slate-200 py-2 text-xs font-semibold disabled:opacity-50"
-                      >
-                        Cash
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {(!floorMode || showTakeaway) && (
-        <>
-        <div className="flex gap-2 mb-3">
-          <div className="relative flex-1 min-w-0">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={onSearchKey}
-              autoComplete="off"
-              autoFocus={!floorMode}
-              placeholder={floorMode ? 'Search takeaway items' : 'Search or scan barcode / SKU'}
-              className="w-full rounded-xl border border-slate-300 pl-10 pr-3 py-3 text-base min-h-[48px]"
-            />
-          </div>
-          {!floorMode && <BarcodeCapture onDetected={applyCode} label="Scan" />}
-        </div>
-        {!floorMode && (
-          <p className="text-xs text-slate-500 -mt-2 mb-3">
-            Hardware reader: click the search box and scan. Phone: tap Scan and point the camera at the barcode.
-          </p>
-        )}
-
-        {!floorMode && items.some((i) => i.barcode) && (
-          <details className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            <summary className="cursor-pointer font-semibold text-slate-800">Try these barcodes (type + Enter, or camera)</summary>
-            <ul className="mt-2 space-y-1 font-mono">
-              {items.filter((i) => i.barcode).slice(0, 8).map((i) => (
-                <li key={i.id}>
-                  <button type="button" className="text-left hover:text-brand-700" onClick={() => void applyCode(i.barcode || '')}>
-                    {i.barcode} — {i.name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-
-        <div className="flex gap-2 overflow-x-auto pb-2 mb-3">
-          {categories.map((c) => (
+              <Icon className="h-4 w-4" />
+              <span className="truncate">{row.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-[168px_minmax(0,1fr)_320px]">
+        <aside className="hidden flex-col gap-1 md:flex">
+          <p className="px-1 text-[11px] font-semibold uppercase text-slate-500">Menu</p>
+          <input
+            value={menuQuery}
+            onChange={(e) => setMenuQuery(e.target.value)}
+            placeholder="Search category"
+            className="h-8 rounded border border-slate-300 px-2 text-xs"
+          />
+          {shownCategories.map((c) => (
             <button
               key={c}
               type="button"
               onClick={() => setCategory(c)}
-              className={`shrink-0 rounded-full px-3 py-2 text-sm font-medium min-h-[40px] ${
-                category === c ? 'bg-brand-600 text-white' : 'bg-white border border-slate-200 text-slate-700'
+              className={`rounded-md px-3 py-3 text-left text-sm font-semibold min-h-[44px] ${
+                category === c ? 'bg-brand-600 text-white' : 'border border-slate-200 bg-white text-slate-800 hover:bg-slate-50'
               }`}
             >
               {c === 'all' ? 'All' : c}
             </button>
           ))}
-        </div>
+        </aside>
 
-        {visibleItems.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
-            <p className="font-semibold text-slate-900">No {meta.itemsLabel.toLowerCase()} yet</p>
-            <p className="mt-1 text-sm text-slate-600">
-              {floorMode
-                ? 'Add dishes under Restaurant admin → Food menu.'
-                : 'Add what you sell. They appear here as a menu for the counter.'}
-            </p>
-            <Link
-              href={floorMode ? '/pos/floor' : '/pos/manage'}
-              className="mt-4 inline-flex rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-semibold"
-            >
-              {floorMode ? 'Open restaurant admin' : `Add ${meta.itemLabel}`}
-            </Link>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
-            {visibleItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => addItem(item)}
-                className="text-left rounded-xl border border-slate-200 bg-white p-3 hover:border-brand-400 hover:shadow-sm min-h-[96px]"
-              >
-                <p className="font-semibold text-slate-900 line-clamp-2">{item.name}</p>
-                {item.category && <p className="text-xs text-slate-500 mt-0.5">{item.category}</p>}
-                {item.barcode && <p className="mt-0.5 font-mono text-[10px] text-slate-400">{item.barcode}</p>}
-                <p className="mt-2 font-bold text-brand-700">₹{posSellingRate(item).toFixed(2)}</p>
-                {Number(item.discount_percent ?? 0) > 0 && Number(item.mrp ?? item.sale_price ?? 0) > posSellingRate(item) && (
-                  <p className="text-xs text-slate-400 line-through">MRP ₹{Number(item.mrp ?? item.sale_price ?? 0).toFixed(2)}</p>
-                )}
-                {isStockTrackedPos(businessType) && item.current_stock != null && (
-                  <p className={`text-xs ${Number(item.current_stock) <= 0 ? 'text-amber-700 font-medium' : 'text-slate-500'}`}>
-                    Stock {Number(item.current_stock)}
-                  </p>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-        </>
-        )}
-
-        {floorMode && !showTakeaway && (
-          <p className="text-sm text-slate-500">Table food is ordered on Waiter. This counter only settles bills (and optional takeaway).</p>
-        )}
-      </div>
-
-      <aside className="hidden lg:flex lg:w-96 shrink-0 rounded-2xl border border-slate-200 bg-white p-4 flex-col">
-        <h2 className="font-semibold text-slate-900">This bill</h2>
-        <label className="mt-3 text-xs font-medium text-slate-600">Customer</label>
-        <select
-          value={customerId}
-          onChange={(e) => setCustomerId(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm min-h-[44px]"
-        >
-          {customers.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-
-        <ul className="mt-3 flex-1 space-y-2 overflow-y-auto min-h-[120px] max-h-64">
-          {cart.length === 0 && <li className="text-sm text-slate-500">Tap items to add them.</li>}
-          {cart.map((l) => (
-            <li key={l.item_id} className="flex items-center gap-2 text-sm">
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-slate-900 truncate">{l.name}</p>
-                <p className="text-xs text-slate-500">₹{l.rate.toFixed(2)}</p>
-              </div>
-              <div className="flex items-center gap-1">
-                <button type="button" onClick={() => setQty(l.item_id, l.qty - 1)} className="rounded border p-1 min-touch">
-                  <Minus className="h-4 w-4" />
-                </button>
-                <span className="w-6 text-center font-semibold">{l.qty}</span>
-                <button type="button" onClick={() => setQty(l.item_id, l.qty + 1)} className="rounded border p-1 min-touch">
-                  <Plus className="h-4 w-4" />
+        <section className="min-w-0">
+          {orderType === 'dinein' && (
+            <div className="mb-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-900">Tables</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTableDraft(board?.tables?.length ? [...board.tables] : []);
+                    setEditingTables((open) => !open);
+                  }}
+                  className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold"
+                >
+                  {editingTables ? 'Hide' : 'Create tables'}
                 </button>
               </div>
-              <button type="button" onClick={() => setQty(l.item_id, 0)} className="text-slate-400 hover:text-red-600 p-1">
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </li>
-          ))}
-        </ul>
-
-        <div className="mt-3 border-t border-slate-100 pt-3 text-sm space-y-1">
-          <div className="flex justify-between text-slate-600">
-            <span>Subtotal</span>
-            <span>₹{totals.subtotal.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-slate-600">
-            <span>Tax</span>
-            <span>₹{totals.tax.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between font-bold text-slate-900 text-base">
-            <span>Total</span>
-            <span>₹{totals.total.toFixed(2)}</span>
-          </div>
-        </div>
-
-        <p className="mt-3 text-xs font-medium text-slate-600">Payment (more options later)</p>
-        <div className="mt-1 grid grid-cols-3 gap-2">
-          {([
-            { id: 'cash' as const, label: 'Cash', icon: Banknote },
-            { id: 'upi' as const, label: 'UPI', icon: Smartphone },
-            { id: 'card' as const, label: 'Card', icon: CreditCard },
-          ]).map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => setPayMode(m.id)}
-              className={`rounded-lg border py-2 text-xs font-semibold flex flex-col items-center gap-1 min-h-[52px] ${
-                payMode === m.id ? 'border-brand-500 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-600'
-              }`}
-            >
-              <m.icon className="h-4 w-4" />
-              {m.label}
-            </button>
-          ))}
-        </div>
-
-        {payMode === 'cash' && (
-          <label className="mt-3 block text-xs font-medium text-slate-600">
-            Cash received
-            <input
-              type="text"
-              inputMode="decimal"
-              value={cashTendered}
-              onChange={(e) => setCashTendered(limitDecimalPlaces(e.target.value))}
-              placeholder={totals.total ? String(totals.total.toFixed(2)) : '0'}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm min-h-[44px]"
-            />
-            {tendered > 0 && (
-              <span className="mt-1 block text-sm text-slate-800">
-                Change: <strong>₹{change.toFixed(2)}</strong>
-              </span>
-            )}
-          </label>
-        )}
-
-        {shopCounter && (
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setPayMode('credit')} className={`rounded-lg border py-2 text-xs font-semibold min-h-[44px] ${payMode === 'credit' ? 'border-brand-500 bg-brand-50 text-brand-800' : 'border-slate-200'}`}>Credit</button>
-            <button type="button" onClick={holdBill} disabled={cart.length === 0} className="rounded-lg border border-slate-300 py-2 text-xs font-semibold min-h-[44px] disabled:opacity-50">Hold bill</button>
-          </div>
-        )}
-        {shopCounter && held.length > 0 && (
-          <div className="mt-2 space-y-1">
-            {held.map((bill) => (
-              <button key={bill.id} type="button" onClick={() => recallBill(bill)} className="block w-full rounded-lg bg-amber-50 px-2 py-2 text-left text-xs font-medium text-amber-950">{bill.label}</button>
-            ))}
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={charge}
-          disabled={busy || cart.length === 0}
-          className="mt-4 w-full rounded-xl bg-brand-600 text-white py-3.5 font-semibold hover:bg-brand-700 disabled:opacity-50 min-h-[52px]"
-        >
-          {busy ? 'Saving…' : payMode === 'credit' && shopCounter ? `Save credit ₹${totals.total.toFixed(2)}` : `Charge ₹${totals.total.toFixed(2)}`}
-        </button>
-
-        {lastBill && (
-          <Link
-            href={`/sales/invoices/${lastBill.id}/print`}
-            target="_blank"
-            className="mt-2 block text-center text-sm font-medium text-brand-700 hover:underline"
-          >
-            Print bill {lastBill.number}
-          </Link>
-        )}
-
-        {short.length > 0 && (
-          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Short items</p>
-            <ul className="mt-2 space-y-1 max-h-28 overflow-y-auto">
-              {short.slice(0, 8).map((s) => (
-                <li key={s.item_id} className="flex justify-between text-xs text-amber-950">
-                  <span className="truncate pr-2">{s.name}</span>
-                  <span className="tabular-nums shrink-0">{s.current_stock}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {todayBills.length > 0 && (
-          <div className="mt-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Today</p>
-            <ul className="mt-1 space-y-1">
-              {todayBills.slice(0, 5).map((b) => (
-                <li key={b.id} className="flex justify-between text-xs text-slate-600">
-                  <span>{b.number}</span>
-                  <span className="tabular-nums">₹{Number(b.total ?? 0).toFixed(2)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </aside>
-
-      {/* Mobile: sticky cart bar + expandable sheet */}
-      <div
-        className="lg:hidden fixed left-0 right-0 z-40 border-t border-slate-200 bg-white shadow-[0_-8px_24px_rgba(15,23,42,0.12)]"
-        style={{ bottom: 'calc(3.75rem + var(--safe-area-bottom, 0px))' }}
-      >
-        {!cartOpen ? (
-          <button
-            type="button"
-            onClick={() => setCartOpen(true)}
-            className="w-full flex items-center justify-between gap-3 px-4 py-3 min-h-[56px] text-left"
-          >
-            <span className="text-sm font-semibold text-slate-900">
-              {cart.length === 0 ? 'Bill empty — tap items to add' : `${cart.reduce((s, l) => s + l.qty, 0)} items`}
-            </span>
-            <span className="rounded-lg bg-brand-600 text-white px-3 py-2 text-sm font-bold tabular-nums">
-              ₹{totals.total.toFixed(2)}
-            </span>
-          </button>
-        ) : (
-          <div className="max-h-[70dvh] flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-900">This bill</h2>
-              <button type="button" onClick={() => setCartOpen(false)} className="text-sm font-medium text-brand-700 min-h-[44px] px-2">
-                Close
-              </button>
+              {editingTables && (
+                <div className="mb-2 rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="flex gap-2">
+                    <input value={newTable} onChange={(e) => setNewTable(e.target.value)} placeholder="Table name, for example T1" className="h-10 min-w-0 flex-1 rounded border border-slate-300 px-2 text-sm" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const name = newTable.trim();
+                        if (!name) return;
+                        if (tableDraft.some((t) => t.toLowerCase() === name.toLowerCase())) {
+                          showError('That table is already in the list.');
+                          return;
+                        }
+                        setTableDraft((prev) => [...prev, name]);
+                        setNewTable('');
+                      }}
+                      className="rounded-md bg-slate-900 px-3 text-sm font-semibold text-white"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  <ul className="mt-2 flex flex-wrap gap-2">
+                    {tableDraft.map((name) => (
+                      <li key={name} className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-sm">
+                        {name}
+                        <button type="button" onClick={() => setTableDraft((prev) => prev.filter((t) => t !== name))} className="px-1 text-slate-400" aria-label={`Remove ${name}`}>×</button>
+                      </li>
+                    ))}
+                  </ul>
+                  <button type="button" disabled={savingTables} onClick={() => void saveTableList()} className="mt-3 rounded-md bg-brand-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                    {savingTables ? 'Saving…' : 'Save tables'}
+                  </button>
+                </div>
+              )}
+              {(board?.tables.length ?? 0) === 0 ? (
+                <p className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600">No tables yet. Create tables, then tap one to start the bill. Seated time starts when the table is opened.</p>
+              ) : activeTable ? (
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {board!.tables.map((name) => {
+                    const tab = board!.by_table?.[name];
+                    const on = activeTable === name;
+                    return (
+                      <button key={name} type="button" onClick={() => void selectTable(name)} className={`shrink-0 rounded-lg border px-3 py-2 text-left ${on ? 'border-slate-900 bg-slate-900 text-white' : tab ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'}`}>
+                        <span className="block text-sm font-bold">{name}</span>
+                        <span className="block text-xs tabular-nums">{tab ? `₹${Number(tab.total).toFixed(0)} · ${minutesAgo(tab.created_at)}` : 'Free'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {board!.tables.map((name) => {
+                    const tab = board!.by_table?.[name];
+                    return (
+                      <button key={name} type="button" onClick={() => void selectTable(name)} className={`min-h-[84px] rounded-lg border px-2 py-2 text-left ${tab ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'}`}>
+                        <span className="block text-base font-bold text-slate-900">{name}</span>
+                        <span className="mt-1 block text-sm font-semibold tabular-nums text-slate-800">{tab ? `₹${Number(tab.total).toFixed(0)}` : 'Free'}</span>
+                        <span className="block text-xs text-slate-500">{tab ? `Seated ${minutesAgo(tab.created_at)}` : 'Empty'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            <div className="overflow-y-auto overscroll-contain px-4 py-3 space-y-3 flex-1">
-              <label className="block text-xs font-medium text-slate-600">Customer</label>
-              <select
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm min-h-[44px]"
+          )}
+          {orderType === 'delivery' && (
+            <div className="mb-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
+              <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+                <p className="text-sm font-semibold text-slate-900">Deliveries</p>
+                <button type="button" onClick={startDelivery} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold">New delivery</button>
+              </div>
+              {(board?.deliveries.length ?? 0) === 0 ? (
+                <p className="px-3 py-3 text-sm text-slate-500">No open deliveries. Add the address on the bill, then Save delivery.</p>
+              ) : (
+                <ul className="max-h-52 overflow-y-auto">
+                  {board!.deliveries.map((row) => (
+                    <li key={row.id}>
+                      <button type="button" onClick={() => selectDelivery(row)} className={`flex w-full items-start justify-between gap-3 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 ${activeDeliveryId === row.id ? 'bg-sky-50' : ''}`}>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-slate-900">{row.name || 'Customer'} · {row.phone || 'No mobile'}</span>
+                          <span className="block truncate text-xs text-slate-500">{row.address}</span>
+                        </span>
+                        <span className="shrink-0 text-right">
+                          <span className="block text-sm font-semibold tabular-nums">₹{Number(row.total).toFixed(0)}</span>
+                          <span className="block text-xs text-slate-500">{minutesAgo(row.created_at)}</span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {(orderType !== 'dinein' || activeTable) && <>
+          <div className="mb-2 flex flex-col gap-2 sm:flex-row">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={onSearchKey}
+                autoComplete="off"
+                autoFocus={!floorMode}
+                placeholder="Search by name"
+                className="w-full rounded-md border border-slate-300 py-2.5 pl-10 pr-3 text-sm min-h-[44px]"
+              />
+            </div>
+            <input
+              value={shortCode}
+              onChange={(e) => setShortCode(e.target.value)}
+              onKeyDown={onShortKey}
+              autoComplete="off"
+              placeholder="Short code"
+              className="w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm min-h-[44px] sm:w-40"
+            />
+            {!floorMode && <BarcodeCapture onDetected={applyCode} label="Scan" />}
+          </div>
+          {scanHint && <p className="mb-2 text-xs font-medium text-emerald-700">Added: {scanHint}</p>}
+
+          <div className="mb-2 md:hidden">
+            <input
+              value={menuQuery}
+              onChange={(e) => setMenuQuery(e.target.value)}
+              placeholder="Search category"
+              className="mb-1 h-8 w-full rounded border border-slate-300 px-2 text-xs"
+            />
+          <div className="flex gap-1 overflow-x-auto pb-1">
+            {shownCategories.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setCategory(c)}
+                className={`shrink-0 rounded-md px-3 py-2 text-sm font-semibold min-h-[40px] ${
+                  category === c ? 'bg-brand-600 text-white' : 'border border-slate-200 bg-white'
+                }`}
               >
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <ul className="space-y-2">
-                {cart.length === 0 && <li className="text-sm text-slate-500">Tap items above to add.</li>}
-                {cart.map((l) => (
-                  <li key={l.item_id} className="flex items-center gap-2 text-sm">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-slate-900 truncate">{l.name}</p>
-                      <p className="text-xs text-slate-500">₹{l.rate.toFixed(2)}</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button type="button" onClick={() => setQty(l.item_id, l.qty - 1)} className="rounded border p-2 min-touch"><Minus className="h-4 w-4" /></button>
-                      <span className="w-7 text-center font-semibold">{l.qty}</span>
-                      <button type="button" onClick={() => setQty(l.item_id, l.qty + 1)} className="rounded border p-2 min-touch"><Plus className="h-4 w-4" /></button>
-                    </div>
-                    <button type="button" onClick={() => setQty(l.item_id, 0)} className="text-slate-400 p-2"><Trash2 className="h-4 w-4" /></button>
-                  </li>
-                ))}
-              </ul>
-              <div className="grid grid-cols-3 gap-2 pt-1">
-                {([
-                  { id: 'cash' as const, label: 'Cash', icon: Banknote },
-                  { id: 'upi' as const, label: 'UPI', icon: Smartphone },
-                  { id: 'card' as const, label: 'Card', icon: CreditCard },
-                ]).map((m) => (
+                {c === 'all' ? 'All' : c}
+              </button>
+            ))}
+          </div>
+          </div>
+
+          {visibleItems.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center">
+              <p className="font-semibold text-slate-900">No {meta.itemsLabel.toLowerCase()} in this menu</p>
+              <Link href={floorMode ? '/pos/floor' : '/pos/manage'} className="mt-3 inline-flex rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white">
+                {floorMode ? 'Add dishes' : `Add ${meta.itemLabel}`}
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+              {visibleItems.map((item) => {
+                const qty = qtyOf(item.id);
+                return (
                   <button
-                    key={m.id}
+                    key={item.id}
                     type="button"
-                    onClick={() => setPayMode(m.id)}
-                    className={`rounded-lg border py-2 text-xs font-semibold flex flex-col items-center gap-1 min-h-[52px] ${
-                      payMode === m.id ? 'border-brand-500 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-600'
+                    onClick={() => addItem(item)}
+                    className={`relative min-h-[72px] rounded-md border bg-white px-2 py-2 text-left hover:bg-sky-50 ${
+                      qty > 0 ? 'border-brand-500 ring-1 ring-brand-500' : 'border-sky-300'
                     }`}
                   >
-                    <m.icon className="h-4 w-4" />
-                    {m.label}
+                    <span className="block pr-12 text-sm font-medium leading-snug text-slate-800 line-clamp-2">{item.name}</span>
+                    {isLooseItem(item) && <span className="mt-1 block text-[10px] font-medium text-sky-700">Weight or ₹</span>}
+                    <span className="absolute right-2 top-2 text-xs font-semibold text-slate-600">₹{posSellingRate(item).toFixed(0)}</span>
+                    {qty > 0 && <span className="absolute bottom-1 right-2 rounded bg-brand-600 px-1.5 text-[10px] font-bold text-white">{qty}</span>}
+                    {isStockTrackedPos(businessType) && item.current_stock != null && Number(item.current_stock) <= 0 && (
+                      <span className="mt-1 block text-[10px] font-medium text-amber-700">Out of stock</span>
+                    )}
                   </button>
-                ))}
-              </div>
-              {payMode === 'cash' && (
-                <label className="block text-xs font-medium text-slate-600">
-                  Cash received
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={cashTendered}
-                    onChange={(e) => setCashTendered(limitDecimalPlaces(e.target.value))}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm min-h-[44px]"
-                  />
-                </label>
-              )}
+                );
+              })}
             </div>
-            <div className="border-t border-slate-100 p-3 safe-bottom">
-              <button
-                type="button"
-                onClick={() => void charge()}
-                disabled={busy || cart.length === 0}
-                className="w-full rounded-xl bg-brand-600 text-white py-3.5 font-semibold disabled:opacity-50 min-h-[52px]"
-              >
-                {busy ? 'Saving…' : `Charge ₹${totals.total.toFixed(2)}`}
-              </button>
-              {lastBill && (
-                <Link href={`/sales/invoices/${lastBill.id}/print`} className="mt-2 block text-center text-sm font-medium text-brand-700">
-                  Print {lastBill.number}
-                </Link>
-              )}
+          )}
+          </>}
+        </section>
+
+        <aside className="hidden min-h-0 flex-col rounded-lg border border-slate-200 bg-white p-3 md:flex">
+          {billPanel}
+        </aside>
+      </div>
+
+      <div className="fixed inset-x-0 z-40 border-t border-slate-200 bg-white shadow md:hidden" style={{ bottom: 'calc(3.75rem + var(--safe-area-bottom, 0px))' }}>
+        {!cartOpen ? (
+          <button type="button" onClick={() => setCartOpen(true)} className="flex min-h-[56px] w-full items-center justify-between px-4 py-3 text-left">
+            <span className="text-sm font-semibold text-slate-900">{cart.length === 0 ? 'Bill empty' : `${cart.reduce((s, l) => s + l.qty, 0)} items`}</span>
+            <span className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-bold text-white tabular-nums">₹{totals.total.toFixed(2)}</span>
+          </button>
+        ) : (
+          <div className="flex max-h-[75dvh] flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+              <span className="text-sm font-semibold">Bill</span>
+              <button type="button" onClick={() => setCartOpen(false)} className="px-2 text-sm font-medium text-brand-700 min-h-[40px]">Close</button>
             </div>
+            <div className="overflow-y-auto px-3 py-2">{billPanel}</div>
           </div>
         )}
       </div>
+      {looseItem && (
+        <LooseAsk
+          name={looseItem.name}
+          unit={looseItem.unit || 'kg'}
+          rate={posSellingRate(looseItem)}
+          onClose={() => setLooseItem(null)}
+          onAdd={(qty) => {
+            const item = looseItem;
+            setLooseItem(null);
+            addItem(item, qty);
+          }}
+        />
+      )}
     </div>
   );
 }

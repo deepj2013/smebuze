@@ -186,6 +186,18 @@ export class OrganizationController {
     return this.orgService.createInvite(ctx, body.email, body.role_id);
   }
 
+  @Get('nav-menu')
+  @RequirePermissions('org.company.update')
+  async getNavMenu(@CurrentTenant() ctx: TenantContext) {
+    return this.orgService.getNavMenu(ctx);
+  }
+
+  @Patch('nav-menu')
+  @RequirePermissions('org.company.update')
+  async saveNavMenu(@Body() body: { nav_hidden?: string[] }, @CurrentTenant() ctx: TenantContext) {
+    return this.orgService.saveNavMenu(ctx, Array.isArray(body?.nav_hidden) ? body.nav_hidden : []);
+  }
+
   @Get('branding')
   @RequirePermissions('org.company.view')
   async getBranding(@CurrentTenant() ctx: TenantContext) {
@@ -220,6 +232,24 @@ export class OrganizationController {
     fs.writeFileSync(path.join(dir, filename), file.buffer);
     const logoUrl = `/uploads/logos/${filename}`;
     return this.orgService.saveBranding(ctx, { logo_url: logoUrl });
+  }
+
+  @Get('hardware')
+  @RequirePermissions('org.company.view')
+  async getHardware(@CurrentTenant() ctx: TenantContext) {
+    return this.orgService.getHardware(ctx);
+  }
+
+  @Patch('hardware')
+  @RequirePermissions('org.company.update')
+  async saveHardware(
+    @Body() body: { devices?: unknown[]; local_agent_url?: string },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.orgService.saveHardware(ctx, {
+      devices: Array.isArray(body?.devices) ? (body.devices as never) : undefined,
+      local_agent_url: typeof body?.local_agent_url === 'string' ? body.local_agent_url : undefined,
+    });
   }
 
   @Get('payments')

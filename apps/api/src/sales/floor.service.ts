@@ -13,6 +13,7 @@ import { SalesOrderLine } from './entities/sales-order-line.entity';
 import { SalesService } from './sales.service';
 
 export const DINE_CHANNEL = 'dine_in';
+export const DELIVERY_CHANNEL = 'counter_delivery';
 export const DEFAULT_TABLES = Array.from({ length: 12 }, (_, i) => `T${i + 1}`);
 export const OPEN_KITCHEN = ['sent', 'preparing', 'ready', 'served'] as const;
 export type KitchenStatus = 'sent' | 'preparing' | 'ready' | 'served' | 'billed' | 'cancelled';
@@ -26,6 +27,8 @@ export type FloorTicket = {
   covers: number;
   kitchen_status: KitchenStatus;
   waiter_name: string;
+  guest_name: string;
+  guest_phone: string;
   note: string;
   status: string;
   total: number;
@@ -78,9 +81,11 @@ export class FloorService {
       covers: Number(ship.covers || 1),
       kitchen_status: kitchen,
       waiter_name: String(ship.waiter_name || order.requirement_given_by || ''),
+      guest_name: String(ship.guest_name || ''),
+      guest_phone: String(ship.guest_phone || ''),
       note: String(ship.note || order.buyer_note || ''),
       status: order.status,
-      total: Number(order.total || 0),
+      total: ship.bill_total != null ? Number(ship.bill_total) : Number(order.total || 0),
       created_at: (order.created_at || new Date()).toISOString(),
       billed_invoice_id: ship.billed_invoice_id ? String(ship.billed_invoice_id) : null,
       company_id: order.company_id,
@@ -417,6 +422,318 @@ export class FloorService {
         open: tickets.filter((t) => OPEN_KITCHEN.includes(t.kitchen_status as (typeof OPEN_KITCHEN)[number])).length,
       },
     };
+  }
+
+  async counterBoard(ctx: TenantContext) {
+    const tenantId = this.assertTenant(ctx);
+    const tenant = await this.tenants.findOne({ where: { id: tenantId } });
+    const floorSettings = tenant?.settings?.floor as { tables?: unknown } | undefined;
+    const saved = Array.isArray(floorSettings?.tables)
+      ? floorSettings.tables.map((t) => String(t).trim()).filter(Boolean)
+      : [];
+    const isFloor = isFloorBusinessType(tenant?.settings?.business_type);
+    const tables = saved.length ? saved : isFloor ? DEFAULT_TABLES : [];
+    const dine = await this.orders.find({
+      where: { tenant_id: tenantId, channel: DINE_CHANNEL },
+      relations: ['lines', 'lines.item'],
+      order: { created_at: 'DESC' },
+      take: 200,
+    });
+    const tickets = dine.map((o) => this.toTicket(o, tenant));
+    const open = tickets.filter((t) => OPEN_KITCHEN.includes(t.kitchen_status as (typeof OPEN_KITCHEN)[number]));
+    const byTable: Record<string, FloorTicket | null> = {};
+    for (const name of tables) byTable[name] = open.find((t) => t.table_no === name) ?? null;
+    const deliveryOrders = await this.orders.find({
+      where: { tenant_id: tenantId, channel: DELIVERY_CHANNEL },
+      relations: ['lines', 'lines.item'],
+      order: { created_at: 'DESC' },
+      take: 80,
+    });
+    const deliveries = deliveryOrders.map((o) => this.toDelivery(o)).filter((d) => d.status === 'open');
+    return { tables, open, by_table: byTable, deliveries };
+  }
+
+  async saveTableTab(
+    ctx: TenantContext,
+    body: {
+      company_id?: string;
+      table_no: string;
+      customer_id?: string;
+      guest_name?: string;
+      guest_phone?: string;
+      bill_total?: number;
+      release?: boolean;
+      lines: Array<{ item_id: string; qty: number; rate?: number }>;
+    },
+  ) {
+    const tenantId = this.assertTenant(ctx);
+    const table = body.table_no?.trim();
+    if (!table) throw new ForbiddenException('Choose a table');
+    const companyId = await this.companyId(tenantId, body.company_id);
+    const existing = await this.openTable(tenantId, table);
+    if (!body.lines?.length) {
+      if (existing && body.release) {
+        const ship = this.shipping(existing);
+        ship.kitchen_status = 'cancelled';
+        existing.shipping_json = ship;
+        existing.status = 'cancelled';
+        await this.orders.save(existing);
+      } else if (!existing) {
+        const walkIn = await this.walkIn(tenantId, companyId);
+        const order = this.orders.create({
+          tenant_id: tenantId,
+          company_id: companyId,
+          customer_id: body.customer_id || walkIn.id,
+          number: `TBL-${table}-${Date.now().toString().slice(-5)}`,
+          order_date: new Date(),
+          status: 'confirmed',
+          total: '0.00',
+          tax_amount: '0',
+          created_by: ctx.userId,
+          channel: DINE_CHANNEL,
+          requirement_given_by: ctx.name || ctx.email,
+          requirement_channel: 'in_person',
+          buyer_note: null,
+          shipping_json: {
+            table_no: table,
+            covers: 1,
+            kitchen_status: 'served',
+            waiter_name: ctx.name || 'Counter',
+            guest_name: (body.guest_name || '').trim(),
+            guest_phone: (body.guest_phone || '').trim(),
+            bill_total: 0,
+            note: '',
+          },
+        });
+        await this.orders.save(order);
+      }
+      return { ...(await this.counterBoard(ctx)), saved_id: existing?.id ?? null };
+    }
+    const { built, total } = await this.buildPricedLines(tenantId, body.lines);
+    const billTotal = body.bill_total != null ? round2(Number(body.bill_total)) : total;
+    if (existing) {
+      await this.replaceLines(existing.id, built);
+      const ship = this.shipping(existing);
+      ship.table_no = table;
+      ship.kitchen_status = 'served';
+      ship.guest_name = (body.guest_name || '').trim();
+      ship.guest_phone = (body.guest_phone || '').trim();
+      ship.bill_total = billTotal;
+      existing.shipping_json = ship;
+      existing.total = moneyStr(total);
+      existing.status = 'confirmed';
+      if (body.customer_id) existing.customer_id = body.customer_id;
+      await this.orders.save(existing);
+      return { ...(await this.counterBoard(ctx)), saved_id: existing.id };
+    }
+    const customer = body.customer_id
+      ? await this.customers.findOne({ where: { id: body.customer_id, tenant_id: tenantId } })
+      : null;
+    const walkIn = customer || (await this.walkIn(tenantId, companyId));
+    const order = this.orders.create({
+      tenant_id: tenantId,
+      company_id: companyId,
+      customer_id: walkIn.id,
+      number: `TBL-${table}-${Date.now().toString().slice(-5)}`,
+      order_date: new Date(),
+      status: 'confirmed',
+      total: moneyStr(total),
+      tax_amount: '0',
+      created_by: ctx.userId,
+      channel: DINE_CHANNEL,
+      requirement_given_by: ctx.name || ctx.email,
+      requirement_channel: 'in_person',
+      buyer_note: null,
+      shipping_json: {
+        table_no: table,
+        covers: 1,
+        kitchen_status: 'served',
+        waiter_name: ctx.name || 'Counter',
+        guest_name: (body.guest_name || '').trim(),
+        guest_phone: (body.guest_phone || '').trim(),
+        bill_total: billTotal,
+        note: '',
+      },
+    });
+    const saved = await this.orders.save(order);
+    await this.replaceLines(saved.id, built);
+    return { ...(await this.counterBoard(ctx)), saved_id: saved.id };
+  }
+
+  async saveDelivery(
+    ctx: TenantContext,
+    body: {
+      id?: string;
+      company_id?: string;
+      customer_id?: string;
+      name?: string;
+      phone?: string;
+      address?: string;
+      bill_total?: number;
+      lines: Array<{ item_id: string; qty: number; rate?: number }>;
+    },
+  ) {
+    const tenantId = this.assertTenant(ctx);
+    const address = (body.address || '').trim();
+    if (address.length < 3) throw new ForbiddenException('Add the delivery address');
+    if (!body.lines?.length) throw new ForbiddenException('Add at least one item');
+    const companyId = await this.companyId(tenantId, body.company_id);
+    const { built, total } = await this.buildPricedLines(tenantId, body.lines);
+    const billTotal = body.bill_total != null ? round2(Number(body.bill_total)) : total;
+    const shipBase = {
+      name: (body.name || '').trim(),
+      phone: (body.phone || '').trim(),
+      address,
+      status: 'open',
+      bill_total: billTotal,
+    };
+    let order: SalesOrder | null = null;
+    if (body.id) {
+      order = await this.orders.findOne({ where: { id: body.id, tenant_id: tenantId, channel: DELIVERY_CHANNEL } });
+      if (order && String(this.shipping(order).status || 'open') !== 'open') order = null;
+    }
+    if (order) {
+      await this.replaceLines(order.id, built);
+      order.shipping_json = { ...this.shipping(order), ...shipBase };
+      order.total = moneyStr(total);
+      order.status = 'confirmed';
+      if (body.customer_id) order.customer_id = body.customer_id;
+      await this.orders.save(order);
+      return { ...(await this.counterBoard(ctx)), saved_id: order.id };
+    }
+    const customer = body.customer_id
+      ? await this.customers.findOne({ where: { id: body.customer_id, tenant_id: tenantId } })
+      : null;
+    const walkIn = customer || (await this.walkIn(tenantId, companyId));
+    const created = this.orders.create({
+      tenant_id: tenantId,
+      company_id: companyId,
+      customer_id: walkIn.id,
+      number: `DEL-${Date.now().toString().slice(-6)}`,
+      order_date: new Date(),
+      status: 'confirmed',
+      total: moneyStr(total),
+      tax_amount: '0',
+      created_by: ctx.userId,
+      channel: DELIVERY_CHANNEL,
+      requirement_given_by: ctx.name || ctx.email,
+      requirement_channel: 'phone',
+      buyer_note: address,
+      shipping_json: shipBase,
+    });
+    const saved = await this.orders.save(created);
+    await this.replaceLines(saved.id, built);
+    return { ...(await this.counterBoard(ctx)), saved_id: saved.id };
+  }
+
+  async closeCounter(
+    ctx: TenantContext,
+    body: { kind?: 'table' | 'delivery'; id?: string; table_no?: string; invoice_id?: string },
+  ) {
+    const tenantId = this.assertTenant(ctx);
+    if (body.kind === 'delivery' && body.id) {
+      const order = await this.orders.findOne({ where: { id: body.id, tenant_id: tenantId, channel: DELIVERY_CHANNEL } });
+      if (order) await this.finishOrder(order, 'delivery', body.invoice_id);
+    } else if (body.table_no?.trim()) {
+      const order = await this.openTable(tenantId, body.table_no.trim());
+      if (order) await this.finishOrder(order, 'table', body.invoice_id);
+    }
+    return this.counterBoard(ctx);
+  }
+
+  private toDelivery(order: SalesOrder) {
+    const ship = this.shipping(order);
+    const status = String(ship.status || 'open');
+    return {
+      id: order.id,
+      number: order.number,
+      name: String(ship.name || ''),
+      phone: String(ship.phone || ''),
+      address: String(ship.address || ''),
+      status: status === 'done' || status === 'cancelled' ? status : 'open',
+      total: ship.bill_total != null ? Number(ship.bill_total) : Number(order.total || 0),
+      created_at: (order.created_at || new Date()).toISOString(),
+      company_id: order.company_id,
+      customer_id: order.customer_id,
+      lines: (order.lines || []).map((l) => ({
+        id: l.id,
+        item_id: l.item_id,
+        name: l.item?.name || l.description || 'Item',
+        qty: Number(l.quantity || 0),
+        unit: l.unit || 'pcs',
+        rate: Number(l.rate || 0),
+      })),
+    };
+  }
+
+  private async companyId(tenantId: string, requested?: string): Promise<string> {
+    if (requested) return requested;
+    const co =
+      (await this.companies.findOne({ where: { tenant_id: tenantId, is_default: true } })) ??
+      (await this.companies.findOne({ where: { tenant_id: tenantId } }));
+    if (!co) throw new NotFoundException('Company not found');
+    return co.id;
+  }
+
+  private async openTable(tenantId: string, table: string): Promise<SalesOrder | null> {
+    const open = await this.orders.find({
+      where: { tenant_id: tenantId, channel: DINE_CHANNEL, status: Not(In(['completed', 'invoiced', 'cancelled'])) },
+      order: { created_at: 'DESC' },
+    });
+    return (
+      open.find((o) => {
+        const st = String(this.shipping(o).kitchen_status || 'sent');
+        return String(this.shipping(o).table_no) === table && OPEN_KITCHEN.includes(st as (typeof OPEN_KITCHEN)[number]);
+      }) ?? null
+    );
+  }
+
+  private async buildPricedLines(tenantId: string, rows: Array<{ item_id: string; qty: number; rate?: number }>) {
+    const itemIds = [...new Set(rows.map((r) => r.item_id).filter(Boolean))];
+    const catalog = await this.items.find({ where: { id: In(itemIds), tenant_id: tenantId } });
+    const byId = new Map(catalog.map((i) => [i.id, i]));
+    const built: Array<{ item: Item; qty: number; rate: number }> = [];
+    let total = 0;
+    for (const row of rows) {
+      const item = byId.get(row.item_id);
+      if (!item) throw new NotFoundException('Item not found');
+      const qty = Math.max(0.0001, Math.round((Number(row.qty) || 0) * 10000) / 10000);
+      const rate =
+        row.rate != null && Number.isFinite(Number(row.rate))
+          ? round2(Number(row.rate))
+          : round2(Number(item.sale_price ?? item.mrp ?? 0));
+      total = round2(total + round2(qty * rate));
+      built.push({ item, qty, rate });
+    }
+    return { built, total };
+  }
+
+  private async replaceLines(orderId: string, built: Array<{ item: Item; qty: number; rate: number }>) {
+    await this.lines.delete({ sales_order_id: orderId });
+    for (let i = 0; i < built.length; i++) {
+      const { item, qty, rate } = built[i];
+      await this.lines.save(
+        this.lines.create({
+          sales_order_id: orderId,
+          item_id: item.id,
+          description: item.name,
+          quantity: qty.toFixed(4),
+          unit: item.unit || 'pcs',
+          rate: moneyStr(rate),
+          sort_order: i,
+        }),
+      );
+    }
+  }
+
+  private async finishOrder(order: SalesOrder, kind: 'table' | 'delivery', invoiceId?: string) {
+    const ship = this.shipping(order);
+    if (kind === 'table') ship.kitchen_status = 'billed';
+    else ship.status = 'done';
+    if (invoiceId) ship.billed_invoice_id = invoiceId;
+    order.shipping_json = ship;
+    order.status = 'completed';
+    await this.orders.save(order);
   }
 
   private async load(id: string, tenantId: string): Promise<SalesOrder> {

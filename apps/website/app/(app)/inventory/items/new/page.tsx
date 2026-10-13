@@ -12,6 +12,7 @@ import { DecimalInput } from '../../../components/NumberField';
 import { parseNonNeg } from '@/lib/item-pricing';
 import { parseMoney, parseQty, round2 } from '@/lib/money';
 import { DepartmentItemFields } from '../../DepartmentItemFields';
+import SaleStyleField from '../../SaleStyleField';
 
 function validateHsnSac(v: string): string | null {
   if (!v.trim()) return null;
@@ -28,6 +29,7 @@ export default function NewItemPage() {
   const [barcode, setBarcode] = useState('');
   const [description, setDescription] = useState('');
   const [unit, setUnit] = useState('pcs');
+  const [saleMode, setSaleMode] = useState<'fixed' | 'loose'>('fixed');
   const [category, setCategory] = useState('');
   const [hsnSac, setHsnSac] = useState('9983');
   const [reorderLevel, setReorderLevel] = useState('');
@@ -148,6 +150,7 @@ export default function NewItemPage() {
       image_urls: imageUrls.length ? imageUrls : undefined,
       description: description || undefined,
       unit: unit || undefined,
+      sale_mode: saleMode,
       category: category || undefined,
       hsn_sac: hsnSac.trim() || undefined,
     };
@@ -255,6 +258,7 @@ export default function NewItemPage() {
               <label className="block text-sm font-medium text-slate-700 mb-1">Unit</label>
               <input type="text" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="pcs" className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
             </div>
+            <SaleStyleField value={saleMode} unit={unit} onChange={setSaleMode} />
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
               <CategoryPicker value={category} onChange={setCategory} />
