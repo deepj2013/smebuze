@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { SIGNUP_BUSINESS_TYPES, SIGNUP_GROUPS, type SignupBusinessTypeId } from '@/lib/business-types';
 import { quotePlan, formatInr, monthlyOffer } from '@/lib/plans';
+import { postLoginPath } from '@/lib/workspace-setup';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -37,7 +38,6 @@ function SignupForm() {
   const [plan, setPlan] = useState(planFromUrl);
   const [interval, setInterval] = useState('quarterly');
   const [referralCode, setReferralCode] = useState(refFromUrl);
-  const [trial, setTrial] = useState(true);
   const [businessType, setBusinessType] = useState<SignupBusinessTypeId | ''>('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -110,7 +110,7 @@ function SignupForm() {
         phone: phone.trim() || undefined,
         plan: plan || 'basic',
         interval: interval || 'quarterly',
-        trial: trial ? 'true' : undefined,
+        trial: 'true',
         businessType: businessType || 'trading',
         referralCode: referralCode.trim() || undefined,
       };
@@ -125,11 +125,17 @@ function SignupForm() {
         return;
       }
       if (data.access_token) {
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem('smebuzz_user', JSON.stringify({ ...(data.user ?? {}), email_verified: false }));
-        }
         const slug = data.tenant?.slug || body.slug;
-        router.push(`/verify-email?email=${encodeURIComponent(email.trim())}&slug=${encodeURIComponent(slug)}`);
+        // SMTP down or mail skipped — open workspace immediately (7-day trial still active).
+        if (data.needs_email_verify === false || data.email_verified === true) {
+          window.localStorage.setItem('smebuzz_token', data.access_token);
+          window.localStorage.setItem('smebuzz_user', JSON.stringify({ ...(data.user ?? {}), email_verified: true }));
+          router.push(postLoginPath({ user: data.user, tenant: data.tenant }));
+          return;
+        }
+        window.localStorage.setItem('smebuzz_user', JSON.stringify({ ...(data.user ?? {}), email_verified: false }));
+        const mailQ = data.mailSent === false ? '&mail=0' : '&mail=1';
+        router.push(`/verify-email?email=${encodeURIComponent(email.trim())}&slug=${encodeURIComponent(slug)}${mailQ}`);
         return;
       }
       setError('Unexpected response from server.');
@@ -152,9 +158,9 @@ function SignupForm() {
         <div className={`w-full bg-white rounded-2xl shadow-lg border border-slate-200 p-5 sm:p-8 ${step === 1 ? 'max-w-3xl' : 'max-w-lg'}`}>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Create your workspace</h1>
           <p className="text-slate-600 text-sm mb-6">
-            {step === 1 && 'How will you use SMEBUZE? We open a restaurant counter, a shop POS, or a full trading desk from this choice.'}
+            {step === 1 && 'How will you use SMEBUZE? Restaurant, shop POS, B2B distribution, or a full trading desk — we shape the workspace from this choice.'}
             {step === 2 && 'Create the login you will use every day.'}
-            {step === 3 && 'Pick a plan. 7-day free trial is on. After you sign in, add the menu and connect a printer.'}
+            {step === 3 && 'Pick a plan. Every new signup starts with a 7-day free trial. After you confirm email, your workspace opens ready for that business type.'}
           </p>
 
           <div className="flex gap-2 mb-6">
@@ -364,13 +370,10 @@ function SignupForm() {
                   Custom packs are quoted by us. Next you will send a short message to the SMEBUZE team.
                 </p>
               ) : (
-              <label className="flex items-start gap-2 cursor-pointer rounded-xl border border-brand-200 bg-brand-50 p-3">
-                <input type="checkbox" checked={trial} onChange={(e) => setTrial(e.target.checked)} className="mt-0.5 rounded border-slate-300 text-brand-600" />
-                <span className="text-sm text-slate-700">
-                  <strong className="text-slate-900">Start 7-day free trial</strong>
-                  <span className="block text-slate-600 mt-0.5">No payment today. Full access to the plan you pick. After 7 days, continue on that plan or write to us to customise.</span>
-                </span>
-              </label>
+              <div className="rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm text-slate-700">
+                <strong className="text-slate-900">7-day free trial included</strong>
+                <span className="block text-slate-600 mt-0.5">No payment today. Full access to the plan you pick for your business type (including B2B portal when you choose B2B). After 7 days, continue on that plan or write to us.</span>
+              </div>
               )}
               {error && (
                 <div className="p-3 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>
@@ -380,7 +383,7 @@ function SignupForm() {
                   Back
                 </button>
                 <button type="submit" disabled={loading} className="flex-1 rounded-lg bg-brand-600 text-white py-3 sm:py-2.5 font-semibold hover:bg-brand-700 disabled:opacity-50 min-h-[48px]">
-                  {loading ? 'Creating…' : plan === 'ai_pro' ? 'Send a message' : trial ? 'Start 7-day free trial' : 'Create workspace'}
+                  {loading ? 'Creating…' : plan === 'ai_pro' ? 'Send a message' : 'Start 7-day free trial'}
                 </button>
               </div>
             </form>

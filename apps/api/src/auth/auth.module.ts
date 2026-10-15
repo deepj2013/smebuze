@@ -22,6 +22,7 @@ import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AuditModule } from '../audit/audit.module';
 import { PartnersModule } from '../partners/partners.module';
+import { GrowthModule } from '../growth/growth.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { PartnersModule } from '../partners/partners.module';
     ]),
     AuditModule,
     forwardRef(() => PartnersModule),
+    forwardRef(() => GrowthModule),
   ],
   providers: [AuthService, JwtStrategy, JwtAuthGuard],
   controllers: [AuthController],

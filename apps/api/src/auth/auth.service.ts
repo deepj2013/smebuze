@@ -31,6 +31,8 @@ import { isPosBusinessType } from '../common/tenant-client-types';
 import { brandingForBusinessType } from '../common/variant-theme';
 import { tenantSessionFrom, TenantSession } from '../common/tenant-session';
 import { PartnersService } from '../partners/partners.service';
+import { GrowthService } from '../growth/growth.service';
+import { getClientPack } from '../growth/client-packs';
 
 export interface JwtPayload {
   sub: string;
@@ -105,6 +107,8 @@ export class AuthService {
     private readonly auditService: AuditService,
     @Inject(forwardRef(() => PartnersService))
     private readonly partnersService: PartnersService,
+    @Inject(forwardRef(() => GrowthService))
+    private readonly growthService: GrowthService,
   ) {}
 
   async login(dto: LoginDto): Promise<
@@ -348,7 +352,14 @@ export class AuthService {
     user: TenantContext;
     email_verified: boolean;
     mailSent: boolean;
-    tenant: { id: string; slug: string; plan: string; subscription_ends_at: string | null };
+    needs_email_verify: boolean;
+    tenant: {
+      id: string;
+      slug: string;
+      plan: string;
+      subscription_ends_at: string | null;
+      settings?: Record<string, unknown>;
+    };
   }> {
     const slug = dto.slug.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
     if (slug.length < 2) throw new BadRequestException('Slug must be at least 2 characters');
@@ -358,25 +369,19 @@ export class AuthService {
     });
     if (existing) throw new ConflictException('Organization slug already taken');
 
-    const features = PLAN_FEATURES[dto.plan] ?? PLAN_FEATURES.basic;
+    // Public website signup is always a 7-day trial (no free paid period without payment).
     const now = new Date();
-    let subscriptionEndsAt: Date;
-    if (dto.trial === 'true' || dto.trial === '1') {
-      subscriptionEndsAt = new Date(now);
-      subscriptionEndsAt.setDate(subscriptionEndsAt.getDate() + 7);
-    } else {
-      if (dto.interval === 'yearly') {
-        subscriptionEndsAt = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
-      } else if (dto.interval === 'quarterly') {
-        subscriptionEndsAt = new Date(now);
-        subscriptionEndsAt.setMonth(subscriptionEndsAt.getMonth() + 3);
-      } else {
-        subscriptionEndsAt = new Date(now);
-        subscriptionEndsAt.setMonth(subscriptionEndsAt.getMonth() + 1);
-      }
-    }
+    const subscriptionEndsAt = new Date(now);
+    subscriptionEndsAt.setDate(subscriptionEndsAt.getDate() + 7);
 
     const businessType = dto.businessType || 'trading';
+    const pack = getClientPack(businessType);
+    const planFeatures = PLAN_FEATURES[dto.plan] ?? PLAN_FEATURES.basic;
+    const features = Array.from(new Set([...planFeatures, ...(pack?.features ?? [])]));
+    const enabledModules = pack?.modules?.length
+      ? pack.modules
+      : ['dashboard', 'crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'onboarding'];
+
     const tenant = this.tenantRepo.create({
       platform_org_id: PLATFORM_ORG_ID as unknown as string,
       name: dto.orgName,
@@ -385,10 +390,13 @@ export class AuthService {
       features,
       settings: {
         business_type: businessType,
+        enabled_modules: enabledModules,
+        workspace_configured: true,
+        account_kind: 'demo',
         branding: brandingForBusinessType(businessType),
         billing: {
           interval: dto.interval || 'quarterly',
-          trial: dto.trial === 'true' || dto.trial === '1',
+          trial: true,
           auto_renew: true,
         },
       },
@@ -405,7 +413,9 @@ export class AuthService {
     });
     await this.companyRepo.save(company);
 
-    if (isPosBusinessType(businessType)) {
+    const needsCounter = isPosBusinessType(businessType);
+    const needsGodown = !needsCounter && Boolean(pack?.modules?.includes('inventory'));
+    if (needsCounter) {
       await this.customerRepo.save(
         this.customerRepo.create({
           tenant_id: tenant.id,
@@ -422,6 +432,16 @@ export class AuthService {
           company_id: company.id,
           name: 'Shop counter',
           code: 'COUNTER',
+          is_default: true,
+        }),
+      );
+    } else if (needsGodown) {
+      await this.warehouseRepo.save(
+        this.warehouseRepo.create({
+          tenant_id: tenant.id,
+          company_id: company.id,
+          name: 'Main godown',
+          code: 'MAIN',
           is_default: true,
         }),
       );
@@ -446,6 +466,43 @@ export class AuthService {
       this.userRoleRepo.create({ user_id: user.id, role_id: tenantAdminRoleId }),
     );
 
+    // Seed public website / channels for the chosen shop type (buyer portal for B2B, etc.).
+    try {
+      await this.growthService.applyPack(
+        {
+          tenantId: tenant.id,
+          userId: user.id,
+          email: user.email,
+          isSuperAdmin: false,
+          permissions: ['*'],
+          roleIds: [tenantAdminRoleId],
+        },
+        businessType,
+        { force: true, list_existing_items: pack?.list_existing_items },
+      );
+      // Keep trial flags after pack apply (applyPack merges settings).
+      const refreshed = await this.tenantRepo.findOne({ where: { id: tenant.id } });
+      if (refreshed) {
+        refreshed.settings = {
+          ...(refreshed.settings ?? {}),
+          workspace_configured: true,
+          account_kind: 'demo',
+          billing: {
+            ...((refreshed.settings?.billing as Record<string, unknown>) ?? {}),
+            interval: dto.interval || 'quarterly',
+            trial: true,
+            auto_renew: true,
+          },
+        };
+        refreshed.subscription_ends_at = subscriptionEndsAt;
+        await this.tenantRepo.save(refreshed);
+      }
+    } catch (err) {
+      // Pack seed is best-effort — workspace still usable without storefront.
+      // eslint-disable-next-line no-console
+      console.warn('[signup] applyPack failed', err instanceof Error ? err.message : err);
+    }
+
     const userWithRelations = await this.userRepo.findOne({
       where: { id: user.id },
       relations: ['defaultCompany', 'defaultBranch'],
@@ -466,17 +523,39 @@ export class AuthService {
     const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3001';
     const verifyUrl = `${baseUrl}/verify-email?email=${encodeURIComponent(user.email)}&slug=${encodeURIComponent(tenant.slug)}`;
     const mail = await this.mailService.sendWelcomeVerify(user.email, user.name || dto.orgName, otp, verifyUrl);
+
+    const tenantOut = async () => {
+      const latest = await this.tenantRepo.findOne({ where: { id: tenant.id } });
+      return {
+        id: tenant.id,
+        slug: tenant.slug,
+        plan: tenant.plan,
+        subscription_ends_at: (latest?.subscription_ends_at ?? subscriptionEndsAt).toISOString(),
+        settings: (latest?.settings ?? tenant.settings) as Record<string, unknown>,
+      };
+    };
+
+    // If SMTP fails, do not brick the 7-day trial — open the workspace after signup.
+    if (!mail.sent) {
+      user.email_verified = true;
+      await this.userRepo.save(user);
+      return {
+        access_token,
+        user: { ...context, email_verified: true },
+        email_verified: true,
+        mailSent: false,
+        needs_email_verify: false,
+        tenant: await tenantOut(),
+      };
+    }
+
     return {
       access_token,
       user: { ...context, email_verified: false },
       email_verified: false,
-      mailSent: mail.sent,
-      tenant: {
-        id: tenant.id,
-        slug: tenant.slug,
-        plan: tenant.plan,
-        subscription_ends_at: tenant.subscription_ends_at?.toISOString() ?? null,
-      },
+      mailSent: true,
+      needs_email_verify: true,
+      tenant: await tenantOut(),
     };
   }
 

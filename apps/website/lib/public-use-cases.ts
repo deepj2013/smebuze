@@ -117,6 +117,11 @@ const HELP: Record<string, { tag: string; help: string; gets: string[] }> = {
     help: 'Quotations to GST invoices, purchase and godown stock, plus a buyer catalog so customers reorder online.',
     gets: ['Quotations', 'GST invoices', 'Purchase & stock', 'Buyer portal'],
   },
+  b2b: {
+    tag: 'B2B distribution',
+    help: 'Sell to other businesses: public catalog, portal orders, delivery challans, credit parties and GST invoices from one desk.',
+    gets: ['Buyer portal', 'Portal orders', 'Delivery challans', 'GST + credit'],
+  },
   manufacturing: {
     tag: 'Finished goods',
     help: 'Finished-goods catalog for buyers, GST desk and godown — MOQ and lead time confirmed by your team.',
@@ -135,7 +140,6 @@ const HELP: Record<string, { tag: string; help: string; gets: string[] }> = {
 };
 
 const EXTRA: { id: string; title: string; group: string }[] = [
-  { id: 'restaurant_wholesale', title: 'Restaurant / HORECA wholesale', group: 'desk' },
   { id: 'ice_crest', title: 'Ice plant / ice wholesale', group: 'desk' },
 ];
 

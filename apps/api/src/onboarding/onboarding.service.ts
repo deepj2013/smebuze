@@ -14,6 +14,7 @@ import { TenantContext } from '../common/tenant-context';
 import { isPosBusinessType } from '../common/tenant-client-types';
 import { SaveWorkspaceDto } from './dto/save-workspace.dto';
 import { brandingForBusinessType } from '../common/variant-theme';
+import { getClientPack } from '../growth/client-packs';
 
 export interface ChecklistStep {
   id: string;
@@ -198,8 +199,21 @@ export class OnboardingService {
       await this.ensurePosBasics(ctx.tenantId);
     }
 
+    const pack = getClientPack(dto.businessType);
+    if (pack?.modules?.length) {
+      const mods = Array.from(new Set(['organization', 'onboarding', 'help', 'dashboard', ...pack.modules]));
+      tenant.settings = { ...(tenant.settings ?? {}), enabled_modules: mods };
+      const features = new Set([...(tenant.features ?? []), ...pack.features]);
+      tenant.features = [...features];
+      await this.tenantRepo.save(tenant);
+      enabledModules.splice(0, enabledModules.length, ...mods);
+    }
+
     const done = await this.completeOnboarding(ctx);
-    const homeHref = isPosBusinessType(dto.businessType) ? '/pos' : '/dashboard';
+    let homeHref = '/dashboard';
+    if (dto.businessType === 'ice_crest') homeHref = '/ice-crest/dashboard';
+    else if (dto.businessType === 'dine_restaurant' || dto.businessType === 'cafe') homeHref = '/pos/floor';
+    else if (isPosBusinessType(dto.businessType)) homeHref = '/pos';
     return {
       ...done,
       homeHref,

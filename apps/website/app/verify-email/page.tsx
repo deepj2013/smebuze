@@ -12,12 +12,17 @@ function VerifyEmailForm() {
   const searchParams = useSearchParams();
   const emailFromUrl = searchParams.get('email') ?? '';
   const slugFromUrl = searchParams.get('slug') ?? '';
+  const mailFromUrl = searchParams.get('mail');
 
   const [email, setEmail] = useState(emailFromUrl);
   const tenantSlug = slugFromUrl;
   const [otp, setOtp] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(
+    mailFromUrl === '0'
+      ? 'We could not send the email just now. Tap Resend code, check spam, or write to support@smebuze.com.'
+      : null,
+  );
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
 
@@ -107,7 +112,7 @@ function VerifyEmailForm() {
         <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-slate-200 p-5 sm:p-8">
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Confirm your email</h1>
           <p className="text-slate-600 text-sm mb-6">
-            We sent a 6-digit code from <span className="font-medium text-slate-800">support@smebuze.com</span>. Enter it here to open your workspace.
+            We sent a 6-digit code from <span className="font-medium text-slate-800">support@smebuze.com</span>. Enter it here to open your 7-day trial workspace. Check spam if you do not see it within a minute.
           </p>
           <form onSubmit={handleVerify} className="space-y-4">
             <div>

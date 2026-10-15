@@ -26,6 +26,9 @@ export const VARIANT_THEMES: Record<string, VariantTheme> = {
   hotel: { primary: '#1e293b', accent: '#0f172a' },
   manufacturing: { primary: '#3f3f46', accent: '#27272a' },
   trading: { primary: '#0284c7', accent: '#0369a1' },
+  b2b: { primary: '#1d4ed8', accent: '#1e40af' },
+  restaurant_wholesale: { primary: '#b45309', accent: '#92400e' },
+  transport: { primary: '#334155', accent: '#1e293b' },
   services: { primary: '#4f46e5', accent: '#3730a3' },
   ice_crest: { primary: '#0891b2', accent: '#0e7490' },
 };

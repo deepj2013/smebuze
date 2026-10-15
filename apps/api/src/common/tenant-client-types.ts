@@ -5,6 +5,8 @@
 export const TENANT_CLIENT_TYPES = {
   STANDARD: 'standard',
   TRADING: 'trading',
+  /** B2B distribution — catalog, portal orders, challans, GST desk. */
+  B2B: 'b2b',
   SERVICES: 'services',
   DINE_RESTAURANT: 'dine_restaurant',
   CAFE: 'cafe',
@@ -89,6 +91,8 @@ export const SIGNUP_BUSINESS_TYPES = [
   TENANT_CLIENT_TYPES.HOTEL,
   TENANT_CLIENT_TYPES.MANUFACTURING,
   TENANT_CLIENT_TYPES.TRADING,
+  TENANT_CLIENT_TYPES.B2B,
+  TENANT_CLIENT_TYPES.RESTAURANT_WHOLESALE,
   TENANT_CLIENT_TYPES.TRANSPORT,
   TENANT_CLIENT_TYPES.SERVICES,
 ] as const;

@@ -90,6 +90,18 @@ export const CLIENT_PACKS: ClientPack[] = [
     about: 'Browse our items, place an order, and we will confirm stock and delivery.',
   }),
   pack(
+    'b2b',
+    'B2B / distribution',
+    'Buyer portal, GST quotations & invoices, delivery challans, credit parties and godown stock.',
+    DESK_SHOP,
+    {
+      hero_title: 'Order for your business',
+      hero_subtitle: 'Browse our catalog, place a portal order, and we confirm stock and delivery.',
+      about: 'Built for distributors and B2B sellers — buyers order online, you bill GST and deliver with a challan.',
+    },
+    { list_existing_items: true },
+  ),
+  pack(
     'restaurant_wholesale',
     'Restaurant / HORECA wholesale',
     'B2B catalog, portal orders, delivery challan, monthly bill.',

@@ -89,7 +89,7 @@ export function defaultModulesForShop(type: string): string[] {
   if (type === 'ice_crest') {
     return ['crm', 'sales', 'inventory', 'reports', 'hr'];
   }
-  // Trading / manufacturing / HORECA wholesale — full desk
+  // Trading / B2B / manufacturing / HORECA wholesale — full desk
   return ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports'];
 }
 
