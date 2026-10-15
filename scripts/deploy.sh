@@ -235,12 +235,25 @@ else
 fi
 
 log "==== health ===="
-sleep 2
-API_HEALTH="$(curl -sS "http://127.0.0.1:${PORT:-3000}/api/v1/health" || true)"
+# Nest can take a few seconds after pm2 reload; crash-loops show empty health immediately.
+API_HEALTH=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  sleep 2
+  API_HEALTH="$(curl -sS -m 3 "http://127.0.0.1:${PORT:-3000}/api/v1/health" 2>/dev/null || true)"
+  if echo "${API_HEALTH}" | grep -q '"status":"ok"'; then
+    break
+  fi
+done
 log "api  : ${API_HEALTH}"
 WEB_CODE="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/ || true)"
 log "web  : HTTP ${WEB_CODE}"
 pm2 status smebuze-api smebuze-web || pm2 status
+
+if ! echo "${API_HEALTH}" | grep -q '"status":"ok"'; then
+  log "ERROR: API health failed — recent smebuze-api errors:"
+  pm2 logs smebuze-api --err --lines 80 --nostream || true
+  die "API not healthy on 127.0.0.1:${PORT:-3000} (would 502 at api.smebuze.com)"
+fi
 
 echo "${NEW_SHA}" > "${STATE_FILE}"
 log "saved ${STATE_FILE}"

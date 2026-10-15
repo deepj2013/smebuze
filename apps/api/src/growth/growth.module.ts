@@ -1,7 +1,5 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuthModule } from '../auth/auth.module';
-import { TenantModule } from '../tenant/tenant.module';
 import { Tenant } from '../tenant/entities/tenant.entity';
 import { Company } from '../tenant/entities/company.entity';
 import { Item } from '../inventory/entities/item.entity';
@@ -21,8 +19,7 @@ import { LeadsGateway } from './leads.gateway';
 
 @Module({
   imports: [
-    forwardRef(() => AuthModule),
-    TenantModule,
+    // No AuthModule / TenantModule: Auth → Growth → Tenant → Auth was crashing Nest on boot (502).
     TypeOrmModule.forFeature([
       Tenant,
       Company,

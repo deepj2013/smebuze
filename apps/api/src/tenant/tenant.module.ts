@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PlatformOrg } from './entities/platform-org.entity';
 import { Tenant } from './entities/tenant.entity';
@@ -13,7 +13,7 @@ import { User } from '../auth/entities/user.entity';
 @Module({
   imports: [
     TypeOrmModule.forFeature([PlatformOrg, Tenant, Company, Branch, User]),
-    AuthModule,
+    forwardRef(() => AuthModule),
   ],
   controllers: [TenantController],
   providers: [TenantService, FeatureGuard],
