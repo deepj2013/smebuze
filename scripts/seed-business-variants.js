@@ -84,6 +84,7 @@ const THEMES = {
   hotel: { primary: '#1e293b', accent: '#0f172a' },
   manufacturing: { primary: '#3f3f46', accent: '#27272a' },
   trading: { primary: '#0284c7', accent: '#0369a1' },
+  b2b: { primary: '#1d4ed8', accent: '#1e40af' },
   transport: { primary: '#1d4ed8', accent: '#1e40af' },
   services: { primary: '#4f46e5', accent: '#3730a3' },
 };

@@ -17,6 +17,8 @@
     "seed:variants": "cd apps/api && node ../../scripts/seed-business-variants.js",
     "seed:ameera": "cd apps/api && node ../../scripts/seed-ameera-data.js",
     "seed:ice-crest": "cd apps/api && node ../../scripts/seed-tenant-ice-crest.js",
+    "seed:b2b-garments": "cd apps/api && node ../../scripts/seed-tenant-b2b-garments.js",
+    "seed:restaurant-wholesale": "cd apps/api && node ../../scripts/seed-tenant-restaurant-wholesale.js",
     "deploy:production": "bash scripts/deploy.sh",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down"
