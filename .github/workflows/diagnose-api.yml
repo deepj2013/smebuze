@@ -1,0 +1,73 @@
+name: Diagnose API on VPS
+
+# Prints PM2 status + recent smebuze-api error logs so we can see why api.smebuze.com 502s.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: smebuze-production-diagnose-api
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    name: SSH and dump API logs
+    runs-on: ubuntu-latest
+    environment: smebuze
+    timeout-minutes: 10
+    steps:
+      - name: Require environment secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$VPS_SSH_KEY" ]; then
+            echo "::error::Environment smebuze needs secrets VPS_HOST, VPS_USER, VPS_SSH_KEY."
+            exit 1
+          fi
+
+      - name: SSH and diagnose
+        env:
+          HOST: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
+          SSH_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          HOST="$(printf '%s' "$HOST" | tr -d '\r' | xargs)"
+          SSH_USER="$(printf '%s' "$SSH_USER" | tr -d '\r' | xargs)"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          python3 - << 'PY'
+          import os
+          key = os.environ["KEY"].replace("\r", "").strip() + "\n"
+          open(os.path.expanduser("~/.ssh/deploy_key"), "w").write(key)
+          PY
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 \
+            "${SSH_USER}@${HOST}" bash -s << 'EOF'
+          set -euo pipefail
+          APP_DIR=/var/www/smebuze
+          run_as() {
+            if [ "$(id -un)" = "root" ] && id smebuze >/dev/null 2>&1; then
+              sudo -u smebuze -H bash -lc "$1"
+            else
+              bash -lc "$1"
+            fi
+          }
+          echo "==== pm2 status ===="
+          run_as 'pm2 status'
+          echo "==== local health ===="
+          curl -sS -m 3 "http://127.0.0.1:3000/api/v1/health" || echo "(no response on :3000)"
+          echo
+          echo "==== pm2 describe smebuze-api ===="
+          run_as 'pm2 describe smebuze-api' || true
+          echo "==== pm2 err logs (last 100) ===="
+          run_as 'pm2 logs smebuze-api --err --lines 100 --nostream' || true
+          echo "==== pm2 out logs (last 40) ===="
+          run_as 'pm2 logs smebuze-api --out --lines 40 --nostream' || true
+          echo "==== try one foreground boot (15s) ===="
+          run_as 'cd /var/www/smebuze/apps/api && timeout 15s node dist/main.js' || true
+          echo "==== ls dist ===="
+          run_as 'ls -la /var/www/smebuze/apps/api/dist/main.js; head -c 200 /var/www/smebuze/apps/api/dist/main.js; echo'
+          EOF
