@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Tenant } from '../tenant/entities/tenant.entity';
 import { Company } from '../tenant/entities/company.entity';
@@ -19,7 +21,17 @@ import { LeadsGateway } from './leads.gateway';
 
 @Module({
   imports: [
-    // No AuthModule / TenantModule: Auth → Growth → Tenant → Auth was crashing Nest on boot (502).
+    // Jwt only — do not import AuthModule/TenantModule (Auth → Growth → Tenant → Auth crash-looped Nest / 502).
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.get<string>('JWT_SECRET') || 'change-me-in-prod',
+        signOptions: {
+          expiresIn: config.get<string>('JWT_EXPIRES_IN') || '8h',
+        },
+      }),
+    }),
     TypeOrmModule.forFeature([
       Tenant,
       Company,
