@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
+import ItemSearchPicker, { type SearchableItem } from '../../../components/ItemSearchPicker';
 
 interface PurchaseOrder { id: string; number: string; vendor?: { name: string } }
-interface Item { id: string; name: string }
 
 interface LineRow { item_id: string; description: string; ordered_qty: number; received_qty: number }
 
@@ -15,7 +15,7 @@ export default function NewGrnPage() {
   const searchParams = useSearchParams();
   const poIdParam = searchParams?.get('po_id') ?? '';
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
+  const [items, setItems] = useState<SearchableItem[]>([]);
   const [poId, setPoId] = useState(poIdParam);
   const [grnDate, setGrnDate] = useState(new Date().toISOString().slice(0, 10));
   const [lines, setLines] = useState<LineRow[]>([{ item_id: '', description: '', ordered_qty: 0, received_qty: 0 }]);
@@ -26,10 +26,10 @@ export default function NewGrnPage() {
     (async () => {
       const [oRes, iRes] = await Promise.all([
         apiGet<PurchaseOrder[] | { data: PurchaseOrder[] }>('purchase/orders'),
-        apiGet<Item[] | { data: Item[] }>('inventory/items'),
+        apiGet<SearchableItem[] | { data: SearchableItem[] }>('inventory/items'),
       ]);
       const oList = Array.isArray(oRes.data) ? oRes.data : (oRes.data as { data?: PurchaseOrder[] })?.data ?? [];
-      const iList = Array.isArray(iRes.data) ? iRes.data : (iRes.data as { data?: Item[] })?.data ?? [];
+      const iList = Array.isArray(iRes.data) ? iRes.data : (iRes.data as { data?: SearchableItem[] })?.data ?? [];
       setOrders(oList);
       setItems(iList);
       if (poIdParam && !poId) setPoId(poIdParam);
@@ -106,27 +106,31 @@ export default function NewGrnPage() {
           </div>
           <div className="space-y-3">
             {lines.map((line, i) => (
-              <div key={i} className="flex flex-wrap gap-2 items-end border-b border-slate-100 pb-2">
-                <div className="w-48">
-                  <label className="block text-xs text-slate-500 mb-0.5">Item</label>
-                  <select value={line.item_id} onChange={(e) => updateLine(i, 'item_id', e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm">
-                    <option value="">—</option>
-                    {items.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
-                  </select>
+              <div key={i} className="space-y-2 border-b border-slate-100 pb-3">
+                <div>
+                  <label className="mb-0.5 block text-xs text-slate-500">Item</label>
+                  <ItemSearchPicker
+                    items={items}
+                    value={line.item_id}
+                    onChange={(id) => updateLine(i, 'item_id', id)}
+                    placeholder="Search name, brand, size, SKU…"
+                  />
                 </div>
-                <div className="flex-1 min-w-[100px]">
-                  <label className="block text-xs text-slate-500 mb-0.5">Description</label>
-                  <input value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+                <div className="flex flex-wrap gap-2 items-end">
+                  <div className="min-w-[140px] flex-1">
+                    <label className="mb-0.5 block text-xs text-slate-500">Description</label>
+                    <input value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+                  </div>
+                  <div className="w-20">
+                    <label className="mb-0.5 block text-xs text-slate-500">Ordered</label>
+                    <input type="number" min={0} step={1} value={line.ordered_qty} onChange={(e) => updateLine(i, 'ordered_qty', e.target.valueAsNumber || 0)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+                  </div>
+                  <div className="w-20">
+                    <label className="mb-0.5 block text-xs text-slate-500">Received</label>
+                    <input type="number" min={0} step={1} value={line.received_qty} onChange={(e) => updateLine(i, 'received_qty', e.target.valueAsNumber || 0)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+                  </div>
+                  <button type="button" onClick={() => removeLine(i)} className="text-sm text-red-600 hover:underline">Remove</button>
                 </div>
-                <div className="w-20">
-                  <label className="block text-xs text-slate-500 mb-0.5">Ordered</label>
-                  <input type="number" min={0} step={1} value={line.ordered_qty} onChange={(e) => updateLine(i, 'ordered_qty', e.target.valueAsNumber || 0)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
-                </div>
-                <div className="w-20">
-                  <label className="block text-xs text-slate-500 mb-0.5">Received</label>
-                  <input type="number" min={0} step={1} value={line.received_qty} onChange={(e) => updateLine(i, 'received_qty', e.target.valueAsNumber || 0)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
-                </div>
-                <button type="button" onClick={() => removeLine(i)} className="text-red-600 text-sm hover:underline">Remove</button>
               </div>
             ))}
           </div>

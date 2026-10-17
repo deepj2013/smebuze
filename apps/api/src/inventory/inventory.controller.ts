@@ -178,19 +178,43 @@ export class InventoryController {
     return this.inventoryService.findLowStock(ctx);
   }
 
+  @Get('stock/expiring')
+  @RequirePermissions('inventory.stock.view')
+  async getExpiringStock(
+    @Query('within_days') withinDays: string | undefined,
+    @Query('warehouse_id') warehouseId: string | undefined,
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    const days = withinDays != null && withinDays !== '' ? Number(withinDays) : 30;
+    return this.inventoryService.findExpiringStock(ctx, Number.isFinite(days) ? days : 30, warehouseId);
+  }
+
   @Post('stock/receive')
   @RequirePermissions('inventory.item.create')
   async receiveStock(
-    @Body() body: { warehouse_id: string; item_id: string; quantity: number; cost_price?: number; measured?: boolean },
+    @Body()
+    body: {
+      warehouse_id: string;
+      item_id: string;
+      quantity: number;
+      cost_price?: number;
+      measured?: boolean;
+      batch_code?: string;
+      expiry_date?: string;
+    },
     @CurrentTenant() ctx: TenantContext,
   ) {
     if (body.cost_price != null && Number.isFinite(Number(body.cost_price))) {
       await this.inventoryService.setItemCost(ctx, body.item_id, Number(body.cost_price));
     }
+    const opts = {
+      batch_code: body.batch_code ?? null,
+      expiry_date: body.expiry_date ?? null,
+    };
     if (body.measured) {
-      await this.inventoryService.receiveMeasured(ctx, body.warehouse_id, body.item_id, body.quantity);
+      await this.inventoryService.receiveMeasured(ctx, body.warehouse_id, body.item_id, body.quantity, opts);
     } else {
-      await this.inventoryService.receiveStock(ctx, body.warehouse_id, body.item_id, body.quantity);
+      await this.inventoryService.receiveStock(ctx, body.warehouse_id, body.item_id, body.quantity, opts);
     }
     return { ok: true };
   }

@@ -28,6 +28,7 @@ export function DepartmentItemFields({
   costPrice,
   cgstRate,
   sgstRate,
+  hideBrandPack = false,
 }: {
   subcategory: string;
   setSubcategory: (v: string) => void;
@@ -44,6 +45,8 @@ export function DepartmentItemFields({
   costPrice: string;
   cgstRate: string;
   sgstRate: string;
+  /** When Brand & pack fields are shown above, skip size/form here. */
+  hideBrandPack?: boolean;
 }) {
   const [bulk, setBulk] = useState<BulkItem[]>([]);
   useEffect(() => {
@@ -69,14 +72,18 @@ export function DepartmentItemFields({
       <p className="text-xs text-slate-600">MRP includes GST. The discount % is the maximum the counter can give, on the line or on the whole bill. A 50g pack sold from a 50kg bag uses 0.05 kg of that bag.</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label className="text-sm text-slate-700">Subcategory
-          <input value={subcategory} onChange={(e) => setSubcategory(e.target.value)} placeholder="Staples" className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+          <input value={subcategory} onChange={(e) => setSubcategory(e.target.value)} placeholder="Masala, Staples" className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm" />
         </label>
-        <label className="text-sm text-slate-700">Size
-          <input value={variantSize} onChange={(e) => setVariantSize(e.target.value)} placeholder="50g, 1kg, 500ml" className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <label className="text-sm text-slate-700">Shape
-          <input value={variantShape} onChange={(e) => setVariantShape(e.target.value)} placeholder="pack, bottle, box" className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm" />
-        </label>
+        {!hideBrandPack && (
+          <>
+            <label className="text-sm text-slate-700">Size
+              <input value={variantSize} onChange={(e) => setVariantSize(e.target.value)} placeholder="50g, 1kg, 500ml" className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm text-slate-700">Form
+              <input value={variantShape} onChange={(e) => setVariantShape(e.target.value)} placeholder="powder, whole, pack" className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+            </label>
+          </>
+        )}
         <label className="text-sm text-slate-700">Filled from bulk stock
           <select value={packSourceId} onChange={(e) => setPackSourceId(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm">
             <option value="">This item is the stock itself</option>

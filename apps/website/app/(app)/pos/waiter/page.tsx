@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost } from '@/lib/api';
 import { posSellingRate } from '@/lib/business-types';
 import { KITCHEN_LABEL, minutesAgo, statusClass, type FloorSnapshot, type FloorTicket } from '@/lib/floor';
+import { matchesPosNameSearch } from '@/lib/pos-search';
 import { useToast } from '../../components/ToastContext';
 import FloorSwitcher from '../../components/FloorSwitcher';
 import { Minus, Plus, Search, Send } from 'lucide-react';
@@ -57,11 +58,9 @@ export default function WaiterPage() {
     return ['all', ...Array.from(set).sort()];
   }, [items]);
   const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
     return items.filter((i) => {
       if (category !== 'all' && (i.category || '') !== category) return false;
-      if (!q) return true;
-      return i.name.toLowerCase().includes(q);
+      return matchesPosNameSearch(query, { name: i.name });
     });
   }, [items, category, query]);
 

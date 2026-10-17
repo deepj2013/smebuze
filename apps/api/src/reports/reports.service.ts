@@ -859,6 +859,136 @@ export class ReportsService {
     };
   }
 
+  /**
+   * Cash counter day close: collections by mode (cash / UPI / card) + credit sales,
+   * and profit for today / this week / this month.
+   */
+  async getCashCounterReport(ctx: TenantContext, date?: string) {
+    const tenantId = ctx.tenantId;
+    const round = (n: number) => Math.round(Number(n || 0) * 100) / 100;
+    const emptyPeriod = () => ({
+      sales: 0,
+      cost: 0,
+      profit: 0,
+      bills: 0,
+      cash: 0,
+      upi: 0,
+      card: 0,
+      credit: 0,
+      other: 0,
+    });
+    if (!tenantId) {
+      return {
+        date: date || new Date().toISOString().slice(0, 10),
+        day: emptyPeriod(),
+        week: emptyPeriod(),
+        month: emptyPeriod(),
+      };
+    }
+
+    const day = (date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : new Date().toISOString().slice(0, 10));
+    const dayDate = new Date(`${day}T12:00:00`);
+    const weekStart = new Date(dayDate);
+    const dow = weekStart.getDay(); // 0 Sun
+    const mondayOffset = dow === 0 ? -6 : 1 - dow;
+    weekStart.setDate(weekStart.getDate() + mondayOffset);
+    const weekFrom = weekStart.toISOString().slice(0, 10);
+    const monthFrom = `${day.slice(0, 7)}-01`;
+
+    const periodStats = async (from: string, to: string) => {
+      const salesRows = await this.dataSource.query(
+        `SELECT
+            COALESCE(SUM(inv.total), 0)::float AS sales,
+            COALESCE(SUM(cost.line_cost), 0)::float AS cost,
+            COUNT(*)::int AS bills
+         FROM sales_invoices inv
+         LEFT JOIN (
+           SELECT l.invoice_id,
+                  SUM(l.qty * COALESCE(i.cost_price, 0)) AS line_cost
+           FROM sales_invoice_lines l
+           LEFT JOIN items i ON i.id = l.item_id
+           GROUP BY l.invoice_id
+         ) cost ON cost.invoice_id = inv.id
+         WHERE inv.tenant_id = $1
+           AND inv.invoice_date >= $2::date
+           AND inv.invoice_date <= $3::date
+           AND COALESCE(inv.status, '') <> 'deleted'`,
+        [tenantId, from, to],
+      );
+      const payRows = await this.dataSource.query(
+        `SELECT LOWER(COALESCE(p.mode, 'cash')) AS mode,
+                COALESCE(SUM(p.amount), 0)::float AS amount
+         FROM invoice_payments p
+         JOIN sales_invoices inv ON inv.id = p.invoice_id
+         WHERE inv.tenant_id = $1
+           AND p.payment_date >= $2::date
+           AND p.payment_date <= $3::date
+           AND COALESCE(inv.status, '') <> 'deleted'
+         GROUP BY 1`,
+        [tenantId, from, to],
+      );
+      // Credit = bills in the period still unpaid (or only partly paid)
+      const creditRows = await this.dataSource.query(
+        `SELECT COALESCE(SUM(GREATEST(
+            COALESCE(inv.total, 0)
+            - COALESCE(pay.paid, 0),
+            0
+          )), 0)::float AS credit
+         FROM sales_invoices inv
+         LEFT JOIN (
+           SELECT invoice_id, SUM(amount) AS paid FROM invoice_payments GROUP BY invoice_id
+         ) pay ON pay.invoice_id = inv.id
+         WHERE inv.tenant_id = $1
+           AND inv.invoice_date >= $2::date
+           AND inv.invoice_date <= $3::date
+           AND COALESCE(inv.status, '') <> 'deleted'
+           AND COALESCE(inv.total, 0) > COALESCE(pay.paid, 0) + 0.009`,
+        [tenantId, from, to],
+      );
+
+      let cash = 0;
+      let upi = 0;
+      let card = 0;
+      let other = 0;
+      for (const row of payRows as { mode: string; amount: number }[]) {
+        const m = String(row.mode || 'cash').toLowerCase();
+        const amt = Number(row.amount) || 0;
+        if (m === 'cash') cash += amt;
+        else if (m === 'upi') upi += amt;
+        else if (m === 'card') card += amt;
+        else other += amt;
+      }
+      const sales = Number(salesRows[0]?.sales) || 0;
+      const cost = Number(salesRows[0]?.cost) || 0;
+      return {
+        sales: round(sales),
+        cost: round(cost),
+        profit: round(sales - cost),
+        bills: Number(salesRows[0]?.bills) || 0,
+        cash: round(cash),
+        upi: round(upi),
+        card: round(card),
+        credit: round(Number(creditRows[0]?.credit) || 0),
+        other: round(other),
+      };
+    };
+
+    const [dayStats, weekStats, monthStats] = await Promise.all([
+      periodStats(day, day),
+      periodStats(weekFrom, day),
+      periodStats(monthFrom, day),
+    ]);
+
+    return {
+      date: day,
+      week_from: weekFrom,
+      month_from: monthFrom,
+      day: dayStats,
+      week: weekStats,
+      month: monthStats,
+    };
+  }
+
   /** Counter report for a department store: GST, margin, credit accounts, and bulk packs. */
   async getDepartmentCounterReport(ctx: TenantContext, from?: string, to?: string) {
     const tenantId = ctx.tenantId;

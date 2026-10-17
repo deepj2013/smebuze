@@ -17,4 +17,12 @@ export class LoginDto {
   @IsOptional()
   @IsBoolean()
   platformAdmin?: boolean;
+
+  /**
+   * Stay signed in on this device (default true).
+   * true → long-lived token (30d); false → short session (12h).
+   */
+  @IsOptional()
+  @IsBoolean()
+  remember_me?: boolean;
 }

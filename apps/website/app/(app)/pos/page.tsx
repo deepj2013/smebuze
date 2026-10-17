@@ -11,6 +11,9 @@ import { Minus, Plus, Search, Banknote, Smartphone, CreditCard, ShoppingBag, Ute
 import BarcodeCapture from '../components/BarcodeCapture';
 import { useHidBarcode } from '@/lib/use-hid-barcode';
 import { playScanBeep } from '@/lib/pos-beep';
+import { matchesPosNameSearch } from '@/lib/pos-search';
+import { displayItemName, displayItemPackLine, itemSearchExtras } from '@/lib/item-i18n';
+import { COUNTER_LANG_OPTIONS, counterLang, setCounterLang, type CounterLang } from '@/lib/counter-desk';
 import { limitDecimalPlaces, round2 } from '@/lib/money';
 import {
   isNetworkError,
@@ -30,9 +33,12 @@ import DepartmentCounter from './DepartmentCounter';
 interface PosItem {
   id: string;
   name: string;
+  brand?: string | null;
   sku?: string | null;
   barcode?: string | null;
   category?: string | null;
+  variant_size?: string | null;
+  variant_shape?: string | null;
   unit?: string | null;
   hsn_sac?: string | null;
   mrp?: string | number | null;
@@ -88,6 +94,7 @@ function monthEnd(): string {
 export default function PosPage() {
   const { success, error: showError } = useToast();
   const [businessType, setBusinessType] = useState<string | null>(null);
+  const [lang, setLang] = useState<CounterLang>('en');
   const [items, setItems] = useState<PosItem[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -141,6 +148,10 @@ export default function PosPage() {
     if (Array.isArray(shortRes.data)) setShort(shortRes.data);
     if (Array.isArray(billRes.data)) setTodayBills(billRes.data);
   };
+
+  useEffect(() => {
+    setLang(counterLang());
+  }, []);
 
   useEffect(() => {
     let timer = 0;
@@ -213,16 +224,16 @@ export default function PosPage() {
   }, [categories, menuQuery]);
 
   const visibleItems = useMemo(() => {
-    const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const code = shortCode.trim().toLowerCase();
     return items.filter((i) => {
       if (category !== 'all' && (i.category || '') !== category) return false;
       const sku = (i.sku || '').toLowerCase();
       const barcode = (i.barcode || '').toLowerCase();
       if (code && !sku.startsWith(code) && !barcode.startsWith(code)) return false;
-      if (!tokens.length) return true;
-      const hay = `${i.name.toLowerCase()} ${sku} ${barcode}`;
-      return tokens.every((token) => hay.includes(token));
+      return matchesPosNameSearch(query, {
+        name: i.name,
+        extra: [i.sku, i.barcode, ...itemSearchExtras(i)],
+      });
     });
   }, [items, category, query, shortCode]);
 
@@ -241,7 +252,7 @@ export default function PosPage() {
         ...prev,
         {
           item_id: item.id,
-          name: item.name,
+          name: displayItemName(item, lang),
           qty: addQty,
           rate,
           tax_rate: tax,
@@ -251,7 +262,7 @@ export default function PosPage() {
       ];
     });
     // Keep product grid open on phone — user opens Buy list when ready to pay.
-  }, []);
+  }, [lang]);
 
   const applyCode = useCallback(
     async (raw: string) => {
@@ -947,6 +958,25 @@ export default function PosPage() {
 
   return (
     <div className="flex min-h-0 flex-col gap-3 pb-24 md:h-[calc(100dvh-5.5rem)] md:overflow-hidden md:pb-0">
+      <div className="flex justify-end">
+        <label className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+          <span className="text-slate-500">Lang</span>
+          <select
+            value={lang}
+            onChange={(e) => {
+              const next = e.target.value as CounterLang;
+              setCounterLang(next);
+              setLang(next);
+            }}
+            className="bg-transparent text-xs font-semibold text-slate-800 outline-none"
+            aria-label="Counter language"
+          >
+            {COUNTER_LANG_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>{o.label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
       {shopCounter && waiting > 0 && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
           {waiting} bill(s) are on this device. Stock updates after they sync.
@@ -1127,7 +1157,7 @@ export default function PosPage() {
                 onKeyDown={onSearchKey}
                 autoComplete="off"
                 autoFocus={!floorMode}
-                placeholder="Search by name"
+                placeholder="Name or initials e.g. ttcm"
                 className="w-full rounded-md border border-slate-300 py-2.5 pl-10 pr-3 text-sm min-h-[44px]"
               />
             </div>
@@ -1137,7 +1167,8 @@ export default function PosPage() {
                 onChange={(e) => setShortCode(e.target.value)}
                 onKeyDown={onShortKey}
                 autoComplete="off"
-                placeholder="Short code"
+                placeholder="SKU / barcode"
+                title="Type or paste SKU or barcode, then Enter to add to cart"
                 className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2.5 text-sm min-h-[44px] sm:w-36 sm:flex-none"
               />
               {!floorMode && <BarcodeCapture onDetected={applyCode} label="Scan" className="shrink-0" />}
@@ -1188,7 +1219,10 @@ export default function PosPage() {
                       qty > 0 ? 'border-brand-500 ring-1 ring-brand-500' : 'border-sky-300'
                     }`}
                   >
-                    <span className="block pr-12 text-sm font-medium leading-snug text-slate-800 line-clamp-2">{item.name}</span>
+                    <span className="block pr-12 text-sm font-medium leading-snug text-slate-800 line-clamp-2">{displayItemName(item, lang)}</span>
+                    {displayItemPackLine(item) && (
+                      <span className="mt-0.5 block pr-10 text-[10px] text-slate-500 line-clamp-1">{displayItemPackLine(item)}</span>
+                    )}
                     {isLooseItem(item) && <span className="mt-1 block text-[10px] font-medium text-sky-700">Weight or ₹</span>}
                     <span className="absolute right-2 top-2 text-xs font-semibold text-slate-600">₹{posSellingRate(item).toFixed(0)}</span>
                     {qty > 0 && <span className="absolute bottom-1 right-2 rounded bg-brand-600 px-1.5 text-[10px] font-bold text-white">{qty}</span>}

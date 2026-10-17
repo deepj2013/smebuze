@@ -13,7 +13,10 @@ import { parseNonNeg } from '@/lib/item-pricing';
 import { itemImageSrc, uploadItemImage } from '@/lib/item-image';
 import { parseMoney, parseQty, round2 } from '@/lib/money';
 import { DepartmentItemFields } from '../../DepartmentItemFields';
+import ItemBrandPackFields from '../../ItemBrandPackFields';
+import ItemLocaleNames from '../../ItemLocaleNames';
 import SaleStyleField from '../../SaleStyleField';
+import type { ItemNamesMap } from '@/lib/item-i18n';
 
 function validateHsnSac(v: string): string | null {
   if (!v.trim()) return null;
@@ -26,6 +29,7 @@ export default function NewItemPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState('');
+  const [brand, setBrand] = useState('');
   const [sku, setSku] = useState('');
   const [barcode, setBarcode] = useState('');
   const [description, setDescription] = useState('');
@@ -56,6 +60,7 @@ export default function NewItemPage() {
   const [variantShape, setVariantShape] = useState('');
   const [packSourceId, setPackSourceId] = useState('');
   const [packQty, setPackQty] = useState('');
+  const [localeNames, setLocaleNames] = useState<ItemNamesMap>({});
 
   useEffect(() => {
     apiGet<{ tenant?: { slug?: string; settings?: { business_type?: string } } }>('auth/me').then(({ data }) => {
@@ -163,6 +168,7 @@ export default function NewItemPage() {
     setLoading(true);
     const body: Record<string, unknown> = {
       name: name.trim(),
+      brand: brand.trim() || null,
       sku: sku || undefined,
       barcode: barcode || undefined,
       image_urls: imageUrls.length ? imageUrls : undefined,
@@ -171,6 +177,9 @@ export default function NewItemPage() {
       sale_mode: saleMode,
       category: category || undefined,
       hsn_sac: hsnSac.trim() || undefined,
+      variant_size: variantSize.trim() || null,
+      variant_shape: variantShape.trim() || null,
+      names: Object.keys(localeNames).length ? localeNames : undefined,
     };
     if (reorderLevel.trim() !== '') body.reorder_level = parseQty(reorderLevel);
     if (mrp.trim() !== '') body.mrp = parseMoney(mrp);
@@ -179,8 +188,6 @@ export default function NewItemPage() {
     if (discountPercent.trim() !== '') body.discount_percent = parseMoney(discountPercent);
     if (isDept) {
       body.subcategory = subcategory.trim() || null;
-      body.variant_size = variantSize.trim() || null;
-      body.variant_shape = variantShape.trim() || null;
       body.pack_source_id = packSourceId || null;
       body.pack_qty = packSourceId && packQty.trim() ? Math.round(Number(packQty) * 10000) / 10000 : null;
       const m = mrp.trim() ? parseMoney(mrp) : 0;
@@ -208,14 +215,16 @@ export default function NewItemPage() {
         <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Name (English) *</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => { setName(e.target.value); setFieldErrors((p) => ({ ...p, name: '' })); }}
+                placeholder="Turmeric powder"
                 className={`w-full rounded border px-3 py-2 text-sm ${fieldErrors.name ? 'border-red-500' : 'border-slate-300'}`}
               />
               {fieldErrors.name && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.name}</p>}
+              <p className="mt-0.5 text-xs text-slate-500">Keep the base name; put brand and size in Brand & pack below.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">SKU</label>
@@ -282,6 +291,15 @@ export default function NewItemPage() {
               {uploadingImages ? 'Uploading picture…' : 'Photos upload right away, then tap Save. Phone camera photos are resized automatically.'}
             </p>
           </div>
+          <ItemBrandPackFields
+            brand={brand}
+            setBrand={setBrand}
+            variantSize={variantSize}
+            setVariantSize={setVariantSize}
+            variantShape={variantShape}
+            setVariantShape={setVariantShape}
+          />
+          <ItemLocaleNames names={localeNames} onChange={setLocaleNames} />
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
@@ -369,6 +387,7 @@ export default function NewItemPage() {
                 costPrice={costPrice}
                 cgstRate={cgstRate}
                 sgstRate={sgstRate}
+                hideBrandPack
               />
             )}
             <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">

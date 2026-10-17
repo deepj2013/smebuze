@@ -41,28 +41,67 @@ function GoogleMark() {
   );
 }
 
+const REMEMBER_EMAIL_KEY = 'smebuzz_remember_email';
+const STAY_SIGNED_IN_KEY = 'smebuzz_stay_signed_in';
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [staySignedIn, setStaySignedIn] = useState(true);
   const [workspaces, setWorkspaces] = useState<WorkspaceChoice[] | null>(null);
   const [googleTicket, setGoogleTicket] = useState<string | null>(null);
   const [googleEnabled, setGoogleEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
 
   function goAfterLogin(data: LoginPayload) {
-    router.push(postLoginPath(data));
+    router.replace(postLoginPath(data));
   }
 
   function storeSession(data: LoginPayload) {
     if (!data.access_token) return false;
     window.localStorage.setItem('smebuzz_token', data.access_token);
     window.localStorage.setItem('smebuzz_user', JSON.stringify(data.user ?? {}));
+    window.localStorage.setItem(STAY_SIGNED_IN_KEY, staySignedIn ? '1' : '0');
+    if (staySignedIn && email.trim()) {
+      window.localStorage.setItem(REMEMBER_EMAIL_KEY, email.trim().toLowerCase());
+    }
     goAfterLogin(data);
     return true;
   }
+
+  useEffect(() => {
+    const savedStay = window.localStorage.getItem(STAY_SIGNED_IN_KEY);
+    if (savedStay === '0') setStaySignedIn(false);
+    const savedEmail = window.localStorage.getItem(REMEMBER_EMAIL_KEY);
+    if (savedEmail) setEmail(savedEmail);
+
+    const token = window.localStorage.getItem('smebuzz_token');
+    if (!token) {
+      setCheckingSession(false);
+      return;
+    }
+    // Already signed in on this device — open workspace without asking again.
+    fetch(`${API_URL}/api/v1/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          window.localStorage.removeItem('smebuzz_token');
+          window.localStorage.removeItem('smebuzz_user');
+          return;
+        }
+        const data = (await res.json().catch(() => ({}))) as LoginPayload;
+        goAfterLogin(data);
+      })
+      .catch(() => {
+        /* offline — leave login form visible */
+      })
+      .finally(() => setCheckingSession(false));
+  }, []);
 
   useEffect(() => {
     fetch(`${API_URL}/api/v1/auth/google/status`)
@@ -119,7 +158,10 @@ function LoginForm() {
     setError(null);
     try {
       if (googleTicket) {
-        const body: { ticket: string; tenantSlug?: string; platformAdmin?: boolean } = { ticket: googleTicket };
+        const body: { ticket: string; tenantSlug?: string; platformAdmin?: boolean; remember_me: boolean } = {
+          ticket: googleTicket,
+          remember_me: staySignedIn,
+        };
         if (extra?.tenantSlug) body.tenantSlug = extra.tenantSlug;
         if (extra?.platformAdmin) body.platformAdmin = true;
         const res = await fetch(`${API_URL}/api/v1/auth/google/complete`, {
@@ -137,9 +179,16 @@ function LoginForm() {
         return;
       }
 
-      const body: { email: string; password: string; tenantSlug?: string; platformAdmin?: boolean } = {
+      const body: {
+        email: string;
+        password: string;
+        tenantSlug?: string;
+        platformAdmin?: boolean;
+        remember_me: boolean;
+      } = {
         email,
         password,
+        remember_me: staySignedIn,
       };
       if (extra?.tenantSlug) body.tenantSlug = extra.tenantSlug;
       if (extra?.platformAdmin) body.platformAdmin = true;
@@ -181,6 +230,14 @@ function LoginForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     await signIn();
+  }
+
+  if (checkingSession) {
+    return (
+      <div className="min-h-dvh bg-slate-50 flex items-center justify-center text-slate-500 text-sm">
+        Opening your workspace…
+      </div>
+    );
   }
 
   return (
@@ -327,6 +384,25 @@ function LoginForm() {
                           required
                         />
                       </div>
+                      <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={staySignedIn}
+                          onChange={(e) => {
+                            const on = e.target.checked;
+                            setStaySignedIn(on);
+                            window.localStorage.setItem(STAY_SIGNED_IN_KEY, on ? '1' : '0');
+                            if (!on) window.localStorage.removeItem(REMEMBER_EMAIL_KEY);
+                          }}
+                          className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-sm text-slate-700">
+                          <span className="font-medium">Stay signed in on this device</span>
+                          <span className="block text-xs text-slate-500 mt-0.5">
+                            Keeps the counter open for about 30 days. Use Logout when you leave a shared phone.
+                          </span>
+                        </span>
+                      </label>
                       <button
                         type="submit"
                         disabled={loading}

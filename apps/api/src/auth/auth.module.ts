@@ -34,7 +34,9 @@ import { GrowthModule } from '../growth/growth.module';
       useFactory: (config: ConfigService) => ({
         secret: config.get<string>('JWT_SECRET') || 'change-me-in-prod',
         signOptions: {
-          expiresIn: config.get<string>('JWT_EXPIRES_IN') || '8h',
+          // Shop counters reopen daily — default stay signed in for a month.
+          // Override with JWT_EXPIRES_IN. Short sessions use JWT_SESSION_EXPIRES_IN at sign time.
+          expiresIn: config.get<string>('JWT_EXPIRES_IN') || '30d',
         },
       }),
     }),

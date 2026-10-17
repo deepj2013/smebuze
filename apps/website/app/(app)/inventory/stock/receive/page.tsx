@@ -5,9 +5,18 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
 import BarcodeCapture from '../../../components/BarcodeCapture';
+import ItemSearchPicker from '../../../components/ItemSearchPicker';
 import PosSwitcher from '../../../components/PosSwitcher';
 
-type StockItem = { id: string; name: string; sku?: string; barcode?: string | null };
+type StockItem = {
+  id: string;
+  name: string;
+  sku?: string;
+  barcode?: string | null;
+  brand?: string | null;
+  variant_size?: string | null;
+  category?: string | null;
+};
 
 export default function ReceiveStockPage() {
   const router = useRouter();
@@ -17,6 +26,8 @@ export default function ReceiveStockPage() {
   const [itemId, setItemId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [costPrice, setCostPrice] = useState('');
+  const [batchCode, setBatchCode] = useState('');
+  const [expiryDate, setExpiryDate] = useState('');
   const [scanCode, setScanCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +42,6 @@ export default function ReceiveStockPage() {
       setWarehouses(w);
       setItems(i);
       if (w.length) setWarehouseId(w[0].id);
-      if (i.length) setItemId(i[0].id);
     });
   }, []);
 
@@ -71,11 +81,15 @@ export default function ReceiveStockPage() {
       quantity: qty,
       measured,
       ...(cost != null ? { cost_price: cost } : {}),
+      ...(batchCode.trim() ? { batch_code: batchCode.trim() } : {}),
+      ...(expiryDate ? { expiry_date: expiryDate } : {}),
     });
     setLoading(false);
     if (err) setError(err);
     else {
       setQuantity('');
+      setBatchCode('');
+      setExpiryDate('');
       router.push('/inventory/stock');
     }
   };
@@ -85,7 +99,9 @@ export default function ReceiveStockPage() {
       <PosSwitcher />
       <Link href="/inventory/stock" className="text-sm text-slate-600 hover:text-slate-900 mb-4 inline-block">← Stock</Link>
       <h1 className="text-2xl font-bold text-slate-900 mb-4">Receive stock</h1>
-      <p className="text-sm text-slate-600 mb-4">Scan the pack barcode to pick the item, then enter qty from the truck or supplier. Whole numbers stay as they are. A decimal such as 50.5 kg is stored as measured stock. Leave cost blank to keep the current cost.</p>
+      <p className="text-sm text-slate-600 mb-4">
+        Search by name / brand / size, or scan the pack barcode. Enter qty from the truck. For grocery / dairy / medicine, add expiry (and batch if printed) so Soon to expire can warn you. Leave cost blank to keep the current cost.
+      </p>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
       <form onSubmit={submit} className="max-w-md rounded-xl border border-slate-200 bg-white p-6 space-y-4">
         <div>
@@ -115,14 +131,16 @@ export default function ReceiveStockPage() {
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Item *</label>
-          <select value={itemId} onChange={(e) => setItemId(e.target.value)} required className="w-full rounded border border-slate-300 px-3 py-2 text-sm">
-            <option value="">Select</option>
-            {items.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name} {i.sku ? `(${i.sku})` : ''} {i.barcode ? `· ${i.barcode}` : ''}
-              </option>
-            ))}
-          </select>
+          <ItemSearchPicker
+            items={items}
+            value={itemId}
+            onChange={(id) => {
+              setItemId(id);
+              setError(null);
+            }}
+            required
+            placeholder="Search turmeric, MDH, 50g, SKU…"
+          />
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Quantity *</label>
@@ -135,6 +153,26 @@ export default function ReceiveStockPage() {
             placeholder="10 or 50.5"
             className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
           />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Batch / lot</label>
+            <input
+              value={batchCode}
+              onChange={(e) => setBatchCode(e.target.value)}
+              placeholder="Optional"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Expiry date</label>
+            <input
+              type="date"
+              value={expiryDate}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">New cost price</label>

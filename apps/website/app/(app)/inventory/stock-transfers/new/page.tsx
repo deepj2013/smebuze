@@ -4,17 +4,17 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
+import ItemSearchPicker, { type SearchableItem } from '../../../components/ItemSearchPicker';
 import NumberField from '../../../components/NumberField';
 
 interface Warehouse { id: string; name: string }
-interface Item { id: string; name: string }
 
 interface LineRow { item_id: string; quantity: number }
 
 export default function NewStockTransferPage() {
   const router = useRouter();
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
+  const [items, setItems] = useState<SearchableItem[]>([]);
   const [fromWarehouseId, setFromWarehouseId] = useState('');
   const [toWarehouseId, setToWarehouseId] = useState('');
   const [transferDate, setTransferDate] = useState(new Date().toISOString().slice(0, 10));
@@ -27,10 +27,10 @@ export default function NewStockTransferPage() {
     (async () => {
       const [wRes, iRes] = await Promise.all([
         apiGet<Warehouse[] | { data: Warehouse[] }>('inventory/warehouses'),
-        apiGet<Item[] | { data: Item[] }>('inventory/items'),
+        apiGet<SearchableItem[] | { data: SearchableItem[] }>('inventory/items'),
       ]);
       const wList = Array.isArray(wRes.data) ? wRes.data : (wRes.data as { data?: Warehouse[] })?.data ?? [];
-      const iList = Array.isArray(iRes.data) ? iRes.data : (iRes.data as { data?: Item[] })?.data ?? [];
+      const iList = Array.isArray(iRes.data) ? iRes.data : (iRes.data as { data?: SearchableItem[] })?.data ?? [];
       setWarehouses(wList);
       setItems(iList);
       if (wList.length >= 2) {
@@ -120,19 +120,23 @@ export default function NewStockTransferPage() {
           </div>
           <div className="space-y-3">
             {lines.map((line, i) => (
-              <div key={i} className="flex flex-wrap gap-2 items-end border-b border-slate-100 pb-2">
-                <div className="w-48">
-                  <label className="block text-xs text-slate-500 mb-0.5">Item</label>
-                  <select value={line.item_id} onChange={(e) => updateLine(i, 'item_id', e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm">
-                    <option value="">—</option>
-                    {items.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
-                  </select>
+              <div key={i} className="flex flex-col gap-2 border-b border-slate-100 pb-3 sm:flex-row sm:items-end">
+                <div className="min-w-0 flex-1">
+                  <label className="mb-0.5 block text-xs text-slate-500">Item</label>
+                  <ItemSearchPicker
+                    items={items}
+                    value={line.item_id}
+                    onChange={(id) => updateLine(i, 'item_id', id)}
+                    placeholder="Search name, brand, size, SKU…"
+                  />
                 </div>
-                <div className="w-24">
-                  <label className="block text-xs text-slate-500 mb-0.5">Qty</label>
+                <div className="w-28 shrink-0">
+                  <label className="mb-0.5 block text-xs text-slate-500">Qty</label>
                   <NumberField whole min={0} value={line.quantity} onNumber={(n) => updateLine(i, 'quantity', n)} aria-label="Quantity" />
                 </div>
-                <button type="button" onClick={() => removeLine(i)} className="text-red-600 text-sm hover:underline">Remove</button>
+                <button type="button" onClick={() => removeLine(i)} className="text-sm text-red-600 hover:underline sm:mb-2">
+                  Remove
+                </button>
               </div>
             ))}
           </div>

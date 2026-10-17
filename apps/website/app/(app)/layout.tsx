@@ -126,6 +126,7 @@ const nav: Array<{
       { label: 'Public catalog', href: '/catalog', icon: Store, permission: 'inventory.item.view' },
       { label: 'Warehouses', href: '/inventory/warehouses', icon: Warehouse, permission: 'inventory.item.view' },
       { label: 'Stock', href: '/inventory/stock', icon: Package, permission: 'inventory.stock.view' },
+      { label: 'Soon to expire', href: '/inventory/stock/expiring', icon: Package, permission: 'inventory.stock.view' },
       { label: 'Stock transfers', href: '/inventory/stock-transfers', icon: Package, permission: 'inventory.stock.view' },
     ],
   },
@@ -367,6 +368,7 @@ const iceCrestNav: typeof nav = [
   ]},
   { label: 'Stock Management', icon: Package, module: 'inventory', permission: 'inventory.stock.view', children: [
     { label: 'Stock position', href: '/inventory/stock', icon: Package, permission: 'inventory.stock.view' },
+    { label: 'Soon to expire', href: '/inventory/stock/expiring', icon: Package, permission: 'inventory.stock.view' },
     { label: 'Stock inward / outward', href: '/ice-crest/stock-movements', icon: Warehouse, permission: 'inventory.stock.view' },
     { label: 'Production plan', href: '/ice-crest/production-plan', icon: ListOrdered, permission: 'inventory.stock.view' },
     { label: 'Ice SKUs', href: '/inventory/items', icon: Boxes, permission: 'inventory.item.view' },
@@ -436,9 +438,11 @@ const restaurantFloorNav: typeof nav = [
 /** Department / general store — counter, stock, credit customers. No quotations. */
 const departmentStoreNav: typeof nav = [
   { label: 'Billing counter', href: '/pos', icon: Store, module: 'sales', permission: 'sales.invoice.create' },
+  { label: 'Cash counter', href: '/pos/cash-counter', icon: Wallet, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Departments', href: '/inventory/categories', icon: Layers, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Products', href: '/inventory/items', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Stock', href: '/inventory/stock', icon: Package, module: 'inventory', permission: 'inventory.stock.view' },
+  { label: 'Soon to expire', href: '/inventory/stock/expiring', icon: Package, module: 'inventory', permission: 'inventory.stock.view' },
   { label: 'Receive stock', href: '/inventory/stock/receive', icon: Warehouse, module: 'inventory', permission: 'inventory.item.create' },
   { label: 'Item upload', href: '/bulk-upload', icon: Upload, module: 'inventory', permission: 'inventory.item.create' },
   { label: 'Barcode labels', href: '/inventory/labels', icon: Printer, module: 'inventory', permission: 'inventory.item.view' },
@@ -463,6 +467,7 @@ const departmentStoreNav: typeof nav = [
 /** Retail / mobile shop / kirana — counter + products. No waiter/kitchen. */
 const posNav: typeof nav = [
   { label: 'Billing counter', href: '/pos', icon: Store, module: 'sales', permission: 'sales.invoice.create' },
+  { label: 'Cash counter', href: '/pos/cash-counter', icon: Wallet, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Manage shop', href: '/pos/manage', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Bills', href: '/sales/invoices', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Party-wise bills', href: '/sales/invoices/parties', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
@@ -470,6 +475,7 @@ const posNav: typeof nav = [
   { label: 'Categories', href: '/inventory/categories', icon: Layers, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Products', href: '/inventory/items', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Stock', href: '/inventory/stock', icon: Package, module: 'inventory', permission: 'inventory.stock.view' },
+  { label: 'Soon to expire', href: '/inventory/stock/expiring', icon: Package, module: 'inventory', permission: 'inventory.stock.view' },
   { label: 'Receive stock', href: '/inventory/stock/receive', icon: Warehouse, module: 'inventory', permission: 'inventory.item.create' },
   { label: 'Item upload', href: '/bulk-upload', icon: Upload, module: 'inventory', permission: 'inventory.item.create' },
   { label: 'Barcode labels', href: '/inventory/labels', icon: Printer, module: 'inventory', permission: 'inventory.item.view' },

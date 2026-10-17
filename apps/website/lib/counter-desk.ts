@@ -3,19 +3,37 @@ import { getDefaultPrinter, openSystemPrint, printViaProfile, type ReceiptPayloa
 
 const LANG_KEY = 'smebuzz_counter_lang';
 
-export type CounterLang = 'en' | 'hi';
+/** Counter UI + product label language. English is the default; others use item metadata.names. */
+export type CounterLang = 'en' | 'hi' | 'mr' | 'gu' | 'pa' | 'bn' | 'ta' | 'te' | 'kn' | 'ml';
+
+const COUNTER_LANGS: CounterLang[] = ['en', 'hi', 'mr', 'gu', 'pa', 'bn', 'ta', 'te', 'kn', 'ml'];
+
+export const COUNTER_LANG_OPTIONS: Array<{ id: CounterLang; label: string }> = [
+  { id: 'en', label: 'English' },
+  { id: 'hi', label: 'हिंदी' },
+  { id: 'mr', label: 'मराठी' },
+  { id: 'gu', label: 'ગુજરાતી' },
+  { id: 'pa', label: 'ਪੰਜਾਬੀ' },
+  { id: 'bn', label: 'বাংলা' },
+  { id: 'ta', label: 'தமிழ்' },
+  { id: 'te', label: 'తెలుగు' },
+  { id: 'kn', label: 'ಕನ್ನಡ' },
+  { id: 'ml', label: 'മലയാളം' },
+];
 
 export function counterLang(): CounterLang {
   if (typeof window === 'undefined') return 'en';
-  return window.localStorage.getItem(LANG_KEY) === 'hi' ? 'hi' : 'en';
+  const raw = window.localStorage.getItem(LANG_KEY) || 'en';
+  return (COUNTER_LANGS as string[]).includes(raw) ? (raw as CounterLang) : 'en';
 }
 
 export function setCounterLang(lang: CounterLang): void {
   window.localStorage.setItem(LANG_KEY, lang);
 }
 
+/** UI chrome strings: Hindi when any Indian language is active; English otherwise. */
 export function ct(lang: CounterLang, en: string, hi: string): string {
-  return lang === 'hi' ? hi : en;
+  return lang === 'en' ? en : hi;
 }
 
 export type HeldBill = {

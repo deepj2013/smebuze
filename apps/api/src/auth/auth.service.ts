@@ -44,6 +44,10 @@ export interface JwtPayload {
   permissions: string[];
 }
 
+/** Long-lived “stay signed in” (shop counters). Short session when remember_me is false. */
+const JWT_REMEMBER_EXPIRES = () => process.env.JWT_EXPIRES_IN || '30d';
+const JWT_SESSION_EXPIRES = () => process.env.JWT_SESSION_EXPIRES_IN || '12h';
+
 const PLATFORM_ORG_ID = 'a0000000-0000-0000-0000-000000000001';
 
 function permissionsForPlatformRole(role: string | null | undefined): string[] {
@@ -151,7 +155,7 @@ export class AuthService {
       return { workspaces: await this.workspacesFromUsers(usable) };
     }
 
-    return this.completeLogin(usable[0]);
+    return this.completeLogin(usable[0], { rememberMe: dto.remember_me !== false });
   }
 
   googleConfigured(): boolean {
@@ -298,7 +302,7 @@ export class AuthService {
     if (usable.length > 1 && !dto.tenantSlug?.trim() && !dto.platformAdmin) {
       return { workspaces: await this.workspacesFromUsers(usable) };
     }
-    return this.completeLogin(usable[0]);
+    return this.completeLogin(usable[0], { rememberMe: dto.remember_me !== false });
   }
 
   async register(dto: RegisterDto): Promise<{ access_token: string; user: TenantContext }> {
@@ -806,11 +810,21 @@ export class AuthService {
     return { message: 'Password updated. You can now sign in.' };
   }
 
-  private async completeLogin(user: User): Promise<{
+  private signAccessToken(payload: JwtPayload, rememberMe = true): string {
+    return this.jwtService.sign(payload, {
+      expiresIn: rememberMe ? JWT_REMEMBER_EXPIRES() : JWT_SESSION_EXPIRES(),
+    });
+  }
+
+  private async completeLogin(
+    user: User,
+    opts?: { rememberMe?: boolean },
+  ): Promise<{
     access_token: string;
     user: TenantContext;
     tenant?: TenantSession;
   }> {
+    const rememberMe = opts?.rememberMe !== false;
     if (user.tenant_id) {
       const tenant = user.tenant ?? (await this.tenantRepo.findOne({ where: { id: user.tenant_id } }));
       if (!tenant?.is_active) throw new UnauthorizedException('Invalid email or password');
@@ -860,7 +874,7 @@ export class AuthService {
       if (t) tenant = tenantSessionFrom(t);
     }
 
-    return { access_token: this.jwtService.sign(payload), user: context, ...(tenant && { tenant }) };
+    return { access_token: this.signAccessToken(payload, rememberMe), user: context, ...(tenant && { tenant }) };
   }
 
   private async workspacesFromUsers(

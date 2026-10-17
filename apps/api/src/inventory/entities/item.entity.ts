@@ -41,6 +41,10 @@ export class Item {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
+  /** Pack brand / company on the label (Catch, MDH, Everest) — not the shop’s org company. */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  brand: string | null;
+
   @Column('text', { nullable: true })
   description: string | null;
 

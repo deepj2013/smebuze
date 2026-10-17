@@ -86,6 +86,16 @@ export class ReportsController {
     return this.reportsService.getDepartmentCounterReport(ctx, from, to);
   }
 
+  /** Day close: cash / UPI / card / credit + profit for day, week, month. */
+  @Get('cash-counter')
+  @RequirePermissions('sales.invoice.view')
+  async cashCounter(
+    @CurrentTenant() ctx: TenantContext,
+    @Query('date') date?: string,
+  ) {
+    return this.reportsService.getCashCounterReport(ctx, date);
+  }
+
   @Get('item-wise-sales')
   @RequirePermissions('reports.view')
   async itemWiseSales(

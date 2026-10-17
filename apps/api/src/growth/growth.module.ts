@@ -28,7 +28,7 @@ import { LeadsGateway } from './leads.gateway';
       useFactory: (config: ConfigService) => ({
         secret: config.get<string>('JWT_SECRET') || 'change-me-in-prod',
         signOptions: {
-          expiresIn: config.get<string>('JWT_EXPIRES_IN') || '8h',
+          expiresIn: config.get<string>('JWT_EXPIRES_IN') || '30d',
         },
       }),
     }),

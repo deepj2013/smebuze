@@ -118,29 +118,38 @@ export class InventoryService {
     );
   }
 
-  /** Same letters/digits ignoring spaces ("Taka tak" ≈ "Takatak", "full cream" ≈ "fullcream"). */
+  /**
+   * Same product name + brand + pack size in one category is a duplicate
+   * ("Turmeric powder" MDH 50g twice). Different brands/sizes are allowed.
+   */
   private async assertNameNotDuplicate(
     tenantId: string,
     name: string,
     category: string,
-    excludeId?: string,
+    opts?: { brand?: string | null; size?: string | null; excludeId?: string },
   ) {
     const key = this.normalizeComparableName(name);
     if (!key) return;
     const catKey = this.normalizeComparableName(category);
+    const brandKey = this.normalizeComparableName(opts?.brand || '');
+    const sizeKey = this.normalizeComparableName(opts?.size || '');
     const qb = this.itemRepo
       .createQueryBuilder('i')
       .where('i.tenant_id = :tenantId', { tenantId })
       .andWhere('i.is_active = true');
-    if (excludeId) qb.andWhere('i.id <> :excludeId', { excludeId });
+    if (opts?.excludeId) qb.andWhere('i.id <> :excludeId', { excludeId: opts.excludeId });
     const candidates = await qb.getMany();
     const hit = candidates.find((i) => {
       if (this.normalizeComparableName(i.name) !== key) return false;
-      return this.normalizeComparableName(i.category || '') === catKey;
+      if (this.normalizeComparableName(i.category || '') !== catKey) return false;
+      if (this.normalizeComparableName(i.brand || '') !== brandKey) return false;
+      return this.normalizeComparableName(i.variant_size || '') === sizeKey;
     });
     if (hit) {
+      const brandBit = hit.brand ? ` · ${hit.brand}` : '';
+      const sizeBit = hit.variant_size ? ` · ${hit.variant_size}` : '';
       throw new ConflictException(
-        `An item like "${hit.name}" already exists in this category (same name ignoring spaces). Edit that product instead of creating another.`,
+        `“${hit.name}${brandBit}${sizeBit}” already exists in this category. Edit that product, or change brand/size.`,
       );
     }
   }
@@ -282,6 +291,18 @@ export class InventoryService {
     return value.toLowerCase().replace(/[^a-z0-9]/g, '');
   }
 
+  private sanitizeLocaleNames(raw: unknown): Record<string, string> | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const allowed = new Set(['hi', 'mr', 'gu', 'pa', 'bn', 'ta', 'te', 'kn', 'ml']);
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (!allowed.has(k) || typeof v !== 'string') continue;
+      const t = v.trim();
+      if (t) out[k] = t.slice(0, 255);
+    }
+    return Object.keys(out).length ? out : null;
+  }
+
   /** Accept uploaded /uploads/... paths (or https URLs). Reject huge data: URLs that blow the API body. */
   private sanitizeImageUrls(raw: unknown): string[] {
     if (!Array.isArray(raw)) return [];
@@ -419,12 +440,15 @@ export class InventoryService {
       for_consume: boolean;
       portal_listed: boolean;
       opening_qty: number;
+      brand: string;
       subcategory: string;
       variant_size: string;
       variant_shape: string;
       pack_source_id: string | null;
       pack_qty: number | null;
       sale_mode: string;
+      /** Local-script product names: { hi: 'हल्दी', mr: '...' } */
+      names?: Record<string, string>;
     }>,
     ctx: TenantContext,
   ) {
@@ -432,10 +456,15 @@ export class InventoryService {
     let sku = dto.sku?.trim() || null;
     if (!sku) sku = (await this.generateNextSku(ctx)).sku;
     const barcode = dto.barcode?.trim() || null;
+    const brand = dto.brand?.trim() || null;
+    const variantSize = dto.variant_size?.trim() || null;
     await this.assertItemCodesUnique(tenantId, { sku, barcode });
     const nameTrim = (dto.name ?? '').trim();
     if (nameTrim) {
-      await this.assertNameNotDuplicate(tenantId, nameTrim, (dto.category ?? '').trim());
+      await this.assertNameNotDuplicate(tenantId, nameTrim, (dto.category ?? '').trim(), {
+        brand,
+        size: variantSize,
+      });
     }
     const gst = await this.resolveItemGst(dto, tenantId);
     const forSale = dto.for_sale !== undefined ? Boolean(dto.for_sale) : true;
@@ -446,6 +475,7 @@ export class InventoryService {
       tenant_id: tenantId,
       company_id: dto.company_id ?? null,
       name: dto.name ?? '',
+      brand,
       sku,
       barcode,
       image_urls: imageUrls,
@@ -453,7 +483,7 @@ export class InventoryService {
       unit: dto.unit ?? 'pcs',
       category: dto.category ?? null,
       subcategory: dto.subcategory?.trim() || null,
-      variant_size: dto.variant_size?.trim() || null,
+      variant_size: variantSize,
       variant_shape: dto.variant_shape?.trim() || null,
       pack_source_id: dto.pack_source_id || null,
       pack_qty: dto.pack_qty != null ? this.packQtyStr(dto.pack_qty) : null,
@@ -469,7 +499,10 @@ export class InventoryService {
       for_sale: forSale,
       for_consume: forConsume,
       portal_listed: dto.portal_listed === true,
-      metadata: { sale_mode: dto.sale_mode === 'loose' ? 'loose' : 'fixed' },
+      metadata: {
+        sale_mode: dto.sale_mode === 'loose' ? 'loose' : 'fixed',
+        ...(this.sanitizeLocaleNames(dto.names) ? { names: this.sanitizeLocaleNames(dto.names) } : {}),
+      },
     });
     await this.assertPackLink(item.pack_source_id, item.pack_qty, null, ctx);
     const saved = await this.itemRepo.save(item);
@@ -564,29 +597,40 @@ export class InventoryService {
       for_consume: boolean;
       portal_listed: boolean;
       is_active: boolean;
+      brand: string | null;
       subcategory: string | null;
       variant_size: string | null;
       variant_shape: string | null;
       pack_source_id: string | null;
       pack_qty: number | null;
       sale_mode: string;
+      names?: Record<string, string> | null;
     }>,
     ctx: TenantContext,
   ) {
     const item = await this.findOneItem(id, ctx);
     const nextSku = dto.sku != null ? dto.sku.trim() || null : item.sku;
     const nextBarcode = dto.barcode !== undefined ? dto.barcode?.trim() || null : item.barcode;
+    const nextBrand = dto.brand !== undefined ? dto.brand?.trim() || null : item.brand;
+    const nextSize = dto.variant_size !== undefined ? dto.variant_size?.trim() || null : item.variant_size;
     await this.assertItemCodesUnique(item.tenant_id, {
       sku: nextSku,
       barcode: nextBarcode,
       excludeId: item.id,
     });
-    if (dto.name != null || dto.category != null) {
+    if (dto.name != null || dto.category != null || dto.brand !== undefined || dto.variant_size !== undefined) {
       const nextName = dto.name != null ? dto.name.trim() : item.name;
       const nextCat = dto.category != null ? dto.category.trim() : (item.category || '');
-      if (nextName) await this.assertNameNotDuplicate(item.tenant_id, nextName, nextCat, item.id);
+      if (nextName) {
+        await this.assertNameNotDuplicate(item.tenant_id, nextName, nextCat, {
+          brand: nextBrand,
+          size: nextSize,
+          excludeId: item.id,
+        });
+      }
     }
     if (dto.name != null) item.name = dto.name;
+    if (dto.brand !== undefined) item.brand = nextBrand;
     if (dto.sku != null) item.sku = nextSku;
     if (dto.barcode !== undefined) item.barcode = nextBarcode;
     if (dto.image_urls !== undefined) item.image_urls = this.sanitizeImageUrls(dto.image_urls);
@@ -597,7 +641,7 @@ export class InventoryService {
       if (dto.category.trim()) await this.ensureCategory(dto.category, ctx);
     }
     if (dto.subcategory !== undefined) item.subcategory = dto.subcategory?.trim() || null;
-    if (dto.variant_size !== undefined) item.variant_size = dto.variant_size?.trim() || null;
+    if (dto.variant_size !== undefined) item.variant_size = nextSize;
     if (dto.variant_shape !== undefined) item.variant_shape = dto.variant_shape?.trim() || null;
     if (dto.pack_source_id !== undefined) item.pack_source_id = dto.pack_source_id || null;
     if (dto.pack_qty !== undefined) item.pack_qty = dto.pack_qty == null ? null : this.packQtyStr(dto.pack_qty);
@@ -625,6 +669,13 @@ export class InventoryService {
     }
     if (dto.sale_mode === 'loose' || dto.sale_mode === 'fixed') {
       item.metadata = { ...(item.metadata || {}), sale_mode: dto.sale_mode };
+    }
+    if (dto.names !== undefined) {
+      const names = this.sanitizeLocaleNames(dto.names);
+      const meta = { ...(item.metadata || {}) };
+      if (names) meta.names = names;
+      else delete meta.names;
+      item.metadata = meta;
     }
     if (dto.portal_listed !== undefined) item.portal_listed = Boolean(dto.portal_listed);
     if (dto.is_active !== undefined) item.is_active = Boolean(dto.is_active);
@@ -699,30 +750,83 @@ export class InventoryService {
     return wh?.id ?? null;
   }
 
-  /** Add stock (receive). Creates or updates stock row. */
-  async receiveStock(ctx: TenantContext, warehouseId: string, itemId: string, quantity: number): Promise<void> {
+  private parseExpiryDate(raw?: string | null): Date | null {
+    if (!raw || !String(raw).trim()) return null;
+    const d = new Date(`${String(raw).trim().slice(0, 10)}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  private async findReceiveRow(
+    tenantId: string,
+    warehouseId: string,
+    itemId: string,
+    batchCode: string | null,
+  ): Promise<Stock | null> {
+    if (batchCode) {
+      return this.stockRepo.findOne({
+        where: { tenant_id: tenantId, warehouse_id: warehouseId, item_id: itemId, batch_code: batchCode },
+      });
+    }
+    return this.stockRepo.findOne({
+      where: { tenant_id: tenantId, warehouse_id: warehouseId, item_id: itemId, batch_code: IsNull() },
+    });
+  }
+
+  /** Add stock (receive). Creates or updates stock row. Optional batch + expiry for FEFO awareness. */
+  async receiveStock(
+    ctx: TenantContext,
+    warehouseId: string,
+    itemId: string,
+    quantity: number,
+    opts?: { batch_code?: string | null; expiry_date?: string | null },
+  ): Promise<void> {
     const tenantId = this.assertTenantId(ctx);
     await this.findOneWarehouse(warehouseId, ctx);
-    let row = await this.stockRepo.findOne({ where: { tenant_id: tenantId, warehouse_id: warehouseId, item_id: itemId } });
+    const batch = opts?.batch_code?.trim() || null;
+    const expiry = this.parseExpiryDate(opts?.expiry_date);
+    let row = await this.findReceiveRow(tenantId, warehouseId, itemId, batch);
     const qty = Math.max(0, roundQty(quantity));
     if (row) {
       row.quantity = String(parseFloat(row.quantity) + qty);
+      if (expiry) {
+        // Keep the earlier expiry when merging into the same batch.
+        if (!row.expiry_date || expiry < new Date(row.expiry_date)) row.expiry_date = expiry;
+      }
       await this.stockRepo.save(row);
     } else {
-      row = this.stockRepo.create({ tenant_id: tenantId, warehouse_id: warehouseId, item_id: itemId, quantity: String(qty), reserved: '0' });
+      row = this.stockRepo.create({
+        tenant_id: tenantId,
+        warehouse_id: warehouseId,
+        item_id: itemId,
+        quantity: String(qty),
+        reserved: '0',
+        batch_code: batch,
+        expiry_date: expiry,
+      });
       await this.stockRepo.save(row);
     }
   }
 
   /** Add stock in measured units (kg, grams) without rounding to a whole number. */
-  async receiveMeasured(ctx: TenantContext, warehouseId: string, itemId: string, quantity: number): Promise<void> {
+  async receiveMeasured(
+    ctx: TenantContext,
+    warehouseId: string,
+    itemId: string,
+    quantity: number,
+    opts?: { batch_code?: string | null; expiry_date?: string | null },
+  ): Promise<void> {
     const tenantId = this.assertTenantId(ctx);
     await this.findOneWarehouse(warehouseId, ctx);
     await this.findOneItem(itemId, ctx);
+    const batch = opts?.batch_code?.trim() || null;
+    const expiry = this.parseExpiryDate(opts?.expiry_date);
     const qty = Math.round(Math.max(0, Number(quantity) || 0) * 10000) / 10000;
-    let row = await this.stockRepo.findOne({ where: { tenant_id: tenantId, warehouse_id: warehouseId, item_id: itemId } });
+    let row = await this.findReceiveRow(tenantId, warehouseId, itemId, batch);
     if (row) {
       row.quantity = (Math.round((parseFloat(row.quantity) + qty) * 10000) / 10000).toFixed(4);
+      if (expiry) {
+        if (!row.expiry_date || expiry < new Date(row.expiry_date)) row.expiry_date = expiry;
+      }
       await this.stockRepo.save(row);
     } else {
       row = this.stockRepo.create({
@@ -731,6 +835,8 @@ export class InventoryService {
         item_id: itemId,
         quantity: qty.toFixed(4),
         reserved: '0',
+        batch_code: batch,
+        expiry_date: expiry,
       });
       await this.stockRepo.save(row);
     }
@@ -833,6 +939,73 @@ export class InventoryService {
       }
     }
     return result.sort((a, b) => a.current_stock - b.current_stock);
+  }
+
+  /**
+   * Stock lots with an expiry date that is already past or within the next `withinDays` days.
+   * Helps shops push soon-to-expire packs (grocery, pharma, dairy).
+   */
+  async findExpiringStock(
+    ctx: TenantContext,
+    withinDays = 30,
+    warehouseId?: string,
+  ): Promise<
+    {
+      id: string;
+      item_id: string;
+      name: string;
+      sku: string | null;
+      brand: string | null;
+      batch_code: string | null;
+      expiry_date: string;
+      days_left: number;
+      quantity: number;
+      warehouse: string | null;
+      warehouse_id: string;
+      status: 'expired' | 'this_week' | 'this_month' | 'upcoming';
+    }[]
+  > {
+    const tenantId = this.assertTenantId(ctx);
+    const days = Math.min(365, Math.max(1, Math.floor(Number(withinDays) || 30)));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const until = new Date(today);
+    until.setDate(until.getDate() + days);
+
+    const qb = this.stockRepo
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.item', 'item')
+      .leftJoinAndSelect('s.warehouse', 'warehouse')
+      .where('s.tenant_id = :tenantId', { tenantId })
+      .andWhere('s.expiry_date IS NOT NULL')
+      .andWhere('CAST(s.quantity AS DECIMAL) > 0')
+      .andWhere('s.expiry_date <= :until', { until: until.toISOString().slice(0, 10) })
+      .orderBy('s.expiry_date', 'ASC');
+    if (warehouseId) qb.andWhere('s.warehouse_id = :warehouseId', { warehouseId });
+
+    const rows = await qb.getMany();
+    return rows.map((s) => {
+      const exp = new Date(`${String(s.expiry_date).slice(0, 10)}T00:00:00`);
+      const daysLeft = Math.round((exp.getTime() - today.getTime()) / 86400000);
+      let status: 'expired' | 'this_week' | 'this_month' | 'upcoming' = 'upcoming';
+      if (daysLeft < 0) status = 'expired';
+      else if (daysLeft <= 7) status = 'this_week';
+      else if (daysLeft <= 30) status = 'this_month';
+      return {
+        id: s.id,
+        item_id: s.item_id,
+        name: s.item?.name ?? 'Item',
+        sku: s.item?.sku ?? null,
+        brand: s.item?.brand ?? null,
+        batch_code: s.batch_code,
+        expiry_date: String(s.expiry_date).slice(0, 10),
+        days_left: daysLeft,
+        quantity: parseFloat(String(s.quantity)) || 0,
+        warehouse: s.warehouse?.name ?? null,
+        warehouse_id: s.warehouse_id,
+        status,
+      };
+    });
   }
 
   async createStockTransfer(

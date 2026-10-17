@@ -34,6 +34,24 @@ interface OnboardingChecklist {
   tenantSlug?: string;
 }
 
+type CashPeriod = {
+  sales: number;
+  cost: number;
+  profit: number;
+  bills: number;
+  cash: number;
+  upi: number;
+  card: number;
+  credit: number;
+};
+
+type CashCounterReport = {
+  date: string;
+  day: CashPeriod;
+  week: CashPeriod;
+  month: CashPeriod;
+};
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,6 +59,7 @@ export default function DashboardPage() {
   const [onboarding, setOnboarding] = useState<OnboardingChecklist | null>(null);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [shopType, setShopType] = useState<string>('trading');
+  const [cashReport, setCashReport] = useState<CashCounterReport | null>(null);
   const [renewals, setRenewals] = useState<Array<{ registration_no?: string; doc_type: string; days_left: number; urgency: string; expires_on: string }>>([]);
 
   useEffect(() => {
@@ -64,6 +83,11 @@ export default function DashboardPage() {
         if (t === 'transport') {
           void apiGet<typeof renewals>('transport/renewals?within_days=45').then((r) => {
             if (Array.isArray(r.data)) setRenewals(r.data.slice(0, 5));
+          });
+        }
+        if (typeof t === 'string' && isPosBusinessType(t)) {
+          void apiGet<CashCounterReport>('reports/cash-counter').then((r) => {
+            if (r.data) setCashReport(r.data);
           });
         }
       })
@@ -100,13 +124,21 @@ export default function DashboardPage() {
         <h1 className="mt-1 text-2xl sm:text-3xl font-bold">{meta.title}</h1>
         <p className="mt-1 text-sm text-white/90 max-w-xl">{theme.tagline}</p>
         {isPosTenant && (
-          <Link
-            href="/pos"
-            className="mt-4 inline-flex items-center rounded-xl bg-white px-4 py-2.5 text-sm font-semibold min-h-[44px]"
-            style={{ color: theme.accent }}
-          >
-            Open billing counter
-          </Link>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              href="/pos"
+              className="inline-flex items-center rounded-xl bg-white px-4 py-2.5 text-sm font-semibold min-h-[44px]"
+              style={{ color: theme.accent }}
+            >
+              Open billing counter
+            </Link>
+            <Link
+              href="/pos/cash-counter"
+              className="inline-flex items-center rounded-xl bg-white/15 px-4 py-2.5 text-sm font-semibold text-white min-h-[44px] hover:bg-white/25"
+            >
+              Cash counter / day close
+            </Link>
+          </div>
         )}
         {shopType === 'transport' && (
           <div className="mt-4 flex flex-wrap gap-2">
@@ -171,6 +203,32 @@ export default function DashboardPage() {
       )}
       {!loading && data && (
         <>
+          {isPosTenant && cashReport && (
+            <section className="mb-6 grid gap-3 sm:grid-cols-3">
+              {(
+                [
+                  ['Today', cashReport.day],
+                  ['This week', cashReport.week],
+                  ['This month', cashReport.month],
+                ] as const
+              ).map(([label, p]) => (
+                <Link
+                  key={label}
+                  href="/pos/cash-counter"
+                  className="rounded-xl border border-slate-200 bg-white p-4 hover:border-brand-300"
+                >
+                  <p className="text-xs font-medium uppercase text-slate-500">{label}</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums text-slate-900">₹{p.sales.toFixed(0)}</p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Cash ₹{p.cash.toFixed(0)} · UPI ₹{p.upi.toFixed(0)} · Credit ₹{p.credit.toFixed(0)}
+                  </p>
+                  <p className={`mt-2 text-sm font-semibold tabular-nums ${p.profit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    Profit ₹{p.profit.toFixed(0)}
+                  </p>
+                </Link>
+              ))}
+            </section>
+          )}
           <section className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6 sm:mb-8">
             <div className="rounded-xl bg-white border border-slate-200 border-l-4 p-4 min-h-[88px]" style={{ borderLeftColor: 'var(--tenant-primary)' }}>
               <p className="text-xs font-medium text-slate-500 uppercase">Total invoiced</p>

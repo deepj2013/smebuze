@@ -13,7 +13,10 @@ import { parseNonNeg, splitItemGst } from '@/lib/item-pricing';
 import { itemImageSrc, uploadItemImage } from '@/lib/item-image';
 import { parseMoney, parseQty, round2 } from '@/lib/money';
 import { DepartmentItemFields } from '../../../DepartmentItemFields';
+import ItemBrandPackFields from '../../../ItemBrandPackFields';
+import ItemLocaleNames from '../../../ItemLocaleNames';
 import SaleStyleField from '../../../SaleStyleField';
+import { readItemNames, type ItemNamesMap } from '@/lib/item-i18n';
 
 function validateHsnSac(v: string): string | null {
   if (!v.trim()) return null;
@@ -28,6 +31,7 @@ export default function EditItemPage() {
   const id = params.id as string;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState('');
+  const [brand, setBrand] = useState('');
   const [sku, setSku] = useState('');
   const [barcode, setBarcode] = useState('');
   const [description, setDescription] = useState('');
@@ -57,6 +61,7 @@ export default function EditItemPage() {
   const [variantShape, setVariantShape] = useState('');
   const [packSourceId, setPackSourceId] = useState('');
   const [packQty, setPackQty] = useState('');
+  const [localeNames, setLocaleNames] = useState<ItemNamesMap>({});
 
   useEffect(() => {
     apiGet<Record<string, unknown>>(`inventory/items/${id}`).then((res) => {
@@ -64,12 +69,14 @@ export default function EditItemPage() {
       else if (res.data) {
         const d = res.data as Record<string, unknown>;
         setName((d.name as string) ?? '');
+        setBrand((d.brand as string) ?? '');
         setSku((d.sku as string) ?? '');
         setBarcode((d.barcode as string) ?? '');
         setDescription((d.description as string) ?? '');
         setUnit((d.unit as string) ?? 'pcs');
-        const meta = d.metadata as { sale_mode?: string } | undefined;
+        const meta = d.metadata as { sale_mode?: string; names?: ItemNamesMap } | undefined;
         setSaleMode(meta?.sale_mode === 'loose' ? 'loose' : 'fixed');
+        setLocaleNames(readItemNames(meta));
         setCategory((d.category as string) ?? '');
         setHsnSac((d.hsn_sac as string) ?? '9983');
         setReorderLevel(d.reorder_level != null ? String(d.reorder_level) : '');
@@ -188,6 +195,7 @@ export default function EditItemPage() {
     setLoading(true);
     const body: Record<string, unknown> = {
       name: name.trim(),
+      brand: brand.trim() || null,
       sku: sku || undefined,
       barcode: barcode || undefined,
       image_urls: imageUrls,
@@ -196,6 +204,9 @@ export default function EditItemPage() {
       sale_mode: saleMode,
       category: category || undefined,
       hsn_sac: hsnSac.trim() || undefined,
+      variant_size: variantSize.trim() || null,
+      variant_shape: variantShape.trim() || null,
+      names: localeNames,
     };
     if (reorderLevel.trim() !== '') body.reorder_level = parseQty(reorderLevel);
     if (mrp.trim() !== '') body.mrp = parseMoney(mrp);
@@ -208,8 +219,6 @@ export default function EditItemPage() {
     else body.discount_percent = null;
     if (isDept) {
       body.subcategory = subcategory.trim() || null;
-      body.variant_size = variantSize.trim() || null;
-      body.variant_shape = variantShape.trim() || null;
       body.pack_source_id = packSourceId || null;
       body.pack_qty = packSourceId && packQty.trim() ? Math.round(Number(packQty) * 10000) / 10000 : null;
       const m = mrp.trim() ? parseMoney(mrp) : 0;
@@ -237,14 +246,16 @@ export default function EditItemPage() {
         <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Name (English) *</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => { setName(e.target.value); setFieldErrors((p) => ({ ...p, name: '' })); }}
+                placeholder="Turmeric powder"
                 className={`w-full rounded border px-3 py-2 text-sm ${fieldErrors.name ? 'border-red-500' : 'border-slate-300'}`}
               />
               {fieldErrors.name && <p className="mt-0.5 text-sm text-red-600">{fieldErrors.name}</p>}
+              <p className="mt-0.5 text-xs text-slate-500">Keep the base name; brand and size go in Brand & pack.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">SKU</label>
@@ -311,6 +322,15 @@ export default function EditItemPage() {
               {uploadingImages ? 'Uploading picture…' : 'Photos upload right away, then tap Save.'}
             </p>
           </div>
+          <ItemBrandPackFields
+            brand={brand}
+            setBrand={setBrand}
+            variantSize={variantSize}
+            setVariantSize={setVariantSize}
+            variantShape={variantShape}
+            setVariantShape={setVariantShape}
+          />
+          <ItemLocaleNames names={localeNames} onChange={setLocaleNames} />
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
@@ -394,6 +414,7 @@ export default function EditItemPage() {
                 costPrice={costPrice}
                 cgstRate={cgstRate}
                 sgstRate={sgstRate}
+                hideBrandPack
               />
             )}
             <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
