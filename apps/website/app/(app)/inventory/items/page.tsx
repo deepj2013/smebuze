@@ -7,6 +7,7 @@ import PosSwitcher from '../../components/PosSwitcher';
 import { PageHeader } from '../../components/PageHeader';
 import { ResponsiveDataList, type Column } from '../../components/ResponsiveDataList';
 import { formatQty } from '@/lib/money';
+import { itemImageSrc } from '@/lib/item-image';
 import { posSellingRate } from '@/lib/business-types';
 
 interface Item {
@@ -84,7 +85,7 @@ export default function ItemsPage() {
       render: (item) =>
         item.image_urls?.length ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.image_urls[0]} alt="" className="w-10 h-10 object-cover rounded border border-slate-200" />
+          <img src={itemImageSrc(item.image_urls[0])} alt="" className="w-10 h-10 object-cover rounded border border-slate-200" />
         ) : (
           <span className="w-10 h-10 flex items-center justify-center rounded bg-slate-100 text-slate-400 text-xs">—</span>
         ),
@@ -178,7 +179,7 @@ export default function ItemsPage() {
                 <div className="flex gap-3">
                   {item.image_urls?.length ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={item.image_urls[0]} alt="" className="h-14 w-14 shrink-0 rounded-lg border border-slate-200 object-cover" />
+                    <img src={itemImageSrc(item.image_urls[0])} alt="" className="h-14 w-14 shrink-0 rounded-lg border border-slate-200 object-cover" />
                   ) : (
                     <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">No img</span>
                   )}

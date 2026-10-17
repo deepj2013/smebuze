@@ -282,6 +282,26 @@ export class InventoryService {
     return value.toLowerCase().replace(/[^a-z0-9]/g, '');
   }
 
+  /** Accept uploaded /uploads/... paths (or https URLs). Reject huge data: URLs that blow the API body. */
+  private sanitizeImageUrls(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    const out: string[] = [];
+    for (const entry of raw) {
+      if (typeof entry !== 'string') continue;
+      const url = entry.trim();
+      if (!url) continue;
+      if (url.startsWith('data:')) {
+        throw new BadRequestException(
+          'Picture must be uploaded first. Tap the picture again after it finishes uploading, then Save.',
+        );
+      }
+      if (url.startsWith('/uploads/') || url.startsWith('http://') || url.startsWith('https://')) {
+        out.push(url);
+      }
+    }
+    return out.slice(0, 10);
+  }
+
   async generateNextSku(ctx: TenantContext): Promise<{ sku: string }> {
     const tenantId = this.assertTenantId(ctx);
     const items = await this.itemRepo.find({
@@ -421,13 +441,14 @@ export class InventoryService {
     const forSale = dto.for_sale !== undefined ? Boolean(dto.for_sale) : true;
     const forConsume = dto.for_consume !== undefined ? Boolean(dto.for_consume) : true;
     this.assertSaleOrConsume(forSale, forConsume);
+    const imageUrls = this.sanitizeImageUrls(dto.image_urls);
     const item = this.itemRepo.create({
       tenant_id: tenantId,
       company_id: dto.company_id ?? null,
       name: dto.name ?? '',
       sku,
       barcode,
-      image_urls: Array.isArray(dto.image_urls) ? dto.image_urls : [],
+      image_urls: imageUrls,
       description: dto.description ?? null,
       unit: dto.unit ?? 'pcs',
       category: dto.category ?? null,
@@ -568,7 +589,7 @@ export class InventoryService {
     if (dto.name != null) item.name = dto.name;
     if (dto.sku != null) item.sku = nextSku;
     if (dto.barcode !== undefined) item.barcode = nextBarcode;
-    if (dto.image_urls !== undefined) item.image_urls = Array.isArray(dto.image_urls) ? dto.image_urls : item.image_urls;
+    if (dto.image_urls !== undefined) item.image_urls = this.sanitizeImageUrls(dto.image_urls);
     if (dto.description != null) item.description = dto.description;
     if (dto.unit != null) item.unit = dto.unit;
     if (dto.category != null) {

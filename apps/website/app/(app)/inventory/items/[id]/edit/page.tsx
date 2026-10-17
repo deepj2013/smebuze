@@ -10,6 +10,7 @@ import PosSwitcher from '../../../../components/PosSwitcher';
 import BarcodeCapture from '../../../../components/BarcodeCapture';
 import { DecimalInput } from '../../../../components/NumberField';
 import { parseNonNeg, splitItemGst } from '@/lib/item-pricing';
+import { itemImageSrc, uploadItemImage } from '@/lib/item-image';
 import { parseMoney, parseQty, round2 } from '@/lib/money';
 import { DepartmentItemFields } from '../../../DepartmentItemFields';
 import SaleStyleField from '../../../SaleStyleField';
@@ -44,6 +45,7 @@ export default function EditItemPage() {
   const [forSale, setForSale] = useState(true);
   const [forConsume, setForConsume] = useState(true);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingBarcode, setLoadingBarcode] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -113,20 +115,26 @@ export default function EditItemPage() {
     else setError('Could not generate barcode. Try again.');
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files?.length) return;
     const remaining = 10 - imageUrls.length;
-    for (let i = 0; i < Math.min(files.length, remaining); i++) {
-      const file = files[i];
-      if (!file.type.startsWith('image/')) continue;
-      const reader = new FileReader();
-      reader.onload = () => {
-        setImageUrls((prev) => (prev.length >= 10 ? prev : [...prev, reader.result as string]));
-      };
-      reader.readAsDataURL(file);
-    }
+    const batch = Array.from(files).filter((f) => f.type.startsWith('image/')).slice(0, remaining);
     e.target.value = '';
+    if (!batch.length) return;
+    setUploadingImages(true);
+    setError(null);
+    const uploaded: string[] = [];
+    for (const file of batch) {
+      const res = await uploadItemImage(file);
+      if (res.error || !res.url) {
+        setError(res.error || 'Could not upload picture. Try a smaller photo.');
+        break;
+      }
+      uploaded.push(res.url);
+    }
+    if (uploaded.length) setImageUrls((prev) => [...prev, ...uploaded].slice(0, 10));
+    setUploadingImages(false);
   };
 
   const removeImage = (index: number) => {
@@ -220,12 +228,12 @@ export default function EditItemPage() {
 
   if (loadErr) return <div className="p-4 text-red-600">{loadErr}</div>;
   return (
-    <div>
+    <div className="pb-[calc(5.5rem+var(--safe-area-bottom))] lg:pb-0">
       <PosSwitcher />
       <Link href="/inventory/items" className="text-sm text-slate-600 hover:text-slate-900 mb-4 inline-block">← Items</Link>
       <h1 className="text-2xl font-bold text-slate-900 mb-4">Edit item</h1>
       {error && <div className="mb-4 rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</div>}
-      <form onSubmit={submit} className="max-w-2xl space-y-4">
+      <form onSubmit={submit} className="mx-auto max-w-2xl space-y-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -280,8 +288,8 @@ export default function EditItemPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">Pictures (up to 10)</label>
             <div className="flex flex-wrap gap-3">
               {imageUrls.map((url, i) => (
-                <div key={i} className="relative group">
-                  <img src={url} alt="" className="w-20 h-20 object-cover rounded-lg border border-slate-200" />
+                <div key={url} className="relative group">
+                  <img src={itemImageSrc(url)} alt="" className="w-20 h-20 object-cover rounded-lg border border-slate-200" />
                   <button type="button" onClick={() => removeImage(i)} className="absolute -top-1 -right-1 rounded-full bg-red-500 text-white p-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100" aria-label="Remove">
                     <X className="h-3 w-3" />
                   </button>
@@ -290,14 +298,18 @@ export default function EditItemPage() {
               {imageUrls.length < 10 && (
                 <button
                   type="button"
+                  disabled={uploadingImages}
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-20 h-20 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-400 hover:border-brand-400 hover:text-brand-600"
+                  className="w-20 h-20 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-400 hover:border-brand-400 hover:text-brand-600 disabled:opacity-50"
                 >
-                  <ImagePlus className="h-8 w-8" />
+                  <ImagePlus className={`h-8 w-8 ${uploadingImages ? 'animate-pulse' : ''}`} />
                 </button>
               )}
             </div>
-            <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImageSelect} />
+            <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => void handleImageSelect(e)} />
+            <p className="text-xs text-slate-500 mt-1">
+              {uploadingImages ? 'Uploading picture…' : 'Photos upload right away, then tap Save.'}
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
@@ -398,9 +410,11 @@ export default function EditItemPage() {
             </div>
           </div>
         </div>
-        <div className="sticky bottom-20 z-10 -mx-4 flex gap-2 border-t border-slate-200 bg-[var(--tenant-canvas,#f8fafc)] px-4 py-3 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0">
-          <button type="submit" disabled={loading} className="min-h-[44px] flex-1 rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium hover:bg-brand-700 disabled:opacity-50 sm:flex-none">Save</button>
-          <Link href="/inventory/items" className="min-h-[44px] inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</Link>
+        <div className="fixed inset-x-0 bottom-[calc(3.75rem+var(--safe-area-bottom,0px))] z-30 flex flex-wrap gap-2 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur lg:static lg:inset-auto lg:bottom-auto lg:z-auto lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:backdrop-blur-none">
+          <button type="submit" disabled={loading || uploadingImages} className="min-h-[48px] flex-1 rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-semibold hover:bg-brand-700 disabled:opacity-50 sm:flex-none">
+            {loading ? 'Saving…' : uploadingImages ? 'Uploading…' : 'Save'}
+          </button>
+          <Link href="/inventory/items" className="min-h-[48px] inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</Link>
           <button
             type="button"
             disabled={loading}
@@ -412,7 +426,7 @@ export default function EditItemPage() {
               if (err) setError(err);
               else router.push('/inventory/items');
             }}
-            className="min-h-[44px] inline-flex items-center rounded-lg border border-red-200 px-4 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+            className="min-h-[48px] inline-flex items-center rounded-lg border border-red-200 px-4 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
           >
             Delete SKU
           </button>

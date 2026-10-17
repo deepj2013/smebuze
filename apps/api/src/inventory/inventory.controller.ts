@@ -1,4 +1,20 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import * as fs from 'fs';
+import * as path from 'path';
 import { InventoryService } from './inventory.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentTenant } from '../common/tenant-context';
@@ -67,6 +83,34 @@ export class InventoryController {
   @RequirePermissions('inventory.item.view')
   async getNextBarcode(@CurrentTenant() ctx: TenantContext) {
     return this.inventoryService.generateNextBarcode(ctx);
+  }
+
+  @Post('items/upload-image')
+  @RequirePermissions('inventory.item.create')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        if (!file.mimetype.startsWith('image/')) {
+          return cb(new BadRequestException('Only image files are allowed'), false);
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  async uploadItemImage(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentTenant() ctx: TenantContext,
+  ): Promise<{ url: string }> {
+    if (!file?.buffer) throw new BadRequestException('No file uploaded');
+    if (!ctx.tenantId) throw new BadRequestException('Tenant required');
+    const dir = path.join(process.cwd(), 'uploads', 'items');
+    fs.mkdirSync(dir, { recursive: true });
+    const ext = path.extname(file.originalname || '') || '.jpg';
+    const safeExt = ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext.toLowerCase()) ? ext.toLowerCase() : '.jpg';
+    const filename = `${ctx.tenantId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}${safeExt}`;
+    fs.writeFileSync(path.join(dir, filename), file.buffer);
+    return { url: `/uploads/items/${filename}` };
   }
 
   @Post('items')

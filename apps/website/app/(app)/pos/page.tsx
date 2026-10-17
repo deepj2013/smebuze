@@ -250,7 +250,7 @@ export default function PosPage() {
         },
       ];
     });
-    setCartOpen(true);
+    // Keep product grid open on phone — user opens Buy list when ready to pay.
   }, []);
 
   const applyCode = useCallback(

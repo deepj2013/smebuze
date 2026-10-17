@@ -267,7 +267,7 @@ export default function DepartmentCounter() {
         },
       ];
     });
-    setCartOpen(true);
+    // Keep product grid open on phone — user opens Buy list when ready to pay.
   }, []);
 
   const applyCode = useCallback(async (raw: string) => {
@@ -799,12 +799,21 @@ export default function DepartmentCounter() {
               const packs = item.pack_qty && item.source_stock != null && num(item.pack_qty) > 0
                 ? Math.floor(num(item.source_stock) / num(item.pack_qty))
                 : null;
+              const qty = cart.find((l) => l.item_id === item.id)?.qty ?? 0;
               return (
-                <button key={item.id} type="button" onClick={() => addItem(item)} className="relative min-h-[72px] rounded-md border border-sky-300 bg-white px-2 py-2 text-left hover:bg-sky-50">
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => addItem(item)}
+                  className={`relative min-h-[72px] rounded-md border bg-white px-2 py-2 text-left hover:bg-sky-50 ${
+                    qty > 0 ? 'border-brand-500 ring-1 ring-brand-500' : 'border-sky-300'
+                  }`}
+                >
                   <p className="pr-12 text-sm font-medium leading-snug text-slate-800 line-clamp-2">{item.name}</p>
                   <span className="absolute right-2 top-2 text-xs font-semibold text-slate-600">₹{shelf.toFixed(0)}</span>
                   {disc > 0 && <p className="text-[10px] text-slate-400 line-through">MRP ₹{mrp.toFixed(0)}</p>}
                   {packs != null && packs <= 0 && <p className="text-[10px] font-medium text-amber-700">Out of packs</p>}
+                  {qty > 0 && <span className="absolute bottom-1 right-2 rounded bg-brand-600 px-1.5 text-[10px] font-bold text-white">{qty}</span>}
                 </button>
               );
             })}
