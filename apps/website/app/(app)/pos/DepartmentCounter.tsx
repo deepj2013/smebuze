@@ -531,61 +531,24 @@ export default function DepartmentCounter() {
 
   const cartPanel = (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid shrink-0 grid-cols-3 gap-1">
         {(['takeaway', 'dinein', 'delivery'] as const).map((id) => (
           <button key={id} type="button" onClick={() => setOrderType(id)} className={`h-7 rounded text-[11px] font-semibold ${orderType === id ? 'bg-sky-500 text-white' : 'border border-slate-200'}`}>
             {id === 'dinein' ? 'Dine-in' : id === 'takeaway' ? 'Takeaway' : 'Delivery'}
           </button>
         ))}
       </div>
-      <div className="mt-1 rounded border border-slate-200 bg-slate-50 p-1.5">
-        <div className="grid grid-cols-2 gap-1">
-          <input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Name" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
-          <input value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} inputMode="tel" placeholder="Mobile" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
-        </div>
-        <div className="mt-1 flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={() => void rememberCounterCustomer({ name: guestName, phone: guestPhone, customers, fallbackId: customerId, companyId }).then((saved) => {
-              if (!saved) { showError('Enter a mobile number to remember this customer.'); return; }
-              setSavedGuest(saved);
-              setCustomerId(saved.id);
-              setCustomers((prev) => (prev.some((c) => c.id === saved.id) ? prev : [{ id: saved.id, name: saved.name, phone: saved.phone }, ...prev]));
-              success(`${saved.name} saved for wishes and offers.`);
-            })}
-            className="h-6 rounded bg-slate-800 px-2 text-[11px] font-semibold text-white"
-          >
-            Save
-          </button>
-          <span className="truncate text-[11px] text-slate-600">{savedGuest ? `${savedGuest.name} · ${savedGuest.phone}` : 'Saved here for wishes'}</span>
-        </div>
+      <div className="mt-2 flex shrink-0 items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-900">Buy list</h2>
+        <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-800">
+          {cart.length} item{cart.length === 1 ? '' : 's'} · ₹{totals.total.toFixed(0)}
+        </span>
       </div>
-      <div className="mt-1 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-900">Bill</h2>
-        <span className="text-xs text-slate-500">{cart.length} item{cart.length === 1 ? '' : 's'}</span>
-      </div>
-      <label className="mt-2 text-xs font-medium text-slate-600">Customer</label>
-      <select
-        value={customerId}
-        onChange={(e) => {
-          const id = e.target.value;
-          setCustomerId(id);
-          const c = customers.find((row) => row.id === id);
-          if (c && isCredit(c)) setPayMode('credit');
-          if (c && isWalkIn(c) && payMode === 'credit') setPayMode('cash');
-        }}
-        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm min-h-[44px]"
-      >
-        {customers.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}{isCredit(c) ? ' · credit' : isWalkIn(c) ? ' · cash' : ''}
-          </option>
-        ))}
-      </select>
-      <ul className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto">
-        {priced.length === 0 && <li className="text-sm text-slate-500">Scan or tap a product.</li>}
+      {/* Item list first so scanned/tapped products stay visible */}
+      <ul className="mt-2 min-h-[160px] flex-1 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/80 p-2">
+        {priced.length === 0 && <li className="px-1 py-6 text-center text-sm text-slate-500">Scan or tap a product — it appears here.</li>}
         {priced.map(({ line, money }) => (
-          <li key={line.item_id} className="rounded-lg border border-slate-100 p-2 text-sm">
+          <li key={line.item_id} className="rounded-lg border border-slate-200 bg-white p-2 text-sm shadow-sm">
             <div className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-slate-900">{line.name}</p>
@@ -618,7 +581,49 @@ export default function DepartmentCounter() {
           </li>
         ))}
       </ul>
-      <div className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm">
+      <div className="mt-2 shrink-0 space-y-2 border-t border-slate-100 pt-2">
+      <div className="rounded border border-slate-200 bg-slate-50 p-1.5">
+        <div className="grid grid-cols-2 gap-1">
+          <input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Name" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
+          <input value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} inputMode="tel" placeholder="Mobile" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
+        </div>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => void rememberCounterCustomer({ name: guestName, phone: guestPhone, customers, fallbackId: customerId, companyId }).then((saved) => {
+              if (!saved) { showError('Enter a mobile number to remember this customer.'); return; }
+              setSavedGuest(saved);
+              setCustomerId(saved.id);
+              setCustomers((prev) => (prev.some((c) => c.id === saved.id) ? prev : [{ id: saved.id, name: saved.name, phone: saved.phone }, ...prev]));
+              success(`${saved.name} saved for wishes and offers.`);
+            })}
+            className="h-6 rounded bg-slate-800 px-2 text-[11px] font-semibold text-white"
+          >
+            Save
+          </button>
+          <span className="truncate text-[11px] text-slate-600">{savedGuest ? `${savedGuest.name} · ${savedGuest.phone}` : 'Saved here for wishes'}</span>
+        </div>
+      </div>
+      <label className="text-xs font-medium text-slate-600">Customer</label>
+      <select
+        value={customerId}
+        onChange={(e) => {
+          const id = e.target.value;
+          setCustomerId(id);
+          const c = customers.find((row) => row.id === id);
+          if (c && isCredit(c)) setPayMode('credit');
+          if (c && isWalkIn(c) && payMode === 'credit') setPayMode('cash');
+        }}
+        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[40px]"
+      >
+        {customers.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}{isCredit(c) ? ' · credit' : isWalkIn(c) ? ' · cash' : ''}
+          </option>
+        ))}
+      </select>
+      </div>
+      <div className="mt-2 shrink-0 space-y-1 border-t border-slate-100 pt-2 text-sm">
         <label className="flex items-center justify-between gap-2 text-slate-600">
           <span>Bill discount</span>
           <input
@@ -709,7 +714,7 @@ export default function DepartmentCounter() {
   );
 
   return (
-    <div className="flex min-h-0 flex-col gap-3 pb-28 md:grid md:h-[calc(100dvh-8.5rem)] md:grid-cols-[minmax(0,1fr)_300px] md:pb-20 lg:grid-cols-[200px_minmax(0,1fr)_340px] lg:pb-0">
+    <div className="flex min-h-0 flex-col gap-3 pb-24 md:grid md:h-[calc(100dvh-5.5rem)] md:grid-cols-[minmax(0,1fr)_320px] md:overflow-hidden md:pb-0 lg:grid-cols-[200px_minmax(0,1fr)_360px]">
       {waiting > 0 && (
         <p className="md:col-span-2 lg:col-span-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
           {waiting} {ct(lang, 'bill(s) are on this device. Stock updates after they sync. The counter needs the network for live stock.', 'बिल इस डिवाइस पर हैं। सिंक के बाद स्टॉक बदलेगा।')}
@@ -738,7 +743,7 @@ export default function DepartmentCounter() {
       </aside>
 
       <section className="min-w-0 lg:min-h-0 lg:overflow-y-auto">
-        <div className="mb-3 flex gap-2">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-stretch">
           <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
@@ -754,21 +759,23 @@ export default function DepartmentCounter() {
               className="w-full rounded-md border border-slate-300 py-2.5 pl-10 pr-3 text-sm min-h-[44px]"
             />
           </div>
-          <input
-            value={shortCode}
-            onChange={(e) => setShortCode(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== 'Enter') return;
-              e.preventDefault();
-              const code = shortCode.trim();
-              if (!code) return;
-              void applyCode(code);
-              setShortCode('');
-            }}
-            placeholder="Short code"
-            className="w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm min-h-[44px] sm:w-40"
-          />
-          <BarcodeCapture onDetected={applyCode} label="Scan" />
+          <div className="flex gap-2 sm:w-auto">
+            <input
+              value={shortCode}
+              onChange={(e) => setShortCode(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const code = shortCode.trim();
+                if (!code) return;
+                void applyCode(code);
+                setShortCode('');
+              }}
+              placeholder="Short code"
+              className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2.5 text-sm min-h-[44px] sm:w-36 sm:flex-none"
+            />
+            <BarcodeCapture onDetected={applyCode} label="Scan" className="shrink-0" />
+          </div>
         </div>
         {scanHint && <p className="mb-2 text-xs font-medium text-emerald-700">Last scan: {scanHint}</p>}
         <input value={menuQuery} onChange={(e) => setMenuQuery(e.target.value)} placeholder="Search category" className="mb-2 h-8 w-full rounded border border-slate-300 px-2 text-xs lg:hidden" />
@@ -805,20 +812,30 @@ export default function DepartmentCounter() {
         )}
       </section>
 
-      <aside className="hidden min-h-0 rounded-2xl border border-slate-200 bg-white p-3 md:flex md:flex-col lg:min-h-0">
+      <aside className="hidden min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 md:flex md:flex-col">
         {cartPanel}
       </aside>
 
-      <div className="fixed inset-x-0 bottom-16 z-20 border-t border-slate-200 bg-white p-3 shadow md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white p-3 shadow md:hidden" style={{ paddingBottom: 'max(0.75rem, var(--safe-area-bottom))' }}>
         <button type="button" onClick={() => setCartOpen(true)} className="flex w-full items-center justify-between rounded-xl bg-brand-600 px-4 py-3 text-white min-h-[48px]">
-          <span>{cart.length} items · Taxable ₹{totals.taxable.toFixed(2)}</span>
+          <span className="text-left">
+            <span className="block text-xs font-medium text-brand-100">Buy list</span>
+            <span>{cart.length} item{cart.length === 1 ? '' : 's'}</span>
+          </span>
           <span className="font-bold">₹{totals.total.toFixed(2)}</span>
         </button>
       </div>
       {cartOpen && (
         <div className="fixed inset-0 z-40 bg-slate-900/40 md:hidden" onClick={() => setCartOpen(false)}>
-          <div className="absolute inset-x-0 bottom-0 top-16 overflow-y-auto rounded-t-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
-            {cartPanel}
+          <div
+            className="absolute inset-x-0 bottom-0 top-12 flex max-h-[92dvh] flex-col overflow-hidden rounded-t-2xl bg-white p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex shrink-0 items-center justify-between">
+              <p className="text-sm font-semibold text-slate-900">Buy list</p>
+              <button type="button" onClick={() => setCartOpen(false)} className="px-2 text-sm font-medium text-brand-700 min-h-[40px]">Close</button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">{cartPanel}</div>
           </div>
         </div>
       )}

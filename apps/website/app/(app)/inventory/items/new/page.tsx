@@ -45,6 +45,7 @@ export default function NewItemPage() {
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingSku, setLoadingSku] = useState(false);
+  const [loadingBarcode, setLoadingBarcode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isDept, setIsDept] = useState(false);
@@ -68,13 +69,23 @@ export default function NewItemPage() {
   const handleGenerateSku = async () => {
     setLoadingSku(true);
     setError(null);
-    const { data, error: err } = await apiGet<unknown>('inventory/items/next-sku');
+    const { data, error: err } = await apiGet<{ sku?: string } | string>('inventory/items/next-sku');
     setLoadingSku(false);
     if (err) setError(err);
-    else if (data != null) {
-      const next = typeof data === 'string' ? data : (data as { next_sku?: string; sku?: string }).next_sku ?? (data as { sku?: string }).sku ?? String(data);
-      setSku(next);
-    }
+    else if (typeof data === 'string' && data.trim()) setSku(data.trim());
+    else if (data && typeof data === 'object' && typeof data.sku === 'string') setSku(data.sku);
+    else setError('Could not generate SKU. Try again.');
+  };
+
+  const handleGenerateBarcode = async () => {
+    setLoadingBarcode(true);
+    setError(null);
+    const { data, error: err } = await apiGet<{ barcode?: string } | string>('inventory/items/next-barcode');
+    setLoadingBarcode(false);
+    if (err) setError(err);
+    else if (typeof data === 'string' && data.trim()) setBarcode(data.trim());
+    else if (data && typeof data === 'object' && typeof data.barcode === 'string') setBarcode(data.barcode);
+    else setError('Could not generate barcode. Try again.');
   };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -218,12 +229,24 @@ export default function NewItemPage() {
                 type="text"
                 value={barcode}
                 onChange={(e) => setBarcode(e.target.value)}
-                placeholder="Scan with a reader, camera, or type"
+                placeholder="Scan, type, or Generate for a shop code"
                 className="w-full min-w-0 rounded border border-slate-300 px-3 py-2 text-sm"
               />
+              <button
+                type="button"
+                onClick={handleGenerateBarcode}
+                disabled={loadingBarcode}
+                className="flex items-center justify-center gap-1 rounded border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 min-h-[40px] shrink-0"
+                title="Create a shop barcode for stickers"
+              >
+                <RefreshCw className={`h-4 w-4 ${loadingBarcode ? 'animate-spin' : ''}`} />
+                Generate
+              </button>
               <BarcodeCapture onDetected={(code) => setBarcode(code)} label="Scan" />
             </div>
-            <p className="text-xs text-slate-500 mt-1">USB/Bluetooth reader: click the field and scan. Phone: tap Scan.</p>
+            <p className="text-xs text-slate-500 mt-1">
+              Pack code: scan it. No code: tap Generate, then print stickers under Inventory → Barcode labels.
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Pictures (up to 10)</label>

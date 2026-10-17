@@ -63,6 +63,12 @@ export class InventoryController {
     return this.inventoryService.generateNextSku(ctx);
   }
 
+  @Get('items/next-barcode')
+  @RequirePermissions('inventory.item.view')
+  async getNextBarcode(@CurrentTenant() ctx: TenantContext) {
+    return this.inventoryService.generateNextBarcode(ctx);
+  }
+
   @Post('items')
   @RequirePermissions('inventory.item.create')
   async createItem(@Body() body: Record<string, unknown>, @CurrentTenant() ctx: TenantContext) {

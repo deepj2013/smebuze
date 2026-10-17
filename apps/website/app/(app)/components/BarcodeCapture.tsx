@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Camera, X } from 'lucide-react';
 
 type Props = {
@@ -16,6 +16,10 @@ export default function BarcodeCapture({ onDetected, label = 'Camera', className
   const readerId = `bc-${useId().replace(/:/g, '')}`;
   const scannerRef = useRef<{ stop: () => Promise<unknown>; clear: () => unknown } | null>(null);
   const taken = useRef(false);
+  const onDetectedRef = useRef(onDetected);
+  onDetectedRef.current = onDetected;
+
+  const close = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
     if (!open) return;
@@ -40,19 +44,39 @@ export default function BarcodeCapture({ onDetected, label = 'Camera', className
           useBarCodeDetectorIfSupported: true,
         });
         scannerRef.current = scanner;
-        await scanner.start(
-          { facingMode: 'environment' },
-          { fps: 12, qrbox: { width: 280, height: 160 } },
-          (text) => {
-            if (cancelled || taken.current) return;
-            const code = String(text || '').trim();
-            if (!code) return;
-            taken.current = true;
-            onDetected(code);
-            setOpen(false);
-          },
-          () => undefined,
-        );
+        // Prefer rear camera on phones; fall back to any camera if constrained start fails.
+        const boxW = Math.min(320, typeof window !== 'undefined' ? Math.floor(window.innerWidth * 0.85) : 280);
+        const config = { fps: 15, qrbox: { width: boxW, height: Math.round(boxW * 0.55) }, aspectRatio: 1.333 };
+        try {
+          await scanner.start(
+            { facingMode: { exact: 'environment' } },
+            config,
+            (text) => {
+              if (cancelled || taken.current) return;
+              const code = String(text || '').trim();
+              if (!code) return;
+              taken.current = true;
+              onDetectedRef.current(code);
+              setOpen(false);
+            },
+            () => undefined,
+          );
+        } catch {
+          if (cancelled) return;
+          await scanner.start(
+            { facingMode: 'environment' },
+            config,
+            (text) => {
+              if (cancelled || taken.current) return;
+              const code = String(text || '').trim();
+              if (!code) return;
+              taken.current = true;
+              onDetectedRef.current(code);
+              setOpen(false);
+            },
+            () => undefined,
+          );
+        }
       } catch (e) {
         if (cancelled) return;
         const msg = e instanceof Error ? e.message : String(e);
@@ -74,7 +98,7 @@ export default function BarcodeCapture({ onDetected, label = 'Camera', className
           .catch(() => undefined);
       }
     };
-  }, [open, readerId, onDetected]);
+  }, [open, readerId]);
 
   return (
     <>
@@ -82,24 +106,24 @@ export default function BarcodeCapture({ onDetected, label = 'Camera', className
         type="button"
         disabled={disabled}
         onClick={() => setOpen(true)}
-        className={`inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50 min-h-[44px] ${className}`}
-        title="Scan with phone camera"
+        className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-100 disabled:opacity-50 min-h-[44px] ${className}`}
+        title="Scan barcode with phone camera — product adds to cart"
       >
         <Camera className="h-4 w-4" />
         {label}
       </button>
       {open && (
         <div className="fixed inset-0 z-[80] bg-black/85 flex flex-col" role="dialog" aria-modal="true" aria-label="Scan barcode">
-          <div className="flex items-center justify-between px-4 py-3 text-white">
-            <p className="text-sm font-semibold">Point the camera at the barcode</p>
-            <button type="button" onClick={() => setOpen(false)} className="rounded-full p-2 hover:bg-white/10 min-touch" aria-label="Close scanner">
+          <div className="flex items-center justify-between px-4 py-3 text-white safe-pt">
+            <p className="text-sm font-semibold">Scan barcode — adds to cart</p>
+            <button type="button" onClick={close} className="rounded-full p-2 hover:bg-white/10 min-touch" aria-label="Close scanner">
               <X className="h-5 w-5" />
             </button>
           </div>
           <div className="flex-1 px-4 pb-6">
-            <div id={readerId} className="mx-auto w-full max-w-md overflow-hidden rounded-xl bg-black" />
+            <div id={readerId} className="mx-auto w-full max-w-md overflow-hidden rounded-xl bg-black [&_video]:!max-h-[70vh] [&_video]:object-cover" />
             {err && <p className="mt-3 text-center text-sm text-amber-200">{err}</p>}
-            <p className="mt-3 text-center text-xs text-white/70">EAN, UPC, Code 128 and QR work. USB readers do not need the camera.</p>
+            <p className="mt-3 text-center text-xs text-white/70">Hold steady over EAN, UPC, Code 128 or QR. Product is added to the cart when read.</p>
           </div>
         </div>
       )}

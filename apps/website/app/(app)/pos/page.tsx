@@ -773,41 +773,24 @@ export default function PosPage() {
   void clock;
 
   const billPanel = (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       {orderType === 'dinein' && (
-        <div className="mb-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2">
+        <div className="mb-2 shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-2">
           <p className="text-sm font-semibold text-slate-900">{activeTable ? `Table ${activeTable}` : 'Choose a table'}</p>
           <p className="text-xs text-slate-500">{activeTab ? `Seated ${minutesAgo(activeTab.created_at)}` : 'Seated time starts when you open the table'}</p>
         </div>
       )}
-      <div className="rounded border border-slate-200 bg-slate-50 p-1.5">
-        <div className="grid grid-cols-2 gap-1">
-          <input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Name" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
-          <input value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} inputMode="tel" placeholder="Mobile" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
-        </div>
-        <div className="mt-1 flex items-center justify-between gap-2">
-          <button type="button" onClick={() => void saveGuest()} className="h-6 rounded bg-slate-800 px-2 text-[11px] font-semibold text-white">Save</button>
-          <span className="truncate text-[11px] text-slate-600">{savedGuest ? `${savedGuest.name} · ${savedGuest.phone}` : 'Saved here for wishes'}</span>
-        </div>
-        {orderType === 'delivery' && (
-          <textarea
-            value={guestAddress}
-            onChange={(e) => setGuestAddress(e.target.value)}
-            placeholder="Delivery address"
-            rows={2}
-            className="mt-1 w-full resize-none rounded border border-slate-200 bg-white px-2 py-1 text-xs"
-          />
-        )}
+      <div className="flex shrink-0 items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-900">Buy list</h2>
+        <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-800">
+          {cart.length} item{cart.length === 1 ? '' : 's'} · ₹{totals.total.toFixed(0)}
+        </span>
       </div>
-      <div className="mt-1 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-900">Bill</h2>
-        <span className="text-base font-bold tabular-nums text-slate-900">₹{totals.total.toFixed(2)}</span>
-      </div>
-      <div className="mt-2 grid grid-cols-[1fr_3rem_4rem_4.5rem] gap-1 px-1 text-[11px] font-semibold uppercase text-slate-500">
+      <div className="mt-2 grid shrink-0 grid-cols-[1fr_3rem_4rem_4.5rem] gap-1 px-1 text-[11px] font-semibold uppercase text-slate-500">
         <span>Item</span><span className="text-right">Qty</span><span className="text-right">Rate</span><span className="text-right">Amt</span>
       </div>
-      <ul className="mt-1 min-h-[80px] flex-1 space-y-1 overflow-y-auto">
-        {cart.length === 0 && <li className="px-1 text-sm text-slate-500">Tap an item to add it.</li>}
+      <ul className="mt-1 min-h-[160px] flex-1 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/80 p-1.5">
+        {cart.length === 0 && <li className="px-1 py-6 text-center text-sm text-slate-500">Tap or scan — items appear here.</li>}
         {cart.map((l) => {
           const loose = isLooseItem({ unit: l.unit, metadata: items.find((i) => i.id === l.item_id)?.metadata });
           return (
@@ -841,12 +824,32 @@ export default function PosPage() {
           );
         })}
       </ul>
-      <div className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-sm">
+      <div className="mt-2 shrink-0 space-y-2 overflow-y-auto border-t border-slate-100 pt-2">
+      <div className="rounded border border-slate-200 bg-slate-50 p-1.5">
+        <div className="grid grid-cols-2 gap-1">
+          <input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Name" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
+          <input value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} inputMode="tel" placeholder="Mobile" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
+        </div>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <button type="button" onClick={() => void saveGuest()} className="h-6 rounded bg-slate-800 px-2 text-[11px] font-semibold text-white">Save</button>
+          <span className="truncate text-[11px] text-slate-600">{savedGuest ? `${savedGuest.name} · ${savedGuest.phone}` : 'Saved here for wishes'}</span>
+        </div>
+        {orderType === 'delivery' && (
+          <textarea
+            value={guestAddress}
+            onChange={(e) => setGuestAddress(e.target.value)}
+            placeholder="Delivery address"
+            rows={2}
+            className="mt-1 w-full resize-none rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+          />
+        )}
+      </div>
+      <div className="space-y-1 text-sm">
         <div className="flex justify-between text-slate-600"><span>Taxable</span><span className="tabular-nums">₹{totals.subtotal.toFixed(2)}</span></div>
         <div className="flex justify-between text-slate-600"><span>GST</span><span className="tabular-nums">₹{totals.tax.toFixed(2)}</span></div>
         <div className="flex justify-between text-base font-bold text-slate-900"><span>Bill amount</span><span className="tabular-nums">₹{totals.total.toFixed(2)}</span></div>
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-3 gap-1">
         {payButtons.map((m) => (
           <button
             key={m.id}
@@ -862,12 +865,12 @@ export default function PosPage() {
         ))}
       </div>
       {shopCounter && (
-        <button type="button" onClick={() => setPayMode('credit')} className={`mt-2 w-full rounded-lg border py-2 text-xs font-semibold min-h-[40px] ${payMode === 'credit' ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-slate-200'}`}>
+        <button type="button" onClick={() => setPayMode('credit')} className={`w-full rounded-lg border py-2 text-xs font-semibold min-h-[40px] ${payMode === 'credit' ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-slate-200'}`}>
           Credit (month end)
         </button>
       )}
       {payMode === 'cash' && (
-        <label className="mt-2 block text-xs font-medium text-slate-600">
+        <label className="block text-xs font-medium text-slate-600">
           Cash received
           <input
             type="text"
@@ -881,14 +884,14 @@ export default function PosPage() {
         </label>
       )}
       {shopCounter && (
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           <button type="button" onClick={holdBill} disabled={cart.length === 0} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold disabled:opacity-50">Hold</button>
           {held.map((bill) => (
             <button key={bill.id} type="button" onClick={() => recallBill(bill)} className="rounded-lg bg-amber-50 px-2 py-2 text-left text-xs font-medium text-amber-950">{bill.label}</button>
           ))}
         </div>
       )}
-      <div className="mt-2 grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-3 gap-1">
         <button type="button" onClick={() => (orderType === 'takeaway' ? void charge(false) : void saveRunning())} disabled={busy || cart.length === 0} className="h-9 rounded bg-pink-500 text-xs font-semibold text-white disabled:opacity-50">
           {busy ? '…' : orderType === 'dinein' ? 'Save table' : orderType === 'delivery' ? 'Save delivery' : 'Save'}
         </button>
@@ -908,12 +911,12 @@ export default function PosPage() {
         </button>
       </div>
       {lastBill && (
-        <Link href={`/sales/invoices/${lastBill.id}/print`} target="_blank" className="mt-2 block text-center text-sm font-medium text-brand-700 hover:underline">
+        <Link href={`/sales/invoices/${lastBill.id}/print`} target="_blank" className="block text-center text-sm font-medium text-brand-700 hover:underline">
           Open bill {lastBill.number}
         </Link>
       )}
       {short.length > 0 && (
-        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-2">
           <p className="text-[11px] font-semibold uppercase text-amber-900">Short items</p>
           <ul className="mt-1 max-h-20 space-y-0.5 overflow-y-auto">
             {short.slice(0, 6).map((s) => (
@@ -926,7 +929,7 @@ export default function PosPage() {
         </div>
       )}
       {todayBills.length > 0 && (
-        <div className="mt-2">
+        <div>
           <p className="text-[11px] font-semibold uppercase text-slate-500">Today</p>
           <ul className="mt-1 space-y-0.5">
             {todayBills.slice(0, 4).map((b) => (
@@ -938,11 +941,12 @@ export default function PosPage() {
           </ul>
         </div>
       )}
-    </>
+      </div>
+    </div>
   );
 
   return (
-    <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-3 pb-24 md:pb-4">
+    <div className="flex min-h-0 flex-col gap-3 pb-24 md:h-[calc(100dvh-5.5rem)] md:overflow-hidden md:pb-0">
       {shopCounter && waiting > 0 && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
           {waiting} bill(s) are on this device. Stock updates after they sync.
@@ -980,8 +984,8 @@ export default function PosPage() {
           );
         })}
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-[168px_minmax(0,1fr)_320px]">
-        <aside className="hidden flex-col gap-1 md:flex">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-[168px_minmax(0,1fr)_340px] md:overflow-hidden">
+        <aside className="hidden min-h-0 flex-col gap-1 overflow-y-auto md:flex">
           <p className="px-1 text-[11px] font-semibold uppercase text-slate-500">Menu</p>
           <input
             value={menuQuery}
@@ -1003,7 +1007,7 @@ export default function PosPage() {
           ))}
         </aside>
 
-        <section className="min-w-0">
+        <section className="min-h-0 min-w-0 overflow-y-auto">
           {orderType === 'dinein' && (
             <div className="mb-3">
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -1114,7 +1118,7 @@ export default function PosPage() {
           )}
 
           {(orderType !== 'dinein' || activeTable) && <>
-          <div className="mb-2 flex flex-col gap-2 sm:flex-row">
+          <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-stretch">
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
@@ -1127,15 +1131,17 @@ export default function PosPage() {
                 className="w-full rounded-md border border-slate-300 py-2.5 pl-10 pr-3 text-sm min-h-[44px]"
               />
             </div>
-            <input
-              value={shortCode}
-              onChange={(e) => setShortCode(e.target.value)}
-              onKeyDown={onShortKey}
-              autoComplete="off"
-              placeholder="Short code"
-              className="w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm min-h-[44px] sm:w-40"
-            />
-            {!floorMode && <BarcodeCapture onDetected={applyCode} label="Scan" />}
+            <div className="flex gap-2 sm:w-auto">
+              <input
+                value={shortCode}
+                onChange={(e) => setShortCode(e.target.value)}
+                onKeyDown={onShortKey}
+                autoComplete="off"
+                placeholder="Short code"
+                className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2.5 text-sm min-h-[44px] sm:w-36 sm:flex-none"
+              />
+              {!floorMode && <BarcodeCapture onDetected={applyCode} label="Scan" className="shrink-0" />}
+            </div>
           </div>
           {scanHint && <p className="mb-2 text-xs font-medium text-emerald-700">Added: {scanHint}</p>}
 
@@ -1197,24 +1203,30 @@ export default function PosPage() {
           </>}
         </section>
 
-        <aside className="hidden min-h-0 flex-col rounded-lg border border-slate-200 bg-white p-3 md:flex">
+        <aside className="hidden min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-3 md:flex">
           {billPanel}
         </aside>
       </div>
 
-      <div className="fixed inset-x-0 z-40 border-t border-slate-200 bg-white shadow md:hidden" style={{ bottom: 'calc(3.75rem + var(--safe-area-bottom, 0px))' }}>
+      <div
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white shadow md:hidden"
+        style={{ paddingBottom: 'max(0px, var(--safe-area-bottom, 0px))' }}
+      >
         {!cartOpen ? (
           <button type="button" onClick={() => setCartOpen(true)} className="flex min-h-[56px] w-full items-center justify-between px-4 py-3 text-left">
-            <span className="text-sm font-semibold text-slate-900">{cart.length === 0 ? 'Bill empty' : `${cart.reduce((s, l) => s + l.qty, 0)} items`}</span>
+            <span className="text-left">
+              <span className="block text-xs font-medium text-slate-500">Buy list</span>
+              <span className="text-sm font-semibold text-slate-900">{cart.length === 0 ? 'Empty' : `${cart.reduce((s, l) => s + l.qty, 0)} items`}</span>
+            </span>
             <span className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-bold text-white tabular-nums">₹{totals.total.toFixed(2)}</span>
           </button>
         ) : (
-          <div className="flex max-h-[75dvh] flex-col">
-            <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
-              <span className="text-sm font-semibold">Bill</span>
+          <div className="flex max-h-[88dvh] flex-col overflow-hidden">
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-3 py-2">
+              <span className="text-sm font-semibold">Buy list</span>
               <button type="button" onClick={() => setCartOpen(false)} className="px-2 text-sm font-medium text-brand-700 min-h-[40px]">Close</button>
             </div>
-            <div className="overflow-y-auto px-3 py-2">{billPanel}</div>
+            <div className="min-h-0 flex-1 overflow-hidden px-3 py-2">{billPanel}</div>
           </div>
         )}
       </div>

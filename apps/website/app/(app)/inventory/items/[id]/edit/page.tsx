@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet, apiPatch, apiDelete } from '@/lib/api';
-import { Barcode, ImagePlus, X } from 'lucide-react';
+import { Barcode, ImagePlus, RefreshCw, X } from 'lucide-react';
 import CategoryPicker from '../../../../components/CategoryPicker';
 import PosSwitcher from '../../../../components/PosSwitcher';
 import BarcodeCapture from '../../../../components/BarcodeCapture';
@@ -45,6 +45,7 @@ export default function EditItemPage() {
   const [forConsume, setForConsume] = useState(true);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingBarcode, setLoadingBarcode] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -100,6 +101,17 @@ export default function EditItemPage() {
       if (data?.tenant?.settings?.business_type === 'department_store') setIsDept(true);
     });
   }, []);
+
+  const handleGenerateBarcode = async () => {
+    setLoadingBarcode(true);
+    setError(null);
+    const { data, error: err } = await apiGet<{ barcode?: string } | string>('inventory/items/next-barcode');
+    setLoadingBarcode(false);
+    if (err) setError(err);
+    else if (typeof data === 'string' && data.trim()) setBarcode(data.trim());
+    else if (data && typeof data === 'object' && typeof data.barcode === 'string') setBarcode(data.barcode);
+    else setError('Could not generate barcode. Try again.');
+  };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -239,12 +251,30 @@ export default function EditItemPage() {
                 type="text"
                 value={barcode}
                 onChange={(e) => setBarcode(e.target.value)}
-                placeholder="Scan with a reader, camera, or type"
+                placeholder="Scan, type, or Generate for a shop code"
                 className="w-full min-w-0 rounded border border-slate-300 px-3 py-2 text-sm"
               />
+              <button
+                type="button"
+                onClick={handleGenerateBarcode}
+                disabled={loadingBarcode}
+                className="flex items-center justify-center gap-1 rounded border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 min-h-[40px] shrink-0"
+                title="Create a shop barcode for stickers"
+              >
+                <RefreshCw className={`h-4 w-4 ${loadingBarcode ? 'animate-spin' : ''}`} />
+                Generate
+              </button>
               <BarcodeCapture onDetected={(code) => setBarcode(code)} label="Scan" />
+              <Link
+                href={`/inventory/labels?item=${encodeURIComponent(id)}`}
+                className="inline-flex items-center justify-center rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 min-h-[40px] shrink-0"
+              >
+                Print label
+              </Link>
             </div>
-            <p className="text-xs text-slate-500 mt-1">USB/Bluetooth reader: click the field and scan. Phone: tap Scan.</p>
+            <p className="text-xs text-slate-500 mt-1">
+              Save after Generate, then Print label for thermal / sticky paper. Damaged sticker: open Barcode labels and reprint.
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Pictures (up to 10)</label>

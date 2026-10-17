@@ -926,6 +926,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const moreActive = isIceCrest
     ? !isHomeActive && !isSalesActive && !isStockActive
     : !isSalesActive && !isCrmActive && !isHomeActive;
+  // Counter / retail screens use full width — hide the desktop sidebar (menu stays via hamburger).
+  const isCounterScreen =
+    pathname === '/pos' ||
+    pathname.startsWith('/pos/waiter') ||
+    pathname.startsWith('/pos/kitchen');
 
   return (
     <ToastProvider>
@@ -933,27 +938,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <IceCrestTutorial mode="modal" onDismiss={() => setShowIceCrestTutorial(false)} onComplete={() => setShowIceCrestTutorial(false)} />
     )}
     <div className="flex h-dvh max-h-dvh overflow-hidden" style={{ background: 'var(--tenant-canvas, #f8fafc)' }}>
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar — hidden on POS/retail counter for more billing space */}
+      {!isCounterScreen && (
       <aside className="hidden lg:flex h-dvh w-56 shrink-0 flex-col border-r border-slate-200" style={{ background: 'var(--tenant-sidebar, #ffffff)' }}>
         <div className="shrink-0 border-b border-slate-200 p-4">
           <BrandMark href={homeHref} name={brandName} logoSrc={logoSrc} />
         </div>
         <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2" aria-label="Workspace">{renderNavContent(false)}</nav>
       </aside>
+      )}
 
-      {/* Mobile drawer overlay */}
+      {/* Drawer overlay (mobile always; desktop when counter mode needs the menu) */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          className={`fixed inset-0 z-40 bg-black/40 ${isCounterScreen ? '' : 'lg:hidden'}`}
           onClick={closeDrawer}
           aria-hidden
         />
       )}
-      {/* Mobile drawer panel — own scroll, so every item stays reachable on a phone */}
+      {/* Nav drawer — on counter screens also opens from laptop/POS so staff can leave the counter */}
       <aside
         ref={drawerRef}
         id="mobile-nav"
-        className={`fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh w-[min(20rem,88vw)] max-w-full flex-col overflow-hidden border-r border-slate-200 shadow-xl transition-transform duration-200 ease-out lg:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh w-[min(20rem,88vw)] max-w-full flex-col overflow-hidden border-r border-slate-200 shadow-xl transition-transform duration-200 ease-out ${
+          isCounterScreen ? '' : 'lg:hidden'
+        } ${
           mobileMenuOpen ? 'translate-x-0' : 'pointer-events-none -translate-x-full'
         }`}
         style={{ paddingTop: 'var(--safe-area-top)', background: 'var(--tenant-sidebar, #ffffff)' }}
@@ -986,17 +995,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <Link href="/billing" className="font-semibold underline">Pay to continue</Link>
             </div>
           )}
-          <div className="h-14 flex items-center justify-between px-3 sm:px-4">
+          <div className={`${isCounterScreen ? 'h-12' : 'h-14'} flex items-center justify-between px-3 sm:px-4`}>
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100 min-touch shrink-0"
+              className={`p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100 min-touch shrink-0 ${isCounterScreen ? '' : 'lg:hidden'}`}
               aria-label="Open menu"
             >
               <Menu className="h-6 w-6" />
             </button>
-            <BrandMark href={homeHref} name={isIceCrest && !branding.display_name ? 'ICE CREST' : brandName} logoSrc={logoSrc} compact className="hidden sm:flex lg:hidden" />
+            <BrandMark href={homeHref} name={isIceCrest && !branding.display_name ? 'ICE CREST' : brandName} logoSrc={logoSrc} compact className={isCounterScreen ? 'hidden sm:flex' : 'hidden sm:flex lg:hidden'} />
+            {!isCounterScreen && (
             <button
               type="button"
               onClick={() => typeof window !== 'undefined' && window.dispatchEvent(new CustomEvent('smebuzz-open-search'))}
@@ -1007,6 +1017,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <span className="truncate">Search</span>
               <kbd className="hidden sm:inline rounded bg-white px-1.5 py-0.5 text-xs border border-slate-200">⌘K</kbd>
             </button>
+            )}
+            {isCounterScreen && (
+              <span className="truncate text-sm font-semibold text-slate-800">Billing counter</span>
+            )}
             <span className="hidden md:inline text-sm text-slate-600 truncate ml-2">
               {user?.name || user?.email || 'User'}
             </span>
@@ -1020,14 +1034,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </button>
           </div>
         </header>
-        <main id="main" className="min-h-0 flex-1 overflow-y-auto overflow-x-clip overscroll-y-auto p-3 pb-[calc(5.25rem+var(--safe-area-bottom))] sm:p-6 sm:pb-[calc(5.25rem+var(--safe-area-bottom))] lg:pb-6">
+        <main
+          id="main"
+          className={`min-h-0 flex-1 overflow-y-auto overflow-x-clip overscroll-y-auto ${
+            isCounterScreen
+              ? 'p-2 pb-2 sm:p-3 lg:pb-3'
+              : 'p-3 pb-[calc(5.25rem+var(--safe-area-bottom))] sm:p-6 sm:pb-[calc(5.25rem+var(--safe-area-bottom))] lg:pb-6'
+          }`}
+        >
           {children}
         </main>
       </div>
 
-      {/* Mobile bottom navigation — app-like */}
+      {/* Mobile bottom navigation — hidden on counter screens so the cart has full height */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white shadow-[0_-4px_16px_rgba(15,23,42,0.06)] lg:hidden"
+        className={`fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white shadow-[0_-4px_16px_rgba(15,23,42,0.06)] ${isCounterScreen ? 'hidden' : 'lg:hidden'}`}
         style={{ paddingBottom: 'var(--safe-area-bottom)' }}
         aria-label="Primary"
       >

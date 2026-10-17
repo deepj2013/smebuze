@@ -90,16 +90,22 @@ export class InventoryService {
       if (!parent) throw new NotFoundException('Parent category not found');
       if (parent.parent_id) throw new BadRequestException('A subcategory cannot contain another subcategory');
     }
-    const existing = await this.categoryRepo.findOne({
-      where: { tenant_id: tenantId, name, parent_id: parentId ? parentId : IsNull() },
-    });
+    // Case-insensitive match under the same parent (avoids "Grocery" + "grocery").
+    const qb = this.categoryRepo
+      .createQueryBuilder('c')
+      .where('c.tenant_id = :tenantId', { tenantId })
+      .andWhere('LOWER(c.name) = LOWER(:name)', { name });
+    if (parentId) qb.andWhere('c.parent_id = :parentId', { parentId });
+    else qb.andWhere('c.parent_id IS NULL');
+    const existing = await qb.getOne();
     if (existing) {
       if (!existing.is_active) {
         existing.is_active = true;
+        existing.name = name;
         existing.sort_order = dto.sort_order ?? existing.sort_order;
         return this.categoryRepo.save(existing);
       }
-      throw new ConflictException('That category already exists');
+      throw new ConflictException('That category already exists (same name under this department)');
     }
     return this.categoryRepo.save(
       this.categoryRepo.create({
@@ -110,6 +116,62 @@ export class InventoryService {
         is_active: true,
       }),
     );
+  }
+
+  /** Same letters/digits ignoring spaces ("Taka tak" ≈ "Takatak", "full cream" ≈ "fullcream"). */
+  private async assertNameNotDuplicate(
+    tenantId: string,
+    name: string,
+    category: string,
+    excludeId?: string,
+  ) {
+    const key = this.normalizeComparableName(name);
+    if (!key) return;
+    const catKey = this.normalizeComparableName(category);
+    const qb = this.itemRepo
+      .createQueryBuilder('i')
+      .where('i.tenant_id = :tenantId', { tenantId })
+      .andWhere('i.is_active = true');
+    if (excludeId) qb.andWhere('i.id <> :excludeId', { excludeId });
+    const candidates = await qb.getMany();
+    const hit = candidates.find((i) => {
+      if (this.normalizeComparableName(i.name) !== key) return false;
+      return this.normalizeComparableName(i.category || '') === catKey;
+    });
+    if (hit) {
+      throw new ConflictException(
+        `An item like "${hit.name}" already exists in this category (same name ignoring spaces). Edit that product instead of creating another.`,
+      );
+    }
+  }
+
+  /** Reject duplicate SKU / barcode for this tenant (active items). */
+  private async assertItemCodesUnique(
+    tenantId: string,
+    opts: { sku?: string | null; barcode?: string | null; excludeId?: string },
+  ) {
+    const sku = opts.sku?.trim() || null;
+    const barcode = opts.barcode?.trim() || null;
+    if (sku) {
+      const qb = this.itemRepo
+        .createQueryBuilder('i')
+        .where('i.tenant_id = :tenantId', { tenantId })
+        .andWhere('i.is_active = true')
+        .andWhere('LOWER(COALESCE(i.sku, \'\')) = LOWER(:sku)', { sku });
+      if (opts.excludeId) qb.andWhere('i.id <> :excludeId', { excludeId: opts.excludeId });
+      const hit = await qb.getOne();
+      if (hit) throw new ConflictException(`SKU "${sku}" is already used by "${hit.name}"`);
+    }
+    if (barcode) {
+      const qb = this.itemRepo
+        .createQueryBuilder('i')
+        .where('i.tenant_id = :tenantId', { tenantId })
+        .andWhere('i.is_active = true')
+        .andWhere('LOWER(COALESCE(i.barcode, \'\')) = LOWER(:barcode)', { barcode });
+      if (opts.excludeId) qb.andWhere('i.id <> :excludeId', { excludeId: opts.excludeId });
+      const hit = await qb.getOne();
+      if (hit) throw new ConflictException(`Barcode "${barcode}" is already used by "${hit.name}"`);
+    }
   }
 
   async updateCategory(id: string, dto: { name?: string; sort_order?: number; is_active?: boolean; parent_id?: string | null }, ctx: TenantContext) {
@@ -133,6 +195,20 @@ export class InventoryService {
         if (parent.parent_id) throw new BadRequestException('A subcategory cannot contain another subcategory');
       }
       row.parent_id = parentId;
+    }
+    // Block rename/move into a sibling that already has the same name (case-insensitive).
+    {
+      const checkName = row.name;
+      const parentId = row.parent_id;
+      const qb = this.categoryRepo
+        .createQueryBuilder('c')
+        .where('c.tenant_id = :tenantId', { tenantId })
+        .andWhere('c.id <> :id', { id })
+        .andWhere('LOWER(c.name) = LOWER(:name)', { name: checkName });
+      if (parentId) qb.andWhere('c.parent_id = :parentId', { parentId });
+      else qb.andWhere('c.parent_id IS NULL');
+      const clash = await qb.getOne();
+      if (clash) throw new ConflictException('That category already exists (same name under this department)');
     }
     const saved = await this.categoryRepo.save(row);
     if (dto.name && dto.name.trim() !== oldName) {
@@ -201,13 +277,18 @@ export class InventoryService {
     }
   }
 
-  async generateNextSku(ctx: TenantContext): Promise<string> {
+  /** "Taka tak" / "full cream" → "takatak" / "fullcream" for duplicate checks. */
+  private normalizeComparableName(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  async generateNextSku(ctx: TenantContext): Promise<{ sku: string }> {
     const tenantId = this.assertTenantId(ctx);
     const items = await this.itemRepo.find({
       where: { tenant_id: tenantId },
       select: ['sku'],
       order: { created_at: 'DESC' },
-      take: 500,
+      take: 2000,
     });
     let maxNum = 0;
     const skuPrefix = 'ITM-';
@@ -217,7 +298,28 @@ export class InventoryService {
         if (!Number.isNaN(num) && num > maxNum) maxNum = num;
       }
     }
-    return `${skuPrefix}${String(maxNum + 1).padStart(5, '0')}`;
+    return { sku: `${skuPrefix}${String(maxNum + 1).padStart(5, '0')}` };
+  }
+
+  /** Code-39-safe shop barcode (BC00001) for stickers when the pack has no manufacturer code. */
+  async generateNextBarcode(ctx: TenantContext): Promise<{ barcode: string }> {
+    const tenantId = this.assertTenantId(ctx);
+    const items = await this.itemRepo.find({
+      where: { tenant_id: tenantId },
+      select: ['barcode'],
+      order: { created_at: 'DESC' },
+      take: 2000,
+    });
+    let maxNum = 0;
+    const prefix = 'BC';
+    for (const i of items) {
+      const b = (i.barcode || '').trim().toUpperCase();
+      if (b.startsWith(prefix) && /^BC\d+$/.test(b)) {
+        const num = parseInt(b.slice(prefix.length), 10);
+        if (!Number.isNaN(num) && num > maxNum) maxNum = num;
+      }
+    }
+    return { barcode: `${prefix}${String(maxNum + 1).padStart(5, '0')}` };
   }
 
   private async iceCrestGstDefaults(tenantId: string): Promise<{ cgst: number; sgst: number } | null> {
@@ -308,7 +410,13 @@ export class InventoryService {
   ) {
     const tenantId = this.assertTenantId(ctx);
     let sku = dto.sku?.trim() || null;
-    if (!sku) sku = await this.generateNextSku(ctx);
+    if (!sku) sku = (await this.generateNextSku(ctx)).sku;
+    const barcode = dto.barcode?.trim() || null;
+    await this.assertItemCodesUnique(tenantId, { sku, barcode });
+    const nameTrim = (dto.name ?? '').trim();
+    if (nameTrim) {
+      await this.assertNameNotDuplicate(tenantId, nameTrim, (dto.category ?? '').trim());
+    }
     const gst = await this.resolveItemGst(dto, tenantId);
     const forSale = dto.for_sale !== undefined ? Boolean(dto.for_sale) : true;
     const forConsume = dto.for_consume !== undefined ? Boolean(dto.for_consume) : true;
@@ -318,7 +426,7 @@ export class InventoryService {
       company_id: dto.company_id ?? null,
       name: dto.name ?? '',
       sku,
-      barcode: dto.barcode?.trim() || null,
+      barcode,
       image_urls: Array.isArray(dto.image_urls) ? dto.image_urls : [],
       description: dto.description ?? null,
       unit: dto.unit ?? 'pcs',
@@ -445,9 +553,21 @@ export class InventoryService {
     ctx: TenantContext,
   ) {
     const item = await this.findOneItem(id, ctx);
+    const nextSku = dto.sku != null ? dto.sku.trim() || null : item.sku;
+    const nextBarcode = dto.barcode !== undefined ? dto.barcode?.trim() || null : item.barcode;
+    await this.assertItemCodesUnique(item.tenant_id, {
+      sku: nextSku,
+      barcode: nextBarcode,
+      excludeId: item.id,
+    });
+    if (dto.name != null || dto.category != null) {
+      const nextName = dto.name != null ? dto.name.trim() : item.name;
+      const nextCat = dto.category != null ? dto.category.trim() : (item.category || '');
+      if (nextName) await this.assertNameNotDuplicate(item.tenant_id, nextName, nextCat, item.id);
+    }
     if (dto.name != null) item.name = dto.name;
-    if (dto.sku != null) item.sku = dto.sku;
-    if (dto.barcode !== undefined) item.barcode = dto.barcode?.trim() || null;
+    if (dto.sku != null) item.sku = nextSku;
+    if (dto.barcode !== undefined) item.barcode = nextBarcode;
     if (dto.image_urls !== undefined) item.image_urls = Array.isArray(dto.image_urls) ? dto.image_urls : item.image_urls;
     if (dto.description != null) item.description = dto.description;
     if (dto.unit != null) item.unit = dto.unit;
