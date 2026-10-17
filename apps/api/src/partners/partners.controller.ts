@@ -11,7 +11,8 @@ import {
   UpdatePartnerDto,
 } from './dto/partners.dto';
 
-@Controller('api/v1')
+/** Global prefix is already `api/v1` — do not nest another `api/v1` here. */
+@Controller()
 export class PartnersController {
   constructor(private readonly partners: PartnersService) {}
 

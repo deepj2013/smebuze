@@ -1,0 +1,63 @@
+name: Seed Sagar department catalog
+
+# Expands Sagar General Store with departments, subcategories, SKUs and stock.
+# Login: tenant sagar-general-store / admin@sagargeneral.store / Password123
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: smebuze-production-seed-sagar
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    name: SSH and seed Sagar catalog
+    runs-on: ubuntu-latest
+    environment: smebuze
+    timeout-minutes: 15
+    steps:
+      - name: Require environment secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$VPS_SSH_KEY" ]; then
+            echo "::error::Environment smebuze needs secrets VPS_HOST, VPS_USER, VPS_SSH_KEY."
+            exit 1
+          fi
+
+      - name: SSH and run seed:sagar-catalog
+        env:
+          HOST: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
+          SSH_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          HOST="$(printf '%s' "$HOST" | tr -d '\r' | xargs)"
+          SSH_USER="$(printf '%s' "$SSH_USER" | tr -d '\r' | xargs)"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          python3 - << 'PY'
+          import os
+          key = os.environ["KEY"].replace("\r", "").strip() + "\n"
+          open(os.path.expanduser("~/.ssh/deploy_key"), "w").write(key)
+          PY
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 \
+            "${SSH_USER}@${HOST}" bash -s << 'EOF'
+          set -euo pipefail
+          APP_DIR=/var/www/smebuze
+          cd "$APP_DIR"
+          if [ ! -f scripts/seed-tenant-sagar-catalog.js ]; then
+            echo "Missing seed script — pull latest production first."
+            exit 1
+          fi
+          if [ "$(id -un)" = "root" ] && id smebuze >/dev/null 2>&1; then
+            echo "running seed as user smebuze"
+            sudo -u smebuze -H bash -lc 'cd /var/www/smebuze && npm run seed:sagar-catalog'
+          else
+            npm run seed:sagar-catalog
+          fi
+          EOF
