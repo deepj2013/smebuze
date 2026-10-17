@@ -14,16 +14,42 @@ export function navKey(item: { label: string; href?: string }): string {
   return `menu:${item.label}`;
 }
 
-/** Keys that must stay available so admins can always open configuration. */
+/** Keys that must stay available so shop admins can always open day-to-day org screens. */
 export const NAV_LOCKED_KEYS = new Set([
   'menu:Organization',
-  'item:/organization/menus',
   'item:/organization/companies',
   'item:/organization/users',
   'item:/help',
   'menu:Admin',
   'item:/admin/tenants',
 ]);
+
+/**
+ * Platform (universal) admin configures shop menus under Admin → Tenants → Configure.
+ * Tenants must not see Setup / Menus self-serve chrome.
+ */
+export const PLATFORM_ONLY_NAV_KEYS = new Set([
+  'item:/onboarding',
+  'item:/organization/menus',
+]);
+
+/** Drop Setup + Menus from any tenant sidebar (universal admin owns those). */
+export function stripPlatformOnlyNavItems<
+  T extends { label: string; href?: string; children?: { label: string; href: string; permission?: string }[] },
+>(items: T[]): T[] {
+  return items
+    .map((item) => {
+      const key = navKey(item);
+      if (PLATFORM_ONLY_NAV_KEYS.has(key)) return null;
+      if (item.children?.length) {
+        const children = item.children.filter((c) => !PLATFORM_ONLY_NAV_KEYS.has(navKey(c)));
+        if (children.length === 0) return null;
+        return { ...item, children };
+      }
+      return item;
+    })
+    .filter(Boolean) as T[];
+}
 
 /** Full catalog for the configuration screen (all shop types). */
 export const NAV_MENU_CATALOG: NavMenuNode[] = [
@@ -124,7 +150,6 @@ export const NAV_MENU_CATALOG: NavMenuNode[] = [
   { label: 'GSTR-1', href: '/reports/gstr-1' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a' },
   { label: 'Bulk upload', href: '/bulk-upload' },
-  { label: 'Setup', href: '/onboarding' },
   { label: 'Help', href: '/help' },
   {
     label: 'Organization',
@@ -133,7 +158,6 @@ export const NAV_MENU_CATALOG: NavMenuNode[] = [
       { label: 'Users', href: '/organization/users' },
       { label: 'Roles', href: '/organization/roles' },
       { label: 'Departments', href: '/organization/departments' },
-      { label: 'Menus', href: '/organization/menus' },
       { label: 'Printers', href: '/organization/printers' },
       { label: 'Devices', href: '/organization/devices' },
       { label: 'Look & logo', href: '/organization/branding' },

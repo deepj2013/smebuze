@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { SIGNUP_BUSINESS_TYPES } from '@/lib/business-types';
 import {
   NAV_LOCKED_KEYS,
   NAV_MENU_CATALOG,
+  PLATFORM_ONLY_NAV_KEYS,
   navKey,
   parseNavHidden,
   sanitizeNavHidden,
@@ -58,7 +60,17 @@ function setOptIn(raw: string | undefined, id: string, on: boolean): string {
   return Array.from(set).join(', ');
 }
 
+/** Catalog for Configure — exclude Setup / Menus (always platform-owned, not shown in shop sidebars). */
+const TENANT_MENU_CATALOG = NAV_MENU_CATALOG.map((node) => {
+  if (!node.children) return node;
+  return {
+    ...node,
+    children: node.children.filter((c) => !PLATFORM_ONLY_NAV_KEYS.has(navKey(c))),
+  };
+}).filter((node) => !PLATFORM_ONLY_NAV_KEYS.has(navKey(node)));
+
 export default function AdminTenantsPage() {
+  const searchParams = useSearchParams();
   const [list, setList] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +108,15 @@ export default function AdminTenantsPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    const account = searchParams.get('account');
+    if (account === 'demo' || account === 'real') setKindFilter(account);
+    else if (account === 'all' || account === null) {
+      /* keep current unless explicit all */
+      if (account === 'all') setKindFilter('all');
+    }
+  }, [searchParams]);
 
   const toggleNavKey = (key: string, show: boolean) => {
     if (NAV_LOCKED_KEYS.has(key)) return;
@@ -196,7 +217,7 @@ export default function AdminTenantsPage() {
     <div>
       <h1 className="text-xl font-semibold text-slate-800 mb-1">Platform tenants</h1>
       <p className="text-sm text-slate-600 mb-4">
-        You are signed in as the universal (platform) admin. You set up each tenant account here — demo vs real, plan, business type, which menus/submenus that workspace shows, and opt-in packs such as recipe costing or Tally/Busy/Marg export. Shop staff do not turn packs on themselves. Tenant admins can also hide menus under Organization → Menus for their own workspace.
+        You are signed in as the universal (platform) admin. Set up each workspace here — demo vs real, plan, business type, which menus that shop sees, and opt-in packs (recipe costing, accounting export). Shop tenants do not get Setup or Organization → Menus; only you change those from Configure.
       </p>
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
       {notice && <p className="mb-3 text-sm text-emerald-700">{notice}</p>}
@@ -213,7 +234,11 @@ export default function AdminTenantsPage() {
           <button
             key={kind}
             type="button"
-            onClick={() => setKindFilter(kind)}
+            onClick={() => {
+              setKindFilter(kind);
+              const url = kind === 'all' ? '/admin/tenants' : `/admin/tenants?account=${kind}`;
+              window.history.replaceState(null, '', url);
+            }}
             className={`rounded-full px-3 py-1 text-xs font-semibold ${kindFilter === kind ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 border border-slate-300'}`}
           >
             {kind === 'all' ? 'All' : kind === 'demo' ? 'Demo' : 'Real'}
@@ -379,7 +404,7 @@ export default function AdminTenantsPage() {
                           </span>
                         </button>
                         <p className="mt-1 text-xs text-slate-600">
-                          Untick to hide from this workspace sidebar. Shop type and permissions still apply. Tenant admin can change the same list under Organization → Menus.
+                          Untick to hide from this workspace sidebar. Shop type and permissions still apply. Tenants cannot change this list themselves.
                         </p>
                         {menusOpen && (
                           <div className="mt-3 max-h-80 space-y-2 overflow-y-auto border-t border-slate-100 pt-3">
@@ -392,7 +417,7 @@ export default function AdminTenantsPage() {
                                 Show all
                               </button>
                             </div>
-                            {NAV_MENU_CATALOG.map((node) => {
+                            {TENANT_MENU_CATALOG.map((node) => {
                               const groupKey = navKey(node);
                               const childKeys = (node.children || []).map((c) => navKey(c));
                               const groupLocked = NAV_LOCKED_KEYS.has(groupKey);

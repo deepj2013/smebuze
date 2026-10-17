@@ -51,7 +51,7 @@ import { parseTenantBranding } from '@/lib/branding';
 import { getStaticUrl } from '@/lib/api';
 import { isFloorBusinessType, isPosBusinessType } from '@/lib/business-types';
 import { needsWorkspaceSetup, resolveEnabledModules } from '@/lib/workspace-setup';
-import { filterNavByHidden, parseNavHidden } from '@/lib/nav-menu-config';
+import { filterNavByHidden, parseNavHidden, stripPlatformOnlyNavItems } from '@/lib/nav-menu-config';
 import { applyWorkspaceThemeVars, resolveWorkspaceTheme } from '@/lib/variant-theme';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -202,16 +202,16 @@ const nav: Array<{
     module: 'organization',
     children: [
       { label: 'Tenants', href: '/admin/tenants', icon: Building2, permission: 'admin.tenant.view' },
-      { label: 'DB backups', href: '/admin/backups', icon: Package, permission: 'admin.tenant.view' },
-      { label: 'Activity log', href: '/admin/activity', icon: FileText, permission: 'admin.tenant.view' },
       { label: 'Licences', href: '/admin/licenses', icon: KeyRound, permission: 'admin.tenant.view' },
+      { label: 'Storefronts & domains', href: '/admin/storefronts', icon: Store, permission: 'admin.tenant.view' },
       { label: 'BDE pipeline', href: '/admin/bde', icon: UserPlus, permission: 'admin.bde.leads' },
       { label: 'Partners & coupons', href: '/admin/partners', icon: Megaphone, permission: 'admin.partner.manage' },
       { label: 'My referrals', href: '/admin/partner-portal', icon: Handshake, permission: 'admin.partner.mine' },
       { label: 'Pitch guide', href: '/admin/pitch', icon: Handshake, permission: 'admin.tenant.view' },
-      { label: 'Storefronts & domains', href: '/admin/storefronts', icon: Store, permission: 'admin.tenant.view' },
       { label: 'Kitchen tickets', href: '/admin/tickets', icon: Ticket, permission: 'admin.tenant.view' },
       { label: 'Support inbox', href: '/admin/support', icon: CircleHelp, permission: 'admin.tenant.view' },
+      { label: 'DB backups', href: '/admin/backups', icon: Package, permission: 'admin.tenant.view' },
+      { label: 'Activity log', href: '/admin/activity', icon: FileText, permission: 'admin.tenant.view' },
     ],
   },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
@@ -219,6 +219,54 @@ const nav: Array<{
   { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
   { label: 'Bulk upload', href: '/bulk-upload', icon: Upload, module: 'bulk_upload' },
+];
+
+/**
+ * Universal (platform) admin — no tenant ERP chrome.
+ * Grouped so demos / GTM / platform ops are easy to find.
+ */
+const platformAdminNav: typeof nav = [
+  {
+    label: 'Workspaces',
+    icon: Building2,
+    module: 'organization',
+    children: [
+      { label: 'Tenants', href: '/admin/tenants', icon: Building2, permission: 'admin.tenant.view' },
+      { label: 'Licences', href: '/admin/licenses', icon: KeyRound, permission: 'admin.tenant.view' },
+      { label: 'Storefronts & domains', href: '/admin/storefronts', icon: Store, permission: 'admin.tenant.view' },
+    ],
+  },
+  {
+    label: 'Sales & partners',
+    icon: Handshake,
+    module: 'organization',
+    children: [
+      { label: 'BDE pipeline', href: '/admin/bde', icon: UserPlus, permission: 'admin.bde.leads' },
+      { label: 'Partners & coupons', href: '/admin/partners', icon: Megaphone, permission: 'admin.partner.manage' },
+      { label: 'My referrals', href: '/admin/partner-portal', icon: Handshake, permission: 'admin.partner.mine' },
+    ],
+  },
+  {
+    label: 'Demos & pitch',
+    icon: Sparkles,
+    module: 'organization',
+    children: [
+      { label: 'Pitch guide', href: '/admin/pitch', icon: Handshake, permission: 'admin.tenant.view' },
+      { label: 'Demo tenants', href: '/admin/tenants?account=demo', icon: Store, permission: 'admin.tenant.view' },
+      { label: 'Kitchen tickets', href: '/admin/tickets', icon: Ticket, permission: 'admin.tenant.view' },
+    ],
+  },
+  {
+    label: 'Platform',
+    icon: Settings,
+    module: 'organization',
+    children: [
+      { label: 'DB backups', href: '/admin/backups', icon: Package, permission: 'admin.tenant.view' },
+      { label: 'Activity log', href: '/admin/activity', icon: FileText, permission: 'admin.tenant.view' },
+      { label: 'Support inbox', href: '/admin/support', icon: CircleHelp, permission: 'admin.tenant.view' },
+    ],
+  },
+  { label: 'Help', href: '/help', icon: CircleHelp, module: 'help' },
 ];
 
 /** Star ICE only: hide HR, Accounting, Service, Bulk upload, Setup; CRM: only Customers + Follow-up; Sales: Requirement, Delivery entry, Invoices, Consolidate bill, Payment, Delivery challans; Purchase: Vendors, Vendor invoices, Payables. */
@@ -529,6 +577,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     isSuperAdmin?: boolean;
     platformRole?: string | null;
     tenantId?: string | null;
+    tenant_id?: string | null;
     onboarding_completed_at?: string | null;
   } | null>(null);
   const [tenant, setTenant] = useState<{
@@ -557,8 +606,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     ? `${getStaticUrl(branding.logo_url)}${branding.updated_at ? `?t=${encodeURIComponent(branding.updated_at)}` : ''}`
     : null;
   const enabledModules = resolveEnabledModules(tenant?.settings ?? null, user?.allowed_modules);
-  const baseNav = user?.isSuperAdmin
-    ? nav
+  // Platform super-admin has no tenant ERP — only workspace / GTM / demo / platform tools.
+  const isPlatformSuperAdmin = Boolean(user?.isSuperAdmin && !(user?.tenantId ?? user?.tenant_id));
+  const baseNav = isPlatformSuperAdmin
+    ? platformAdminNav
     : isIceCrest
       ? iceCrestNav
       : isStarIce
@@ -575,13 +626,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     user?.isSuperAdmin ? ['*'] : (user?.permissions ?? []),
     user?.isSuperAdmin ? undefined : enabledModules,
   );
+  // Shop workspaces: Setup + Organization → Menus are platform-admin only.
+  if (!user?.isSuperAdmin) {
+    visibleNav = stripPlatformOnlyNavItems(visibleNav);
+  }
   // Ice Crest keeps its dedicated sidebar; menu show/hide is for other shop types.
   if (!user?.isSuperAdmin && !isIceCrest) {
     visibleNav = filterNavByHidden(visibleNav, parseNavHidden(tenant?.settings ?? null));
-  }
-  if (user?.isSuperAdmin && !visibleNav.some((i) => i.label === 'Admin')) {
-    const adminItem = nav.find((i) => i.label === 'Admin');
-    if (adminItem) visibleNav = [...visibleNav, adminItem];
   }
   const platformStaff =
     Boolean(user?.platformRole) ||
