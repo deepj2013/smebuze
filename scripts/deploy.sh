@@ -234,6 +234,13 @@ else
   log "SKIP pm2 restart"
 fi
 
+# After a VPS reboot PM2 may be empty even when this deploy skipped rebuilds.
+if ! curl -sS -m 2 "http://127.0.0.1:${PORT:-3000}/api/v1/health" 2>/dev/null | grep -q '"status":"ok"'; then
+  log "API down before health wait — resurrect pm2 from ecosystem.config.cjs (common after server restart)"
+  pm2 startOrReload "${APP_DIR}/ecosystem.config.cjs" --update-env
+  pm2 save
+fi
+
 log "==== health ===="
 # Nest can take a few seconds after pm2 reload; crash-loops show empty health immediately.
 API_HEALTH=""

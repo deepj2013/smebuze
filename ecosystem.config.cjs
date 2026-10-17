@@ -12,6 +12,9 @@ module.exports = {
       script: apiMain,
       instances: 1,
       exec_mode: 'fork',
+      autorestart: true,
+      max_restarts: 20,
+      min_uptime: '10s',
       env: {
         NODE_ENV: 'production',
         HOST: '127.0.0.1',
@@ -25,6 +28,9 @@ module.exports = {
       args: 'start -H 127.0.0.1 -p 3001',
       instances: 1,
       exec_mode: 'fork',
+      autorestart: true,
+      max_restarts: 20,
+      min_uptime: '10s',
       env: {
         NODE_ENV: 'production',
         PORT: '3001',
