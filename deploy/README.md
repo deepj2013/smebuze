@@ -129,3 +129,61 @@ Rebuild everything without a code change: Actions → **Deploy production** → 
 | `missing .env` | `.env` was deleted on the server |
 | `nginx -t` failed | nginx skipped after fail — fix the conf, do not reload |
 | Health not `connected` | `DB_*` in `/var/www/smebuze/.env`, then `pm2 logs smebuze-api` |
+
+---
+
+## Database: pgAdmin on your laptop + backups
+
+### View production data in local pgAdmin (SSH tunnel — safe)
+
+Never open Postgres port `5432` on the public internet. Tunnel through SSH:
+
+```bash
+# On your Mac — keep this terminal open
+ssh -N -L 5433:127.0.0.1:5432 USER@VPS_IP
+```
+
+In pgAdmin → Register → Server:
+
+| Field | Value |
+|-------|--------|
+| Host | `127.0.0.1` |
+| Port | `5433` |
+| Database | from VPS `.env` → `DB_NAME` (usually `smebuze`) |
+| Username | `DB_USER` |
+| Password | `DB_PASSWORD` |
+
+Read `DB_*` from the VPS: `grep '^DB_' /var/www/smebuze/.env` (SSH session only).
+
+### Nightly backup cron (recommended)
+
+After deploy pulls the new scripts:
+
+```bash
+ssh USER@VPS_IP
+sudo -u smebuze bash /var/www/smebuze/scripts/install-db-backup-cron.sh
+```
+
+Dumps go to `/var/www/smebuze/backups/db/` (`smebuze-YYYYMMDDTHHMMSSZ.dump`), kept 14 days.
+
+Manual dump: `sudo -u smebuze APP_DIR=/var/www/smebuze bash /var/www/smebuze/scripts/backup-db.sh`
+
+### Universal admin button
+
+Super-admin → **Admin → DB backups** → **Backup database now** / **Download**.  
+Same files as the cron folder. Only `isSuperAdmin` can call the API.
+
+### Optional: copy dumps to Google Drive
+
+On the VPS install [rclone](https://rclone.org/), `rclone config` a Google Drive remote, then:
+
+```bash
+# append to smebuze crontab (example remote name "gdrive")
+30 2 * * * rclone copy /var/www/smebuze/backups/db gdrive:smebuze-db-backups --max-age 14d
+```
+
+Restore a dump into a **local throwaway** DB only:
+
+```bash
+pg_restore --clean --if-exists -d smebuze_restore ./smebuze-….dump
+```

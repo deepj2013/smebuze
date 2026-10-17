@@ -19,6 +19,7 @@ module.exports = {
         NODE_ENV: 'production',
         HOST: '127.0.0.1',
         PORT: 3000,
+        APP_DIR: root,
       },
     },
     {
@@ -34,6 +35,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: '3001',
+        APP_DIR: root,
       },
     },
   ],

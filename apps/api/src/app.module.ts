@@ -30,6 +30,7 @@ import { GrowthModule } from './growth/growth.module';
 import { TransportModule } from './transport/transport.module';
 import { PartnersModule } from './partners/partners.module';
 import { SupportModule } from './support/support.module';
+import { AdminBackupModule } from './admin-backup/admin-backup.module';
 import { SubscriptionGuard } from './common/guards/subscription.guard';
 
 @Module({
@@ -78,6 +79,7 @@ import { SubscriptionGuard } from './common/guards/subscription.guard';
     TransportModule,
     PartnersModule,
     SupportModule,
+    AdminBackupModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

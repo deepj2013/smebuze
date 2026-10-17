@@ -23,6 +23,9 @@ yarn-error.log*
 !/apps/api/uploads/logos/
 !/apps/api/uploads/logos/ice-crest.svg
 
+# Local / VPS Postgres dumps (never commit)
+/backups/
+
 .cursor/
 /docs/
 .deploy-revision
