@@ -47,12 +47,29 @@ export class PublicMallController {
     @Body()
     body: {
       seller_tenant_id: string;
-      buyer: { name: string; phone: string; address?: string | Record<string, unknown> };
+      buyer: {
+        name: string;
+        phone: string;
+        pincode?: string;
+        address?: string | Record<string, unknown>;
+      };
       delivery_mode?: string;
       lines: Array<{ item_id: string; qty: number }>;
     },
   ) {
     return this.mall.checkout(body);
+  }
+
+  @Post('resolve-location')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  resolveLocation(@Body() body: { lat: number; lng: number }) {
+    return this.mall.resolveLocation(Number(body.lat), Number(body.lng));
+  }
+
+  @Get('orders/by-phone')
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
+  ordersByPhone(@Query('phone') phone: string) {
+    return this.mall.buyerOrdersByPhone(phone);
   }
 
   @Get('orders/:token')

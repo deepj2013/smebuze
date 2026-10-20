@@ -294,9 +294,10 @@ export class MallService {
     }
 
     const buyerPin =
-      typeof body.buyer?.address === 'string'
+      normalizePincode((body.buyer as { pincode?: string })?.pincode) ||
+      (typeof body.buyer?.address === 'string'
         ? normalizePincode(body.buyer.address.match(/\b(\d{6})\b/)?.[1])
-        : pincodeFromAddress(body.buyer?.address);
+        : pincodeFromAddress(body.buyer?.address));
     if (!buyerPin) {
       throw new BadRequestException('Add your 6-digit delivery pincode in the address (e.g. Pune 411001)');
     }
@@ -335,6 +336,12 @@ export class MallService {
     });
     if (!company) throw new BadRequestException('Seller is not ready to take orders');
 
+    const addressObj: Record<string, unknown> =
+      typeof body.buyer.address === 'object' && body.buyer.address
+        ? { ...(body.buyer.address as Record<string, unknown>) }
+        : { line1: typeof body.buyer.address === 'string' ? body.buyer.address : '' };
+    if (buyerPin) addressObj.pincode = buyerPin;
+
     let customer = await this.customerRepo.findOne({ where: { tenant_id: sellerId, phone } });
     if (!customer) {
       customer = await this.customerRepo.save(
@@ -343,7 +350,7 @@ export class MallService {
           company_id: company.id,
           name,
           phone,
-          address: typeof body.buyer.address === 'object' ? body.buyer.address ?? {} : { line1: body.buyer.address },
+          address: addressObj,
           entity_type: 'individual',
           tags: ['smebuze_mall'],
         }),
@@ -426,10 +433,7 @@ export class MallService {
         tracking_token: token,
         buyer_name: name,
         buyer_phone: phone,
-        buyer_address:
-          typeof body.buyer.address === 'object'
-            ? (body.buyer.address as Record<string, unknown>) ?? {}
-            : { line1: body.buyer.address || '' },
+        buyer_address: addressObj,
         delivery_mode: deliveryMode,
         payment_mode: 'platform_collect',
         payment_status: 'pending',
@@ -498,20 +502,95 @@ export class MallService {
   }
 
   async publicTrack(token: string) {
-    const mp = await this.mpOrderRepo.findOne({ where: { tracking_token: token } });
+    const mp = await this.mpOrderRepo.findOne({
+      where: { tracking_token: token },
+      relations: ['sellerTenant', 'salesOrder'],
+    });
     if (!mp) throw new NotFoundException('Order not found');
     const job = await this.jobRepo.findOne({ where: { marketplace_order_id: mp.id } });
     return {
       tracking_token: token,
+      order_number: mp.salesOrder?.number ?? null,
+      seller_name: mp.sellerTenant?.name ?? null,
       status: mp.status,
       payment_status: mp.payment_status,
       buyer_name: mp.buyer_name,
       gross_amount: num(mp.gross_amount),
       delivery_fee: num(mp.delivery_fee),
+      total: num(mp.gross_amount) + num(mp.delivery_fee),
       delivery_mode: mp.delivery_mode,
+      created_at: mp.created_at?.toISOString() ?? null,
       delivery_job: job
         ? { status: job.status, rider_name: job.rider_name, rider_phone: job.rider_phone }
         : null,
+    };
+  }
+
+  /** Reverse geocode (lat/lng → Indian pincode) for mall “use my location”. */
+  async resolveLocation(lat: number, lng: number): Promise<{
+    pincode: string | null;
+    city: string | null;
+    state: string | null;
+    label: string;
+  }> {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      throw new BadRequestException('Invalid coordinates');
+    }
+    const url = new URL('https://nominatim.openstreetmap.org/reverse');
+    url.searchParams.set('lat', String(lat));
+    url.searchParams.set('lon', String(lng));
+    url.searchParams.set('format', 'json');
+    url.searchParams.set('addressdetails', '1');
+    url.searchParams.set('accept-language', 'en');
+    let payload: { address?: Record<string, string>; display_name?: string };
+    try {
+      const res = await fetch(url.toString(), {
+        headers: { 'User-Agent': 'SMEBUZE-Mall/1.0 (contact: support@smebuze.com)' },
+      });
+      if (!res.ok) throw new Error(`Geocoder ${res.status}`);
+      payload = (await res.json()) as typeof payload;
+    } catch {
+      throw new BadRequestException('Could not detect pincode from location. Try again or enter pincode manually.');
+    }
+    const addr = payload.address ?? {};
+    const pin =
+      normalizePincode(addr.postcode) ||
+      normalizePincode(String(addr.postal_code ?? '')) ||
+      null;
+    const city = addr.city || addr.town || addr.village || addr.suburb || addr.county || null;
+    const state = addr.state || null;
+    const label = pin
+      ? [city, state, pin].filter(Boolean).join(', ')
+      : payload.display_name?.slice(0, 120) || 'Location detected';
+    return { pincode: pin, city, state, label };
+  }
+
+  /** Buyer order history by mobile (mall channel only). */
+  async buyerOrdersByPhone(phoneRaw: string) {
+    const phone = String(phoneRaw || '').replace(/\D/g, '').slice(-10);
+    if (phone.length !== 10) throw new BadRequestException('Enter a valid 10-digit mobile number');
+    const rows = await this.mpOrderRepo.find({
+      where: { buyer_phone: phone, channel: 'smebuze_mall' },
+      relations: ['sellerTenant', 'salesOrder'],
+      order: { created_at: 'DESC' },
+      take: 40,
+    });
+    return {
+      phone,
+      orders: rows.map((mp) => ({
+        id: mp.id,
+        tracking_token: mp.tracking_token,
+        track_path: `/mall/orders/${mp.tracking_token}`,
+        order_number: mp.salesOrder?.number ?? null,
+        seller_name: mp.sellerTenant?.name ?? 'Shop',
+        status: mp.status,
+        payment_status: mp.payment_status,
+        gross_amount: num(mp.gross_amount),
+        delivery_fee: num(mp.delivery_fee),
+        total: num(mp.gross_amount) + num(mp.delivery_fee),
+        delivery_mode: mp.delivery_mode,
+        created_at: mp.created_at?.toISOString() ?? null,
+      })),
     };
   }
 
