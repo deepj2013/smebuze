@@ -58,6 +58,36 @@ export class TenantController {
     return this.tenantService.sendUserPasswordReset(id, userId, ctx);
   }
 
+  @Post(':id/users/:userId/set-password')
+  @UseGuards(TenantGuard)
+  @RequirePermissions('admin.tenant.create')
+  async setPassword(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Body() body: { password: string },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.tenantService.setUserPassword(id, userId, body.password, ctx);
+  }
+
+  @Post(':id/users')
+  @UseGuards(TenantGuard)
+  @RequirePermissions('admin.tenant.create')
+  async createUser(
+    @Param('id') id: string,
+    @Body() body: { email: string; name?: string; password: string },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.tenantService.createUser(id, body, ctx);
+  }
+
+  @Get(':id/usage')
+  @UseGuards(TenantGuard)
+  @RequirePermissions('admin.tenant.view')
+  async usage(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
+    return this.tenantService.getUsage(id, ctx);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
     return this.tenantService.findOne(id, ctx);

@@ -1,9 +1,18 @@
-import { Injectable, ForbiddenException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, ForbiddenException, ConflictException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt';
 import { Tenant } from './entities/tenant.entity';
 import { Company } from './entities/company.entity';
 import { User } from '../auth/entities/user.entity';
+import { Role } from '../auth/entities/role.entity';
+import { UserRole } from '../auth/entities/user-role.entity';
+import { Customer } from '../crm/entities/customer.entity';
+import { Item } from '../inventory/entities/item.entity';
+import { SalesInvoice } from '../sales/entities/sales-invoice.entity';
+import { SalesOrder } from '../sales/entities/sales-order.entity';
+import { LeadIngestEvent } from '../growth/entities/lead-ingest-event.entity';
+import { StorefrontSite } from '../growth/entities/storefront-site.entity';
 import { TenantContext } from '../common/tenant-context';
 import { AuthService } from '../auth/auth.service';
 import { getClientPack } from '../growth/client-packs';
@@ -24,6 +33,22 @@ export class TenantService {
     private readonly companyRepo: Repository<Company>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(Role)
+    private readonly roleRepo: Repository<Role>,
+    @InjectRepository(UserRole)
+    private readonly userRoleRepo: Repository<UserRole>,
+    @InjectRepository(Customer)
+    private readonly customerRepo: Repository<Customer>,
+    @InjectRepository(Item)
+    private readonly itemRepo: Repository<Item>,
+    @InjectRepository(SalesInvoice)
+    private readonly invoiceRepo: Repository<SalesInvoice>,
+    @InjectRepository(SalesOrder)
+    private readonly orderRepo: Repository<SalesOrder>,
+    @InjectRepository(LeadIngestEvent)
+    private readonly leadIngestRepo: Repository<LeadIngestEvent>,
+    @InjectRepository(StorefrontSite)
+    private readonly siteRepo: Repository<StorefrontSite>,
     private readonly authService: AuthService,
   ) {}
 
@@ -170,5 +195,146 @@ export class TenantService {
     const user = await this.userRepo.findOne({ where: { id: userId, tenant_id: tenantId } });
     if (!user) throw new NotFoundException('User not found');
     return this.authService.forgotPassword({ email: user.email, tenantSlug: tenant.slug });
+  }
+
+  async setUserPassword(tenantId: string, userId: string, password: string, ctx: TenantContext) {
+    if (!ctx.isSuperAdmin) throw new ForbiddenException('Only platform admin can set a password');
+    const pwd = String(password || '');
+    if (pwd.length < 8) throw new BadRequestException('Password must be at least 8 characters');
+    const user = await this.userRepo.findOne({ where: { id: userId, tenant_id: tenantId } });
+    if (!user) throw new NotFoundException('User not found');
+    user.password_hash = await bcrypt.hash(pwd, 10);
+    user.email_verified = true;
+    await this.userRepo.save(user);
+    return { ok: true, user_id: user.id, email: user.email };
+  }
+
+  async createUser(
+    tenantId: string,
+    dto: { email: string; name?: string; password: string },
+    ctx: TenantContext,
+  ) {
+    if (!ctx.isSuperAdmin) throw new ForbiddenException('Only platform admin can create users');
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const email = dto.email.trim().toLowerCase();
+    if (!email) throw new BadRequestException('Email is required');
+    const pwd = String(dto.password || '');
+    if (pwd.length < 8) throw new BadRequestException('Password must be at least 8 characters');
+    const clash = await this.userRepo.findOne({ where: { tenant_id: tenantId, email } });
+    if (clash) throw new ConflictException('That email is already used in this workspace');
+
+    let adminRole = await this.roleRepo.findOne({ where: { tenant_id: tenantId, slug: 'tenant_admin' } });
+    if (!adminRole) {
+      adminRole = await this.roleRepo.findOne({ where: { tenant_id: tenantId }, order: { created_at: 'ASC' } });
+    }
+    const company = await this.companyRepo.findOne({ where: { tenant_id: tenantId, is_default: true } });
+
+    const user = await this.userRepo.save(
+      this.userRepo.create({
+        email,
+        password_hash: await bcrypt.hash(pwd, 10),
+        name: dto.name?.trim() || email.split('@')[0],
+        tenant_id: tenantId,
+        default_company_id: company?.id ?? null,
+        is_super_admin: false,
+        email_verified: true,
+        is_active: true,
+      }),
+    );
+    if (adminRole) {
+      await this.userRoleRepo.save(this.userRoleRepo.create({ user_id: user.id, role_id: adminRole.id }));
+    }
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      is_active: user.is_active,
+      email_verified: true,
+    };
+  }
+
+  async getUsage(tenantId: string, ctx: TenantContext) {
+    if (!ctx.isSuperAdmin) throw new ForbiddenException('Only platform admin can view tenant usage');
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+
+    const [
+      users,
+      companies,
+      customers,
+      items,
+      invoices,
+      portalOrders,
+      leads,
+      site,
+      lastInvoice,
+      lastOrder,
+    ] = await Promise.all([
+      this.userRepo.count({ where: { tenant_id: tenantId } }),
+      this.companyRepo.count({ where: { tenant_id: tenantId } }),
+      this.customerRepo.count({ where: { tenant_id: tenantId } }),
+      this.itemRepo.count({ where: { tenant_id: tenantId, is_active: true } }),
+      this.invoiceRepo.count({ where: { tenant_id: tenantId } }),
+      this.orderRepo.count({ where: { tenant_id: tenantId, channel: 'buyer_portal' } }),
+      this.leadIngestRepo.count({ where: { tenant_id: tenantId } }),
+      this.siteRepo.findOne({ where: { tenant_id: tenantId } }),
+      this.invoiceRepo.findOne({ where: { tenant_id: tenantId }, order: { created_at: 'DESC' } }),
+      this.orderRepo.findOne({ where: { tenant_id: tenantId, channel: 'buyer_portal' }, order: { created_at: 'DESC' } }),
+    ]);
+
+    const loginRows = await this.userRepo.find({
+      where: { tenant_id: tenantId },
+      select: ['id', 'email', 'name', 'last_login_at', 'created_at'],
+      order: { last_login_at: 'DESC' },
+      take: 5,
+    });
+
+    const origin = (process.env.PUBLIC_WEB_ORIGIN || 'https://smebuze.com').replace(/\/$/, '');
+    const settings = tenant.settings ?? {};
+    const businessType = typeof settings.business_type === 'string' ? settings.business_type : '';
+
+    return {
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        plan: tenant.plan,
+        is_active: tenant.is_active,
+        subscription_ends_at: tenant.subscription_ends_at,
+        business_type: businessType,
+        enabled_modules: Array.isArray(settings.enabled_modules) ? settings.enabled_modules : [],
+        features: tenant.features ?? [],
+        created_at: tenant.created_at,
+      },
+      counts: {
+        users,
+        companies,
+        customers,
+        items,
+        invoices,
+        portal_orders: portalOrders,
+        leads,
+      },
+      storefront: site
+        ? {
+            slug: site.slug,
+            is_published: site.is_published,
+            shop_enabled: site.shop_enabled,
+            shop_url: `${origin}/shop/${site.slug}`,
+            site_url: `${origin}/site/${site.slug}`,
+          }
+        : null,
+      activity: {
+        last_invoice_at: lastInvoice?.created_at ?? null,
+        last_portal_order_at: lastOrder?.created_at ?? null,
+        recent_logins: loginRows.map((u) => ({
+          id: u.id,
+          email: u.email,
+          name: u.name,
+          last_login_at: u.last_login_at,
+        })),
+      },
+    };
   }
 }

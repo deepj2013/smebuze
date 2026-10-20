@@ -66,6 +66,9 @@ export function resolveEnabledModules(
 }
 
 export function defaultModulesForShop(type: string): string[] {
+  if (type === 'invoicing_lite') {
+    return ['sales', 'inventory', 'crm', 'reports'];
+  }
   if (type === 'dine_restaurant' || type === 'cafe') {
     return ['sales', 'inventory', 'crm', 'reports'];
   }

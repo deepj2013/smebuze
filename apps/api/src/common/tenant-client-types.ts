@@ -30,6 +30,8 @@ export const TENANT_CLIENT_TYPES = {
   TRANSPORT: 'transport',
   RESTAURANT_WHOLESALE: 'restaurant_wholesale',
   ICE_CREST: 'ice_crest',
+  /** Customers + products + invoices only — no POS / purchase desk. */
+  INVOICING_LITE: 'invoicing_lite',
 } as const;
 
 export type TenantClientType = (typeof TENANT_CLIENT_TYPES)[keyof typeof TENANT_CLIENT_TYPES];
@@ -135,4 +137,8 @@ export const FLOOR_BUSINESS_TYPES: readonly string[] = [
 
 export function isFloorBusinessType(type: unknown): boolean {
   return typeof type === 'string' && FLOOR_BUSINESS_TYPES.includes(type);
+}
+
+export function isInvoicingLiteBusinessType(type: unknown): boolean {
+  return type === TENANT_CLIENT_TYPES.INVOICING_LITE;
 }

@@ -36,13 +36,25 @@ export const STOCK_TRACKED_POS_TYPES = [
 ] as const;
 
 export const SIGNUP_GROUPS = [
+  { id: 'simple', label: 'Simple billing' },
   { id: 'food', label: 'Food & hospitality' },
   { id: 'retail', label: 'Retail shops' },
   { id: 'local', label: 'Local services' },
   { id: 'desk', label: 'Desk / wholesale' },
 ] as const;
 
+export const INVOICING_LITE_TYPE = 'invoicing_lite' as const;
+
 export const SIGNUP_BUSINESS_TYPES = [
+  {
+    id: 'invoicing_lite',
+    group: 'simple',
+    title: 'Invoices only (Lite)',
+    blurb: 'Just GST billing — add customers & products, create invoices, pick Tally / Busy / Marg style prints. No shop counter or ERP clutter.',
+    itemLabel: 'product',
+    itemsLabel: 'Products',
+    counterLabel: 'Invoices',
+  },
   {
     id: 'dine_restaurant',
     group: 'food',
@@ -275,6 +287,10 @@ export const FLOOR_BUSINESS_TYPES = ['dine_restaurant', 'cafe'] as const;
 
 export function isFloorBusinessType(type: unknown): boolean {
   return typeof type === 'string' && (FLOOR_BUSINESS_TYPES as readonly string[]).includes(type);
+}
+
+export function isInvoicingLiteBusinessType(type: unknown): boolean {
+  return type === INVOICING_LITE_TYPE;
 }
 
 /**

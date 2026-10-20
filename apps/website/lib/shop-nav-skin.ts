@@ -10,6 +10,7 @@ export type ShopNavSkin =
   | 'pos_retail'
   | 'service_counter'
   | 'enquiry_desk'
+  | 'invoice_lite'
   | 'desk';
 
 const POS_RETAIL = new Set([
@@ -24,6 +25,7 @@ const POS_RETAIL = new Set([
 ]);
 
 export function shopNavSkin(type: unknown, slug?: string | null): ShopNavSkin {
+  if (type === 'invoicing_lite') return 'invoice_lite';
   if (slug === 'star-ice') return 'star_ice';
   if (slug === 'ice-crest' || type === 'ice_crest') return 'ice_crest';
   if (type === 'dine_restaurant' || type === 'cafe') return 'floor';

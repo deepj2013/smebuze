@@ -1132,7 +1132,7 @@ export class InventoryService {
     const tenantId = this.assertTenantId(ctx);
     const fg = await this.findOneItem(finishedItemId, ctx);
     await this.recipeRepo.delete({ tenant_id: tenantId, finished_item_id: finishedItemId });
-    const saved = [];
+    const saved: ItemRecipeLine[] = [];
     for (const line of body.lines || []) {
       if (!line.component_item_id || line.component_item_id === finishedItemId) continue;
       const qty = Number(line.qty_per_unit);

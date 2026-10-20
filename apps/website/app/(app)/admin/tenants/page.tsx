@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { SIGNUP_BUSINESS_TYPES } from '@/lib/business-types';
@@ -24,6 +25,34 @@ interface Tenant {
   is_active?: boolean;
   settings?: Record<string, unknown>;
 }
+
+type TenantUsage = {
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+    plan?: string;
+    business_type?: string;
+    enabled_modules?: string[];
+    features?: string[];
+    created_at?: string;
+  };
+  counts: {
+    users: number;
+    companies: number;
+    customers: number;
+    items: number;
+    invoices: number;
+    portal_orders: number;
+    leads: number;
+  };
+  storefront: { slug: string; shop_url: string; site_url: string; is_published: boolean; shop_enabled: boolean } | null;
+  activity: {
+    last_invoice_at?: string | null;
+    last_portal_order_at?: string | null;
+    recent_logins: Array<{ id: string; email: string; name?: string | null; last_login_at?: string | null }>;
+  };
+};
 
 type AccountKind = 'demo' | 'real';
 
@@ -94,6 +123,11 @@ export default function AdminTenantsPage() {
   const [users, setUsers] = useState<{ id: string; email: string; name?: string | null; is_active?: boolean; email_verified?: boolean }[]>([]);
   const [userEdits, setUserEdits] = useState<Record<string, string>>({});
   const [userBusy, setUserBusy] = useState<string | null>(null);
+  const [passwordDraft, setPasswordDraft] = useState<Record<string, string>>({});
+  const [usage, setUsage] = useState<TenantUsage | null>(null);
+  const [newUser, setNewUser] = useState({ email: '', name: '', password: '' });
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({ name: '', slug: '', plan: 'basic' });
   const [menusOpen, setMenusOpen] = useState(false);
   const hiddenSet = useMemo(() => new Set(editForm.nav_hidden ?? []), [editForm.nav_hidden]);
 
@@ -165,6 +199,12 @@ export default function AdminTenantsPage() {
     });
     setUsers([]);
     setUserEdits({});
+    setPasswordDraft({});
+    setUsage(null);
+    setNewUser({ email: '', name: '', password: '' });
+    apiGet<TenantUsage>(`tenants/${t.id}/usage`).then((r) => {
+      if (r.data) setUsage(r.data);
+    });
     apiGet<{ id: string; email: string; name?: string | null; is_active?: boolean; email_verified?: boolean }[]>(`tenants/${t.id}/users`).then((r) => {
       if (r.error) setError(r.error);
       else if (Array.isArray(r.data)) {
@@ -221,6 +261,58 @@ export default function AdminTenantsPage() {
       </p>
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
       {notice && <p className="mb-3 text-sm text-emerald-700">{notice}</p>}
+      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+        <button
+          type="button"
+          onClick={() => setCreateOpen((o) => !o)}
+          className="text-sm font-semibold text-brand-700 hover:underline"
+        >
+          {createOpen ? 'Hide' : '+ Create empty workspace'}
+        </button>
+        {createOpen && (
+          <form
+            className="mt-3 grid gap-3 sm:grid-cols-3"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setError(null);
+              const slug = createForm.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+              const { error: err } = await apiPost('tenants', {
+                name: createForm.name.trim(),
+                slug,
+                plan: createForm.plan,
+              });
+              if (err) setError(err);
+              else {
+                setNotice(`Workspace ${createForm.name} created. Open Configure to set business type and add a login user.`);
+                setCreateOpen(false);
+                setCreateForm({ name: '', slug: '', plan: 'basic' });
+                load();
+              }
+            }}
+          >
+            <input
+              placeholder="Company name"
+              value={createForm.name}
+              onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value, slug: f.slug || e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) }))}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              required
+            />
+            <input
+              placeholder="slug"
+              value={createForm.slug}
+              onChange={(e) => setCreateForm((f) => ({ ...f, slug: e.target.value }))}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
+              required
+            />
+            <select value={createForm.plan} onChange={(e) => setCreateForm((f) => ({ ...f, plan: e.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              {PLANS.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <button type="submit" className="sm:col-span-3 rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium w-fit">
+              Create workspace
+            </button>
+          </form>
+        )}
+      </div>
       <div className="mb-4 flex flex-wrap gap-3 items-center">
         <input
           type="search"
@@ -265,6 +357,58 @@ export default function AdminTenantsPage() {
                 {editingId === t.id ? (
                   <>
                     <td className="p-3" colSpan={8}>
+                      {usage && (
+                        <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50/60 p-4">
+                          <h3 className="text-sm font-semibold text-sky-950">Usage snapshot</h3>
+                          <p className="mt-1 text-xs text-sky-900/80">
+                            What this tenant has created and used — read-only. Member since{' '}
+                            {usage.tenant.created_at ? String(usage.tenant.created_at).slice(0, 10) : '—'}.
+                          </p>
+                          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-center">
+                            {(
+                              [
+                                ['Users', usage.counts.users],
+                                ['Companies', usage.counts.companies],
+                                ['Customers', usage.counts.customers],
+                                ['Products', usage.counts.items],
+                                ['Invoices', usage.counts.invoices],
+                                ['Online orders', usage.counts.portal_orders],
+                                ['Leads', usage.counts.leads],
+                              ] as const
+                            ).map(([label, n]) => (
+                              <div key={label} className="rounded-lg bg-white px-2 py-2 border border-sky-100">
+                                <p className="text-lg font-bold tabular-nums text-slate-900">{n}</p>
+                                <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-700">
+                            {usage.activity.last_invoice_at && (
+                              <span>Last invoice: {String(usage.activity.last_invoice_at).slice(0, 10)}</span>
+                            )}
+                            {usage.activity.last_portal_order_at && (
+                              <span>Last shop order: {String(usage.activity.last_portal_order_at).slice(0, 10)}</span>
+                            )}
+                            {usage.storefront && (
+                              <>
+                                <a href={usage.storefront.site_url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">Website</a>
+                                <a href={usage.storefront.shop_url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">Shop</a>
+                              </>
+                            )}
+                            <Link href="/admin/storefronts" className="text-brand-600 hover:underline">All storefronts</Link>
+                          </div>
+                          {usage.activity.recent_logins.length > 0 && (
+                            <ul className="mt-2 text-xs text-slate-600 space-y-0.5">
+                              {usage.activity.recent_logins.map((u) => (
+                                <li key={u.id}>
+                                  {u.email}
+                                  {u.last_login_at ? ` · last login ${String(u.last_login_at).slice(0, 16).replace('T', ' ')}` : ' · never logged in'}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <label className="text-xs text-slate-600">Name
                           <input
@@ -491,61 +635,144 @@ export default function AdminTenantsPage() {
                       </div>
                       <div className="mt-5 border-t border-slate-100 pt-4">
                         <h3 className="text-sm font-semibold text-slate-800">Login users</h3>
-                        <p className="text-xs text-slate-500 mb-3">Change the mailbox used for sign-in and forgot-password. Send reset posts a 6-digit code from support@smebuze.com.</p>
+                        <p className="text-xs text-slate-500 mb-3">Set a new password directly, change email, or email a reset code. Passwords must be at least 8 characters.</p>
                         {users.length === 0 ? (
-                          <p className="text-sm text-slate-500">No users on this workspace yet. Run the tenant seed or invite staff.</p>
+                          <p className="text-sm text-slate-500">No users yet — add one below.</p>
                         ) : (
-                          <ul className="space-y-2">
+                          <ul className="space-y-3">
                             {users.map((u) => (
-                              <li key={u.id} className="flex flex-col sm:flex-row sm:items-center gap-2">
-                                <input
-                                  type="email"
-                                  value={userEdits[u.id] ?? u.email}
-                                  onChange={(e) => setUserEdits((prev) => ({ ...prev, [u.id]: e.target.value }))}
-                                  className="flex-1 border border-slate-300 rounded px-2 py-1.5 text-sm"
-                                />
-                                <span className="text-xs text-slate-500 shrink-0">{u.is_active === false ? 'Paused' : 'Active'}{u.email_verified === false ? ' · email not confirmed' : ''}</span>
-                                <button
-                                  type="button"
-                                  disabled={userBusy === u.id}
-                                  onClick={async () => {
-                                    setUserBusy(u.id);
-                                    const { error: err } = await apiPatch(`tenants/${t.id}/users/${u.id}`, { email: userEdits[u.id] ?? u.email });
-                                    setUserBusy(null);
-                                    if (err) setError(err);
-                                    else handleEdit(t);
-                                  }}
-                                  className="text-sm text-brand-600 hover:underline disabled:opacity-50"
-                                >
-                                  Save email
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={userBusy === u.id}
-                                  onClick={async () => {
-                                    setUserBusy(u.id);
-                                    const { error: err } = await apiPost(`tenants/${t.id}/users/${u.id}/send-reset`, {});
-                                    setUserBusy(null);
-                                    if (err) setError(err);
-                                    else {
-                                      setError(null);
-                                      setNotice(`Reset mail sent to ${userEdits[u.id] ?? u.email}. Ask them to check inbox and spam.`);
-                                    }
-                                  }}
-                                  className="text-sm text-slate-700 hover:underline disabled:opacity-50"
-                                >
-                                  Send reset mail
-                                </button>
+                              <li key={u.id} className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                  <input
+                                    type="email"
+                                    value={userEdits[u.id] ?? u.email}
+                                    onChange={(e) => setUserEdits((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                                    className="flex-1 border border-slate-300 rounded px-2 py-1.5 text-sm"
+                                  />
+                                  <span className="text-xs text-slate-500 shrink-0">{u.is_active === false ? 'Paused' : 'Active'}{u.email_verified === false ? ' · email not confirmed' : ''}</span>
+                                </div>
+                                <div className="flex flex-wrap gap-2 items-center">
+                                  <button
+                                    type="button"
+                                    disabled={userBusy === u.id}
+                                    onClick={async () => {
+                                      setUserBusy(u.id);
+                                      const { error: err } = await apiPatch(`tenants/${t.id}/users/${u.id}`, { email: userEdits[u.id] ?? u.email });
+                                      setUserBusy(null);
+                                      if (err) setError(err);
+                                      else handleEdit(t);
+                                    }}
+                                    className="text-sm text-brand-600 hover:underline disabled:opacity-50"
+                                  >
+                                    Save email
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={userBusy === u.id}
+                                    onClick={async () => {
+                                      setUserBusy(u.id);
+                                      const { error: err } = await apiPost(`tenants/${t.id}/users/${u.id}/send-reset`, {});
+                                      setUserBusy(null);
+                                      if (err) setError(err);
+                                      else {
+                                        setError(null);
+                                        setNotice(`Reset mail sent to ${userEdits[u.id] ?? u.email}.`);
+                                      }
+                                    }}
+                                    className="text-sm text-slate-700 hover:underline disabled:opacity-50"
+                                  >
+                                    Email reset code
+                                  </button>
+                                </div>
+                                <label className="block text-xs text-slate-600">
+                                  Set password now
+                                  <div className="mt-1 flex flex-wrap gap-2">
+                                    <input
+                                      type="password"
+                                      autoComplete="new-password"
+                                      placeholder="Min 8 characters"
+                                      value={passwordDraft[u.id] ?? ''}
+                                      onChange={(e) => setPasswordDraft((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                                      className="flex-1 min-w-[160px] border border-slate-300 rounded px-2 py-1.5 text-sm"
+                                    />
+                                    <button
+                                      type="button"
+                                      disabled={userBusy === u.id || (passwordDraft[u.id]?.length ?? 0) < 8}
+                                      onClick={async () => {
+                                        setUserBusy(u.id);
+                                        const { error: err } = await apiPost(`tenants/${t.id}/users/${u.id}/set-password`, {
+                                          password: passwordDraft[u.id],
+                                        });
+                                        setUserBusy(null);
+                                        if (err) setError(err);
+                                        else {
+                                          setPasswordDraft((prev) => ({ ...prev, [u.id]: '' }));
+                                          setNotice(`Password updated for ${userEdits[u.id] ?? u.email}. Share it securely with the client.`);
+                                        }
+                                      }}
+                                      className="rounded-lg bg-slate-800 text-white px-3 py-1.5 text-sm disabled:opacity-50"
+                                    >
+                                      Set password
+                                    </button>
+                                  </div>
+                                </label>
                               </li>
                             ))}
                           </ul>
                         )}
+                        <form
+                          className="mt-4 grid gap-2 sm:grid-cols-3 border-t border-slate-200 pt-4"
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            setUserBusy('new');
+                            const { error: err } = await apiPost(`tenants/${t.id}/users`, newUser);
+                            setUserBusy(null);
+                            if (err) setError(err);
+                            else {
+                              setNewUser({ email: '', name: '', password: '' });
+                              setNotice('Login user created for this workspace.');
+                              handleEdit(t);
+                            }
+                          }}
+                        >
+                          <p className="sm:col-span-3 text-xs font-semibold text-slate-700">Add login user</p>
+                          <input
+                            type="email"
+                            placeholder="Email"
+                            required
+                            value={newUser.email}
+                            onChange={(e) => setNewUser((n) => ({ ...n, email: e.target.value }))}
+                            className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          />
+                          <input
+                            placeholder="Name (optional)"
+                            value={newUser.name}
+                            onChange={(e) => setNewUser((n) => ({ ...n, name: e.target.value }))}
+                            className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          />
+                          <input
+                            type="password"
+                            placeholder="Password (min 8)"
+                            required
+                            minLength={8}
+                            value={newUser.password}
+                            onChange={(e) => setNewUser((n) => ({ ...n, password: e.target.value }))}
+                            className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          />
+                          <button type="submit" disabled={userBusy === 'new'} className="sm:col-span-3 w-fit rounded-lg bg-brand-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">
+                            Create user
+                          </button>
+                        </form>
                       </div>
                     </td>
                   </>
                 ) : (
                   <>
-                    <td className="p-3 font-medium">{t.name}</td>
+                    <td className="p-3 font-medium">
+                      <button type="button" onClick={() => handleEdit(t)} className="text-left hover:text-brand-700 hover:underline">
+                        {t.name}
+                      </button>
+                    </td>
                     <td className="p-3 text-slate-500 font-mono text-xs">{t.slug}</td>
                     <td className="p-3">{t.plan ?? '—'}</td>
                     <td className="p-3 text-slate-600">{String(t.settings?.business_type ?? '—')}</td>
@@ -557,7 +784,7 @@ export default function AdminTenantsPage() {
                     <td className="p-3">{t.is_active === false ? <span className="text-red-600">Paused</span> : <span className="text-emerald-700">Active</span>}</td>
                     <td className="p-3">{t.subscription_ends_at ? String(t.subscription_ends_at).slice(0, 10) : '—'}</td>
                     <td className="p-3">
-                      <button type="button" onClick={() => handleEdit(t)} className="text-brand-600 hover:underline">Configure</button>
+                      <button type="button" onClick={() => handleEdit(t)} className="text-brand-600 hover:underline">Open</button>
                     </td>
                   </>
                 )}

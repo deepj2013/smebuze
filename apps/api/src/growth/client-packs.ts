@@ -64,13 +64,22 @@ const DESK_ENQUIRY = {
   list_existing_items: false,
 };
 
+/** Lite billing — customers, products, invoices only (no POS, purchase, or online shop). */
+const INVOICE_LITE = {
+  modules: ['dashboard', 'crm', 'sales', 'inventory', 'reports', 'onboarding'],
+  features: ['crm', 'sales', 'inventory', 'reports'],
+  shop_checkout: false,
+  list_existing_items: false,
+};
+
 type PackKind =
   | typeof POS_SHOP
   | typeof POS_ENQUIRY
   | typeof FLOOR_ENQUIRY
   | typeof SERVICE_ENQUIRY
   | typeof DESK_SHOP
-  | typeof DESK_ENQUIRY;
+  | typeof DESK_ENQUIRY
+  | typeof INVOICE_LITE;
 
 function pack(
   id: string,
@@ -84,6 +93,11 @@ function pack(
 }
 
 export const CLIENT_PACKS: ClientPack[] = [
+  pack('invoicing_lite', 'Invoices only (Lite)', 'Add customers and products, raise GST bills, pick a print theme — no counter POS or full ERP.', INVOICE_LITE, {
+    hero_title: 'GST invoices made simple',
+    hero_subtitle: 'We send professional tax bills to our clients.',
+    about: 'Simple billing workspace — customers, items and invoices in one place.',
+  }),
   pack('trading', 'Trading / wholesale', 'GST desk plus a public catalog so buyers can order online.', DESK_SHOP, {
     hero_title: 'Order from our catalog',
     hero_subtitle: 'Wholesale supply with GST invoices and tracked delivery.',

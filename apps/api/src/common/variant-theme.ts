@@ -31,6 +31,7 @@ export const VARIANT_THEMES: Record<string, VariantTheme> = {
   transport: { primary: '#334155', accent: '#1e293b' },
   services: { primary: '#4f46e5', accent: '#3730a3' },
   ice_crest: { primary: '#0891b2', accent: '#0e7490' },
+  invoicing_lite: { primary: '#4f46e5', accent: '#4338ca' },
 };
 
 const KNOWN_PRIMARIES = new Set(Object.values(VARIANT_THEMES).map((t) => t.primary));
@@ -54,9 +55,13 @@ export function brandingForBusinessType(
   const current = ((existing?.branding ?? {}) as Record<string, unknown>) || {};
   if (!shouldApplyVariantBranding(existing)) return current;
   const theme = themeForBusinessType(type);
-  return {
+  const out: Record<string, unknown> = {
     ...current,
     primary_color: theme.primary,
     accent_color: theme.accent,
   };
+  if (type === 'invoicing_lite' && !current.invoice_template) {
+    out.invoice_template = 'gst';
+  }
+  return out;
 }
