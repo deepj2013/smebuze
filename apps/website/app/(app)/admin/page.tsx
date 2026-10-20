@@ -100,7 +100,7 @@ export default function AdminHomePage() {
 
       <Section title="New signups (last 30 days)" empty="No new real workspaces in the last 30 days.">
         {newSignups.map((t) => (
-          <Row key={t.id} t={t} hint={t.created_at?.slice(0, 10)} />
+          <Row key={t.id} t={t} hint={t.created_at?.slice(0, 10) ?? '—'} />
         ))}
       </Section>
 
