@@ -114,14 +114,22 @@ export class CrmController {
 
   @Post('follow-ups')
   @RequirePermissions('crm.lead.create')
-  async createFollowUp(@Body() body: { lead_id?: string; customer_id?: string; due_at: string; note?: string }, @CurrentTenant() ctx: TenantContext) {
+  async createFollowUp(
+    @Body() body: { lead_id?: string; customer_id?: string; quotation_id?: string; due_at: string; note?: string },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
     return this.crmService.createFollowUp(body, ctx);
   }
 
   @Get('follow-ups')
   @RequirePermissions('crm.lead.view')
-  async getFollowUps(@Query('lead_id') leadId: string | undefined, @Query('customer_id') customerId: string | undefined, @CurrentTenant() ctx: TenantContext) {
-    return this.crmService.findFollowUps(ctx, { lead_id: leadId, customer_id: customerId });
+  async getFollowUps(
+    @Query('lead_id') leadId: string | undefined,
+    @Query('customer_id') customerId: string | undefined,
+    @Query('quotation_id') quotationId: string | undefined,
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.crmService.findFollowUps(ctx, { lead_id: leadId, customer_id: customerId, quotation_id: quotationId });
   }
 
   @Get('follow-ups/due-today')

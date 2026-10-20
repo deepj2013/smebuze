@@ -238,6 +238,7 @@ const nav: Array<{
  * Grouped so demos / GTM / platform ops are easy to find.
  */
 const platformAdminNav: typeof nav = [
+  { label: 'Dashboard', href: '/admin', icon: LayoutDashboard, module: 'organization', permission: 'admin.tenant.view' },
   {
     label: 'Workspaces',
     icon: Building2,
@@ -479,6 +480,29 @@ const serviceCounterNav: typeof nav = [
     { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
     { label: 'Public website', href: '/website', icon: Store, permission: 'org.company.update' },
     { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
+    { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
+  ]},
+];
+
+/** Invoices-only (Lite) — customers, products, GST bills, print theme & printers. */
+const invoiceLiteNav: typeof nav = [
+  { label: 'Home', href: '/invoice-lite', icon: LayoutDashboard, module: 'dashboard', permission: 'reports.view' },
+  { label: 'New estimate', href: '/invoice-lite/quotes/new', icon: FileText, module: 'sales', permission: 'sales.quotation.create' },
+  { label: 'Estimates', href: '/invoice-lite/quotes', icon: FileText, module: 'sales', permission: 'sales.quotation.view' },
+  { label: 'Call again', href: '/invoice-lite/follow-ups', icon: Users, module: 'crm', permission: 'crm.customer.view' },
+  { label: 'New bill', href: '/sales/invoices/new', icon: Receipt, module: 'sales', permission: 'sales.invoice.create' },
+  { label: 'Bills', href: '/sales/invoices', icon: FileText, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Customers', href: '/crm/customers', icon: Users, module: 'crm', permission: 'crm.customer.view' },
+  { label: 'Work & rates', href: '/inventory/items', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Receive payment', href: '/sales/invoices/receive', icon: Wallet, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Setup', href: '/onboarding', icon: Settings, module: 'onboarding' },
+  { label: 'Help', href: '/help', icon: CircleHelp, module: 'help' },
+  { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
+    { label: 'Company & GSTIN', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
+    { label: 'Invoice theme', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+    { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
+    { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
+    { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
     { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
   ]},
 ];
@@ -738,6 +762,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             ? departmentStoreNav
             : navSkin === 'service_counter'
               ? serviceCounterNav
+              : navSkin === 'invoice_lite'
+                ? invoiceLiteNav
               : navSkin === 'enquiry_desk'
                 ? enquiryDeskNav
                 : navSkin === 'pos_pharmacy'

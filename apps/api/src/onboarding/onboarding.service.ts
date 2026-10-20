@@ -11,7 +11,7 @@ import { OnboardingEvent } from './entities/onboarding-event.entity';
 import { OnboardingSurvey } from './entities/onboarding-survey.entity';
 import { Warehouse } from '../inventory/entities/warehouse.entity';
 import { TenantContext } from '../common/tenant-context';
-import { isPosBusinessType } from '../common/tenant-client-types';
+import { isInvoicingLiteBusinessType, isPosBusinessType } from '../common/tenant-client-types';
 import { SaveWorkspaceDto } from './dto/save-workspace.dto';
 import { brandingForBusinessType } from '../common/variant-theme';
 import { getClientPack } from '../growth/client-packs';
@@ -85,11 +85,13 @@ export class OnboardingService {
     const homeHref =
       tenantSlug === 'ice-crest' || businessType === 'ice_crest'
         ? '/ice-crest/dashboard'
-        : businessType === 'dine_restaurant' || businessType === 'cafe'
-          ? '/pos/floor'
-          : isPosBusinessType(businessType)
-            ? '/pos'
-            : '/dashboard';
+        : isInvoicingLiteBusinessType(businessType)
+          ? '/invoice-lite'
+          : businessType === 'dine_restaurant' || businessType === 'cafe'
+            ? '/pos/floor'
+            : isPosBusinessType(businessType)
+              ? '/pos'
+              : '/dashboard';
     const extra = {
       tenantSlug,
       businessType: businessType || undefined,
@@ -110,6 +112,7 @@ export class OnboardingService {
     ]);
 
     const isIceCrestTenant = tenantSlug === 'ice-crest' || settings?.business_type === 'ice_crest';
+    const isInvoiceLite = isInvoicingLiteBusinessType(businessType);
     const isPosTenant = isPosBusinessType(businessType);
     const razorpay = (settings?.razorpay ?? {}) as { enabled?: boolean; key_id?: string; key_secret?: string };
     const paymentsReady = razorpay.enabled === true && typeof razorpay.key_id === 'string' && razorpay.key_id.startsWith('rzp_') && Boolean(razorpay.key_secret);
@@ -122,6 +125,26 @@ export class OnboardingService {
         { id: 'ic_company', label: 'Confirm company GSTIN, bank & logo', done: companyCount > 0, href: '/organization/companies' },
         { id: 'ic_printer', label: 'Connect a printer (USB, Wi-Fi or Bluetooth)', done: false, href: '/organization/printers' },
         { id: 'ic_payments', label: 'Connect Razorpay for scan-to-pay on invoices', done: paymentsReady, href: '/organization/payments' },
+      ];
+      return {
+        steps,
+        onboardingCompletedAt: user?.onboarding_completed_at?.toISOString() ?? null,
+        showOnboarding: !user?.onboarding_completed_at,
+        ...extra,
+      };
+    }
+
+    if (isInvoiceLite) {
+      const branding = (settings?.branding ?? {}) as { invoice_template?: string };
+      const themePicked = Boolean(branding.invoice_template);
+      const steps: ChecklistStep[] = [
+        { id: 'lite_company', label: 'Confirm company name & GSTIN', done: companyCount > 0, href: '/organization/companies' },
+        { id: 'lite_customer', label: 'Add your first customer', done: customerCount > 0, href: '/crm/customers/new' },
+        { id: 'lite_estimate', label: 'Give a rate / estimate to a customer', done: false, href: '/invoice-lite/quotes/new' },
+        { id: 'lite_follow', label: 'Set a call-back reminder on an estimate', done: false, href: '/invoice-lite/follow-ups' },
+        { id: 'lite_theme', label: 'Pick bill print style (GST / Tally / Busy / Marg)', done: themePicked, href: '/organization/branding' },
+        { id: 'lite_invoice', label: 'Create your first bill', done: invoiceCount > 0, href: '/sales/invoices/new' },
+        { id: 'lite_printer', label: 'Connect a printer (USB, Wi-Fi, internet or Bluetooth)', done: false, href: '/organization/printers' },
       ];
       return {
         steps,

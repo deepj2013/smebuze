@@ -793,6 +793,16 @@ export class BillingService {
         else if (sub.expired) bucket = 'expired';
         else if (sub.days_left <= 14) bucket = 'expiring_soon';
         else bucket = 'active';
+        const settings = (t.settings as Record<string, unknown> | null) ?? {};
+        let account_kind: 'demo' | 'real' | 'unknown' = 'unknown';
+        if (settings.account_kind === 'demo' || settings.account_kind === 'real') {
+          account_kind = settings.account_kind;
+        } else {
+          const slug = t.slug.toLowerCase();
+          const name = t.name.toLowerCase();
+          account_kind =
+            slug.startsWith('demo') || slug.startsWith('pos-') || name.startsWith('demo ') ? 'demo' : 'real';
+        }
         return {
           id: t.id,
           name: t.name,
@@ -800,7 +810,9 @@ export class BillingService {
           plan: t.plan,
           plan_label: PLAN_LABELS[t.plan] || t.plan,
           is_active: t.is_active !== false,
-          business_type: (t.settings as Record<string, unknown> | null)?.business_type ?? null,
+          business_type: settings.business_type ?? null,
+          account_kind,
+          created_at: t.created_at?.toISOString() ?? null,
           license_key: t.license_key,
           ...sub,
           bucket,

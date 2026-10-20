@@ -20,6 +20,7 @@
     "seed:b2b-garments": "cd apps/api && node ../../scripts/seed-tenant-b2b-garments.js",
     "seed:sagar-catalog": "cd apps/api && node ../../scripts/seed-tenant-sagar-catalog.js",
     "seed:restaurant-wholesale": "cd apps/api && node ../../scripts/seed-tenant-restaurant-wholesale.js",
+    "seed:invoice-lite": "cd apps/api && node ../../scripts/seed-tenant-invoice-lite.js",
     "deploy:production": "bash scripts/deploy.sh",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down"

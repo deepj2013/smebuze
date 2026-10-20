@@ -93,7 +93,7 @@ function pack(
 }
 
 export const CLIENT_PACKS: ClientPack[] = [
-  pack('invoicing_lite', 'Invoices only (Lite)', 'Add customers and products, raise GST bills, pick a print theme — no counter POS or full ERP.', INVOICE_LITE, {
+  pack('invoicing_lite', 'Invoices only (Lite)', 'Contractor-friendly desk: estimates, follow-up reminders, private notes, GST bills, print theme — no POS or full ERP.', INVOICE_LITE, {
     hero_title: 'GST invoices made simple',
     hero_subtitle: 'We send professional tax bills to our clients.',
     about: 'Simple billing workspace — customers, items and invoices in one place.',

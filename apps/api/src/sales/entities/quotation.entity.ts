@@ -72,6 +72,10 @@ export class Quotation {
   @Column('decimal', { precision: 18, scale: 2, default: 0 })
   tax_amount: string;
 
+  /** Private note for staff (e.g. contractor site visit remark). Not printed on the PDF. */
+  @Column({ type: 'text', nullable: true })
+  internal_note: string | null;
+
   @Column('uuid', { nullable: true })
   created_by: string | null;
 

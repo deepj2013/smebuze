@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Lead } from './lead.entity';
 import { Customer } from './customer.entity';
+import { Quotation } from '../../sales/entities/quotation.entity';
 
 @Entity('follow_ups')
 export class FollowUp {
@@ -23,6 +24,9 @@ export class FollowUp {
 
   @Column('uuid', { nullable: true })
   customer_id: string | null;
+
+  @Column('uuid', { nullable: true })
+  quotation_id: string | null;
 
   @Column({ type: 'timestamptz' })
   due_at: Date;
@@ -49,4 +53,8 @@ export class FollowUp {
   @ManyToOne(() => Customer, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'customer_id' })
   customer: Customer | null;
+
+  @ManyToOne(() => Quotation, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'quotation_id' })
+  quotation: Quotation | null;
 }

@@ -1298,7 +1298,13 @@ export class SalesService {
 
   async updateQuotation(
     id: string,
-    dto: { sent_at?: string; status?: string; lead_id?: string | null; customer_id?: string | null },
+    dto: {
+      sent_at?: string;
+      status?: string;
+      lead_id?: string | null;
+      customer_id?: string | null;
+      internal_note?: string | null;
+    },
     ctx: TenantContext,
   ): Promise<Quotation> {
     const tenantId = this.assertTenantId(ctx);
@@ -1308,6 +1314,7 @@ export class SalesService {
     if (dto.status !== undefined) q.status = dto.status;
     if (dto.lead_id !== undefined) q.lead_id = dto.lead_id ?? null;
     if (dto.customer_id !== undefined) q.customer_id = dto.customer_id ?? null;
+    if (dto.internal_note !== undefined) q.internal_note = dto.internal_note?.trim() || null;
     await this.quotationRepo.save(q);
     return this.findOneQuotation(id, ctx);
   }

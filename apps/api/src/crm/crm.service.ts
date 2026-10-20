@@ -235,15 +235,27 @@ export class CrmService {
   }
 
   async createFollowUp(
-    dto: { lead_id?: string; customer_id?: string; due_at: string; note?: string },
+    dto: { lead_id?: string; customer_id?: string; quotation_id?: string; due_at: string; note?: string },
     ctx: TenantContext,
   ): Promise<FollowUp> {
     const tenantId = this.assertTenantId(ctx);
-    if (!dto.lead_id && !dto.customer_id) throw new ForbiddenException('Provide lead_id or customer_id');
+    let leadId = dto.lead_id ?? null;
+    let customerId = dto.customer_id ?? null;
+    let quotationId = dto.quotation_id ?? null;
+    if (quotationId) {
+      const q = await this.salesService.findOneQuotation(quotationId, ctx);
+      quotationId = q.id;
+      if (!customerId) customerId = q.customer_id;
+      if (!leadId) leadId = q.lead_id;
+    }
+    if (!leadId && !customerId && !quotationId) {
+      throw new ForbiddenException('Provide lead_id, customer_id, or quotation_id');
+    }
     const followUp = this.followUpRepo.create({
       tenant_id: tenantId,
-      lead_id: dto.lead_id ?? null,
-      customer_id: dto.customer_id ?? null,
+      lead_id: leadId,
+      customer_id: customerId,
+      quotation_id: quotationId,
       due_at: new Date(dto.due_at),
       note: dto.note ?? null,
       status: 'pending',
@@ -252,14 +264,20 @@ export class CrmService {
     return this.followUpRepo.save(followUp);
   }
 
-  async findFollowUps(ctx: TenantContext, filters?: { lead_id?: string; customer_id?: string }): Promise<FollowUp[]> {
+  async findFollowUps(
+    ctx: TenantContext,
+    filters?: { lead_id?: string; customer_id?: string; quotation_id?: string },
+  ): Promise<FollowUp[]> {
     const tenantId = this.assertTenantId(ctx);
-    const where: { tenant_id: string; lead_id?: string; customer_id?: string } = { tenant_id: tenantId };
+    const where: { tenant_id: string; lead_id?: string; customer_id?: string; quotation_id?: string } = {
+      tenant_id: tenantId,
+    };
     if (filters?.lead_id) where.lead_id = filters.lead_id;
     if (filters?.customer_id) where.customer_id = filters.customer_id;
+    if (filters?.quotation_id) where.quotation_id = filters.quotation_id;
     return this.followUpRepo.find({
       where,
-      relations: ['lead', 'customer'],
+      relations: ['lead', 'customer', 'quotation'],
       order: { due_at: 'ASC' },
       take: 200,
     });

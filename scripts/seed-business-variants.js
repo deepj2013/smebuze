@@ -22,7 +22,8 @@ function isDemoVariantSlug(slug) {
     slug.startsWith('pos-') ||
     slug === 'ice-crest' ||
     slug === 'restaurant-wholesale' ||
-    slug === 'star-ice'
+    slug === 'star-ice' ||
+    slug === 'demo-invoice'
   );
 }
 
@@ -87,6 +88,7 @@ const THEMES = {
   b2b: { primary: '#1d4ed8', accent: '#1e40af' },
   transport: { primary: '#1d4ed8', accent: '#1e40af' },
   services: { primary: '#4f46e5', accent: '#3730a3' },
+  invoicing_lite: { primary: '#4f46e5', accent: '#4338ca' },
 };
 
 /** @type {{ sku: string, barcode?: string, name: string, category: string, unit: string, hsn_sac: string, mrp: number, cost: number, sale: number, tax: number, qty: number, reorder: number }[]} */

@@ -101,6 +101,7 @@ export function defaultModulesForShop(type: string): string[] {
 
 export function homeHrefForShop(type: string): string {
   if (type === 'ice_crest') return '/ice-crest/dashboard';
+  if (type === 'invoicing_lite') return '/invoice-lite';
   if (isFloorBusinessType(type)) return '/pos/floor';
   if (isPosBusinessType(type)) return '/pos';
   return '/dashboard';

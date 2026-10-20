@@ -41,6 +41,9 @@ npm run seed:variants
 echo "Seeding B2B garments wholesale demo (slug=demo-b2b-garments)..."
 npm run seed:b2b-garments
 
+echo "Seeding Invoice Lite demo (slug=demo-invoice)..."
+npm run seed:invoice-lite
+
 echo "Seed complete. Live customer tenants were not modified."
 echo "New demo users use Password123. Existing passwords unchanged unless SEED_RESET_PASSWORDS=1."
 echo "B2B garments: tenant demo-b2b-garments / admin@demo-b2b-garments.demo / Password123"

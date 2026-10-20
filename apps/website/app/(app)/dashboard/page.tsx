@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { apiGet, apiPost } from '@/lib/api';
-import { businessTypeMeta, isPosBusinessType } from '@/lib/business-types';
+import { businessTypeMeta, isInvoicingLiteBusinessType, isPosBusinessType } from '@/lib/business-types';
 import { themeForBusinessType } from '@/lib/variant-theme';
 
 interface DashboardData {
@@ -68,6 +69,7 @@ type DeskSummary = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +97,10 @@ export default function DashboardPage() {
       .then((r) => r.json())
       .then((d) => {
         const t = d?.tenant?.settings?.business_type;
-        if (typeof t === 'string' && t) setShopType(t);
+        if (typeof t === 'string' && t) {
+          setShopType(t);
+          if (isInvoicingLiteBusinessType(t)) router.replace('/invoice-lite');
+        }
         if (t === 'transport') {
           void apiGet<typeof renewals>('transport/renewals?within_days=45').then((r) => {
             if (Array.isArray(r.data)) setRenewals(r.data.slice(0, 5));

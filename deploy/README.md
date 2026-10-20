@@ -132,6 +132,44 @@ Rebuild everything without a code change: Actions → **Deploy production** → 
 
 ---
 
+## Today’s SQL migrations (047–052)
+
+Deploy runs `npm run db:migrate` when `packages/db-migrations/**` changes. Each file is recorded in `_schema_migrations` on the VPS.
+
+To confirm on the server (SSH):
+
+```bash
+grep -E '047_|048_|049_|050_|051_|052_' /var/www/smebuze/logs/deploy.log | tail -20
+# or in psql:
+SELECT name FROM _schema_migrations WHERE name LIKE '04%' OR name LIKE '05%' ORDER BY name;
+```
+
+If deploy logs show `applied=0, skipped=52`, migrations **047–052 are already applied** (skipped because they ran on an earlier deploy).
+
+---
+
+Full demo slug/email list and mall URLs: **`deploy/DEMO_LOGINS.md`**.
+
+## Invoice Lite demo login
+
+After seeding on the VPS:
+
+```bash
+cd /var/www/smebuze && npm run seed:invoice-lite
+# or full demo bundle:
+bash scripts/seed-on-vps.sh
+```
+
+| Field | Value |
+|-------|--------|
+| Workspace slug | `demo-invoice` |
+| Email | `admin@demo-invoice.demo` |
+| Password | `Invoice@123` |
+
+After login: **Organization → Printers** and **Invoice theme** (GST / Tally / Busy / Marg). Sidebar is trimmed to customers, products, and invoices only.
+
+---
+
 ## Database: pgAdmin on your laptop + backups
 
 ### View production data in local pgAdmin (SSH tunnel — safe)

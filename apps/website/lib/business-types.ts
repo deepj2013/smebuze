@@ -50,7 +50,7 @@ export const SIGNUP_BUSINESS_TYPES = [
     id: 'invoicing_lite',
     group: 'simple',
     title: 'Invoices only (Lite)',
-    blurb: 'Just GST billing — add customers & products, create invoices, pick Tally / Busy / Marg style prints. No shop counter or ERP clutter.',
+    blurb: 'For contractors & simple billing — big buttons, rate/estimate, call-back reminders, notes, then GST bill. Tally / Busy style print. No POS clutter.',
     itemLabel: 'product',
     itemsLabel: 'Products',
     counterLabel: 'Invoices',

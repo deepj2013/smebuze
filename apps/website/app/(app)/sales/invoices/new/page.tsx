@@ -97,6 +97,10 @@ export default function NewInvoicePage() {
     });
   }, []);
   useEffect(()=>{const id=searchParams?.get('sales_order_id');if(id&&salesOrders.some(x=>x.id===id)){const o=salesOrders.find(x=>x.id===id)!;setSalesOrderId(id);setCustomerId(o.customer_id||'');setVendorId('');setLines((o.lines||[]).map(l=>({item_id:l.item_id||undefined,item_sku:l.item?.sku,item_name:l.item?.name,hsn_sac:l.item?.hsn_sac||'22019010',description:l.description||l.item?.name||'Item',qty:Number(l.quantity),unit:l.unit||'pcs',rate:Number(l.rate),cgst_rate:defaultGst.cgst,sgst_rate:defaultGst.sgst}))) }},[searchParams,salesOrders,defaultGst]);
+  useEffect(() => {
+    const cid = searchParams?.get('customer_id');
+    if (cid) setCustomerId(cid);
+  }, [searchParams]);
 
   useEffect(() => {
     const q = new URLSearchParams({ kind: 'invoice', date: invoiceDate });
