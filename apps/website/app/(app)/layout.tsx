@@ -51,7 +51,9 @@ import { parseTenantBranding } from '@/lib/branding';
 import { getStaticUrl } from '@/lib/api';
 import { isFloorBusinessType, isPosBusinessType } from '@/lib/business-types';
 import { needsWorkspaceSetup, resolveEnabledModules } from '@/lib/workspace-setup';
+import { shopNavSkin } from '@/lib/shop-nav-skin';
 import { filterNavByHidden, parseNavHidden, stripPlatformOnlyNavItems } from '@/lib/nav-menu-config';
+import { tenantHasOptInFeature } from '@/lib/tenant-features';
 import { applyWorkspaceThemeVars, resolveWorkspaceTheme } from '@/lib/variant-theme';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -110,6 +112,8 @@ const nav: Array<{
     children: [
       { label: 'Vendors', href: '/purchase/vendors', icon: Truck, permission: 'purchase.vendor.view' },
       { label: 'Orders', href: '/purchase/orders', icon: FileText, permission: 'purchase.order.view' },
+      { label: 'Vendor bills', href: '/purchase/vendor-invoices', icon: Receipt, permission: 'purchase.order.view' },
+      { label: 'Restock Hub', href: '/restock', icon: Package, permission: 'purchase.order.view' },
       { label: 'GRNs', href: '/purchase/grns', icon: FileText, permission: 'purchase.order.view' },
       { label: 'Debit notes', href: '/purchase/debit-notes', icon: Receipt, permission: 'purchase.order.view' },
       { label: 'Payables', href: '/purchase/payables', icon: Receipt, permission: 'purchase.order.view' },
@@ -128,6 +132,9 @@ const nav: Array<{
       { label: 'Stock', href: '/inventory/stock', icon: Package, permission: 'inventory.stock.view' },
       { label: 'Soon to expire', href: '/inventory/stock/expiring', icon: Package, permission: 'inventory.stock.view' },
       { label: 'Stock transfers', href: '/inventory/stock-transfers', icon: Package, permission: 'inventory.stock.view' },
+      { label: 'Recipes / BOM', href: '/inventory/recipes', icon: ChefHat, permission: 'inventory.item.view' },
+      { label: 'Production', href: '/inventory/production', icon: Package, permission: 'inventory.item.create' },
+      { label: 'Offers (BOGO)', href: '/inventory/promotions', icon: Sparkles, permission: 'inventory.item.view' },
     ],
   },
   {
@@ -191,6 +198,7 @@ const nav: Array<{
       { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
       { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
       { label: 'Public website', href: '/website', icon: Store, permission: 'org.company.update' },
+      { label: 'Online commerce', href: '/organization/commerce', icon: Store, permission: 'org.company.update' },
       { label: 'Channels', href: '/organization/channels', icon: Wallet, permission: 'org.company.update' },
       { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
       { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
@@ -205,6 +213,8 @@ const nav: Array<{
       { label: 'Tenants', href: '/admin/tenants', icon: Building2, permission: 'admin.tenant.view' },
       { label: 'Licences', href: '/admin/licenses', icon: KeyRound, permission: 'admin.tenant.view' },
       { label: 'Storefronts & domains', href: '/admin/storefronts', icon: Store, permission: 'admin.tenant.view' },
+      { label: 'Restock Hub', href: '/admin/hub', icon: Package, permission: 'admin.tenant.view' },
+      { label: 'Marketplace ops', href: '/admin/marketplace', icon: Store, permission: 'admin.tenant.view' },
       { label: 'BDE pipeline', href: '/admin/bde', icon: UserPlus, permission: 'admin.bde.leads' },
       { label: 'Partners & coupons', href: '/admin/partners', icon: Megaphone, permission: 'admin.partner.manage' },
       { label: 'My referrals', href: '/admin/partner-portal', icon: Handshake, permission: 'admin.partner.mine' },
@@ -218,6 +228,7 @@ const nav: Array<{
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
   { label: 'Customer ledger', href: '/reports?report=customer-ledger', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'Accounting export', href: '/reports/accounting-export', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
   { label: 'Bulk upload', href: '/bulk-upload', icon: Upload, module: 'bulk_upload' },
 ];
@@ -235,6 +246,8 @@ const platformAdminNav: typeof nav = [
       { label: 'Tenants', href: '/admin/tenants', icon: Building2, permission: 'admin.tenant.view' },
       { label: 'Licences', href: '/admin/licenses', icon: KeyRound, permission: 'admin.tenant.view' },
       { label: 'Storefronts & domains', href: '/admin/storefronts', icon: Store, permission: 'admin.tenant.view' },
+      { label: 'Restock Hub', href: '/admin/hub', icon: Package, permission: 'admin.tenant.view' },
+      { label: 'Marketplace ops', href: '/admin/marketplace', icon: Store, permission: 'admin.tenant.view' },
     ],
   },
   {
@@ -343,6 +356,7 @@ const starIceNav: typeof nav = [
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
   { label: 'Customer ledger', href: '/reports?report=customer-ledger', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'Accounting export', href: '/reports/accounting-export', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
 ];
 
@@ -377,6 +391,7 @@ const iceCrestNav: typeof nav = [
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
   { label: 'Customer ledger', href: '/reports?report=customer-ledger', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'Accounting export', href: '/reports/accounting-export', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
   { label: 'Getting started', href: '/ice-crest/tutorial', icon: Sparkles, module: 'dashboard', permission: 'reports.view' },
   { label: 'Staff guide', href: '/ice-crest/guide', icon: BookOpen, module: 'dashboard', permission: 'reports.view' },
@@ -413,12 +428,19 @@ const restaurantFloorNav: typeof nav = [
   { label: 'Kitchen', href: '/pos/kitchen', icon: ChefHat, module: 'sales', permission: 'sales.order.view' },
   { label: 'POS / Cashier', href: '/pos', icon: Store, module: 'sales', permission: 'sales.invoice.create' },
   { label: 'Restaurant admin', href: '/pos/floor', icon: LayoutDashboard, module: 'sales', permission: 'sales.order.view' },
+  { label: 'Menu', href: '/pos/manage', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Customers', href: '/crm/customers', icon: Users, module: 'crm', permission: 'crm.customer.view' },
+  { label: 'Booking enquiries', href: '/crm/leads', icon: UserPlus, module: 'crm', permission: 'crm.lead.view' },
+  { label: 'Lead hub', href: '/crm/lead-hub', icon: Megaphone, module: 'crm', permission: 'crm.lead.view' },
+  { label: 'Selling page', href: '/catalog', icon: Store, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Online orders', href: '/sales/portal-orders', icon: Truck, module: 'sales', permission: 'sales.order.view' },
   { label: 'Bills', href: '/sales/invoices', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Party-wise bills', href: '/sales/invoices/parties', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Receive payment', href: '/sales/invoices/receive', icon: Wallet, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
   { label: 'Customer ledger', href: '/reports?report=customer-ledger', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'Accounting export', href: '/reports/accounting-export', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
   { label: 'Setup', href: '/onboarding', icon: Settings, module: 'onboarding' },
   { label: 'Help', href: '/help', icon: CircleHelp, module: 'help' },
@@ -431,6 +453,58 @@ const restaurantFloorNav: typeof nav = [
     { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
     { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
     { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
+    { label: 'Public website', href: '/website', icon: Store, permission: 'org.company.update' },
+    { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
+  ]},
+];
+
+/** Salon / clinic — bill services and take booking leads. No stock aisle. */
+const serviceCounterNav: typeof nav = [
+  { label: 'Billing counter', href: '/pos', icon: Store, module: 'sales', permission: 'sales.invoice.create' },
+  { label: 'Services', href: '/inventory/items', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Customers', href: '/crm/customers', icon: Users, module: 'crm', permission: 'crm.customer.view' },
+  { label: 'Booking enquiries', href: '/crm/leads', icon: UserPlus, module: 'crm', permission: 'crm.lead.view' },
+  { label: 'Lead hub', href: '/crm/lead-hub', icon: Megaphone, module: 'crm', permission: 'crm.lead.view' },
+  { label: 'Selling page', href: '/catalog', icon: Store, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Online orders', href: '/sales/portal-orders', icon: Truck, module: 'sales', permission: 'sales.order.view' },
+  { label: 'Bills', href: '/sales/invoices', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Receive payment', href: '/sales/invoices/receive', icon: Wallet, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'Help', href: '/help', icon: CircleHelp, module: 'help' },
+  { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
+    { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
+    { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
+    { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+    { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
+    { label: 'Public website', href: '/website', icon: Store, permission: 'org.company.update' },
+    { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
+    { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
+  ]},
+];
+
+/** Hotel / coaching — enquiry + invoices, not a product cart. */
+const enquiryDeskNav: typeof nav = [
+  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard', permission: 'reports.view' },
+  { label: 'Enquiries', href: '/crm/leads', icon: UserPlus, module: 'crm', permission: 'crm.lead.view' },
+  { label: 'Lead hub', href: '/crm/lead-hub', icon: Megaphone, module: 'crm', permission: 'crm.lead.view' },
+  { label: 'Selling page', href: '/catalog', icon: Store, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Online orders', href: '/sales/portal-orders', icon: Truck, module: 'sales', permission: 'sales.order.view' },
+  { label: 'Customers', href: '/crm/customers', icon: Users, module: 'crm', permission: 'crm.customer.view' },
+  { label: 'Follow-ups', href: '/crm/follow-up-board', icon: Users, module: 'crm', permission: 'crm.lead.view' },
+  { label: 'Quotations', href: '/sales/quotations', icon: FileText, module: 'sales', permission: 'sales.quotation.view' },
+  { label: 'Invoices', href: '/sales/invoices', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Receive payment', href: '/sales/invoices/receive', icon: Wallet, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
+  { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'Help', href: '/help', icon: CircleHelp, module: 'help' },
+  { label: 'Organization', icon: Building2, module: 'organization', permission: 'org.company.view', children: [
+    { label: 'Company', href: '/organization/companies', icon: Building2, permission: 'org.company.view' },
+    { label: 'Users', href: '/organization/users', icon: Users, permission: 'org.user.view' },
+    { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
+    { label: 'Public website', href: '/website', icon: Store, permission: 'org.company.update' },
+    { label: 'Channels', href: '/organization/channels', icon: Wallet, permission: 'org.company.update' },
+    { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
     { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
   ]},
 ];
@@ -439,15 +513,23 @@ const restaurantFloorNav: typeof nav = [
 const departmentStoreNav: typeof nav = [
   { label: 'Billing counter', href: '/pos', icon: Store, module: 'sales', permission: 'sales.invoice.create' },
   { label: 'Cash counter', href: '/pos/cash-counter', icon: Wallet, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Home deliveries', href: '/pos/deliveries', icon: Truck, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Departments', href: '/inventory/categories', icon: Layers, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Products', href: '/inventory/items', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Stock', href: '/inventory/stock', icon: Package, module: 'inventory', permission: 'inventory.stock.view' },
   { label: 'Soon to expire', href: '/inventory/stock/expiring', icon: Package, module: 'inventory', permission: 'inventory.stock.view' },
   { label: 'Receive stock', href: '/inventory/stock/receive', icon: Warehouse, module: 'inventory', permission: 'inventory.item.create' },
+  { label: 'Vendor bills', href: '/purchase/vendor-invoices', icon: Receipt, module: 'purchase', permission: 'purchase.order.view' },
+  { label: 'Recipes / BOM', href: '/inventory/recipes', icon: ChefHat, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Offers (BOGO)', href: '/inventory/promotions', icon: Sparkles, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Item upload', href: '/bulk-upload', icon: Upload, module: 'inventory', permission: 'inventory.item.create' },
   { label: 'Barcode labels', href: '/inventory/labels', icon: Printer, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Customers', href: '/crm/customers', icon: Users, module: 'crm', permission: 'crm.customer.view' },
+  { label: 'Selling page', href: '/catalog', icon: Store, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Online orders', href: '/sales/portal-orders', icon: Truck, module: 'sales', permission: 'sales.order.view' },
+  { label: 'Lead hub', href: '/crm/lead-hub', icon: Megaphone, module: 'crm', permission: 'crm.lead.view' },
   { label: 'Bills', href: '/sales/invoices', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Delivery challans', href: '/sales/delivery-challans', icon: Truck, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Receive payment', href: '/sales/invoices/receive', icon: Wallet, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Store reports', href: '/reports/department', icon: BarChart3, module: 'reports', permission: 'reports.view' },
   { label: 'Customer ledger', href: '/reports?report=customer-ledger', icon: FileText, module: 'reports', permission: 'reports.view' },
@@ -461,6 +543,11 @@ const departmentStoreNav: typeof nav = [
     { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
     { label: 'Printers', href: '/organization/printers', icon: Printer, permission: 'org.company.view' },
     { label: 'Devices', href: '/organization/devices', icon: Cable, permission: 'org.company.update' },
+    { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
+    { label: 'Public website', href: '/website', icon: Store, permission: 'org.company.update' },
+    { label: 'Online commerce', href: '/organization/commerce', icon: Store, permission: 'org.company.update' },
+    { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
+    { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
   ]},
 ];
 
@@ -468,22 +555,31 @@ const departmentStoreNav: typeof nav = [
 const posNav: typeof nav = [
   { label: 'Billing counter', href: '/pos', icon: Store, module: 'sales', permission: 'sales.invoice.create' },
   { label: 'Cash counter', href: '/pos/cash-counter', icon: Wallet, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Home deliveries', href: '/pos/deliveries', icon: Truck, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Manage shop', href: '/pos/manage', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Bills', href: '/sales/invoices', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Party-wise bills', href: '/sales/invoices/parties', icon: Receipt, module: 'sales', permission: 'sales.invoice.view' },
+  { label: 'Delivery challans', href: '/sales/delivery-challans', icon: Truck, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Receive payment', href: '/sales/invoices/receive', icon: Wallet, module: 'sales', permission: 'sales.invoice.view' },
   { label: 'Categories', href: '/inventory/categories', icon: Layers, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Products', href: '/inventory/items', icon: Boxes, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Stock', href: '/inventory/stock', icon: Package, module: 'inventory', permission: 'inventory.stock.view' },
   { label: 'Soon to expire', href: '/inventory/stock/expiring', icon: Package, module: 'inventory', permission: 'inventory.stock.view' },
   { label: 'Receive stock', href: '/inventory/stock/receive', icon: Warehouse, module: 'inventory', permission: 'inventory.item.create' },
+  { label: 'Vendor bills', href: '/purchase/vendor-invoices', icon: Receipt, module: 'purchase', permission: 'purchase.order.view' },
+  { label: 'Recipes / BOM', href: '/inventory/recipes', icon: ChefHat, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Offers (BOGO)', href: '/inventory/promotions', icon: Sparkles, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Item upload', href: '/bulk-upload', icon: Upload, module: 'inventory', permission: 'inventory.item.create' },
   { label: 'Barcode labels', href: '/inventory/labels', icon: Printer, module: 'inventory', permission: 'inventory.item.view' },
   { label: 'Customers', href: '/crm/customers', icon: Users, module: 'crm', permission: 'crm.customer.view' },
+  { label: 'Selling page', href: '/catalog', icon: Store, module: 'inventory', permission: 'inventory.item.view' },
+  { label: 'Online orders', href: '/sales/portal-orders', icon: Truck, module: 'sales', permission: 'sales.order.view' },
+  { label: 'Lead hub', href: '/crm/lead-hub', icon: Megaphone, module: 'crm', permission: 'crm.lead.view' },
   { label: 'Printers', href: '/organization/printers', icon: Printer, module: 'organization', permission: 'org.company.view' },
   { label: 'Reports', href: '/reports', icon: BarChart3, module: 'reports', permission: 'reports.view' },
   { label: 'Customer ledger', href: '/reports?report=customer-ledger', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-1', href: '/reports/gstr-1', icon: FileText, module: 'reports', permission: 'reports.view' },
+  { label: 'Accounting export', href: '/reports/accounting-export', icon: FileText, module: 'reports', permission: 'reports.view' },
   { label: 'GSTR-2A', href: '/reports/gstr-2a', icon: FileCheck, module: 'reports', permission: 'reports.view' },
   { label: 'Setup', href: '/onboarding', icon: Settings, module: 'onboarding' },
   { label: 'Help', href: '/help', icon: CircleHelp, module: 'help' },
@@ -496,11 +592,27 @@ const posNav: typeof nav = [
     { label: 'Look & logo', href: '/organization/branding', icon: Palette, permission: 'org.company.update' },
     { label: 'Invoice series', href: '/organization/invoice-series', icon: Receipt, permission: 'org.company.update' },
     { label: 'Public website', href: '/website', icon: Store, permission: 'org.company.update' },
+    { label: 'Online commerce', href: '/organization/commerce', icon: Store, permission: 'org.company.update' },
     { label: 'Channels', href: '/organization/channels', icon: Wallet, permission: 'org.company.update' },
     { label: 'Scan to pay', href: '/organization/payments', icon: Wallet, permission: 'org.company.update' },
     { label: 'SMEBUZE plan', href: '/billing', icon: CreditCard },
   ]},
 ];
+
+function dropNavHrefs(items: typeof nav, hrefs: string[]): typeof nav {
+  const hide = new Set(hrefs);
+  return items
+    .map((item) => {
+      if (item.href && hide.has(item.href)) return null;
+      if (item.children) {
+        const children = item.children.filter((c) => !hide.has(c.href));
+        if (!item.href && children.length === 0) return null;
+        return { ...item, children };
+      }
+      return item;
+    })
+    .filter(Boolean) as typeof nav;
+}
 
 function getCategoryForPath(path: string, items: typeof nav): string | null {
   for (const item of items) {
@@ -589,6 +701,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [tenant, setTenant] = useState<{
     slug?: string;
     settings?: Record<string, unknown>;
+    features?: string[];
     plan?: string;
     subscription_expired?: boolean;
     subscription_ends_at?: string | null;
@@ -599,11 +712,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const drawerRef = useRef<HTMLElement>(null);
   const [showIceCrestTutorial, setShowIceCrestTutorial] = useState(false);
-  const isStarIce = tenant?.slug === 'star-ice';
   const isIceCrest = tenant?.slug === 'ice-crest' || tenant?.settings?.business_type === 'ice_crest';
-  const isDepartmentStore = tenant?.settings?.business_type === 'department_store';
   const isPosTenant = isPosBusinessType(tenant?.settings?.business_type);
   const isFloorTenant = isFloorBusinessType(tenant?.settings?.business_type);
+  const navSkin = shopNavSkin(tenant?.settings?.business_type, tenant?.slug);
   const isPublicIceCrestSite = pathname === '/ice-crest';
   const branding = parseTenantBranding(tenant?.settings);
   const shopTheme = useMemo(() => resolveWorkspaceTheme(tenant?.settings ?? null), [tenant?.settings]);
@@ -616,17 +728,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isPlatformSuperAdmin = Boolean(user?.isSuperAdmin && !(user?.tenantId ?? user?.tenant_id));
   const baseNav = isPlatformSuperAdmin
     ? platformAdminNav
-    : isIceCrest
+    : navSkin === 'ice_crest'
       ? iceCrestNav
-      : isStarIce
+      : navSkin === 'star_ice'
         ? starIceNav
-        : isFloorTenant
+        : navSkin === 'floor'
           ? restaurantFloorNav
-          : isDepartmentStore
+          : navSkin === 'department'
             ? departmentStoreNav
-            : isPosTenant
-              ? posNav
-              : nav;
+            : navSkin === 'service_counter'
+              ? serviceCounterNav
+              : navSkin === 'enquiry_desk'
+                ? enquiryDeskNav
+                : navSkin === 'pos_pharmacy'
+                  ? dropNavHrefs(posNav, ['/inventory/recipes'])
+                  : navSkin === 'pos_retail'
+                    ? dropNavHrefs(posNav, ['/inventory/recipes'])
+                    : navSkin === 'pos_food'
+                      ? posNav
+                      : nav;
   let visibleNav = filterNavByAccess(
     baseNav,
     user?.isSuperAdmin ? ['*'] : (user?.permissions ?? []),
@@ -640,6 +760,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!user?.isSuperAdmin && !isIceCrest) {
     visibleNav = filterNavByHidden(visibleNav, parseNavHidden(tenant?.settings ?? null));
   }
+  const feats = tenant?.features ?? [];
+  const hideOptIn = (href?: string) => {
+    if (!href) return false;
+    if ((href.startsWith('/inventory/recipes') || href.startsWith('/inventory/production')) && !tenantHasOptInFeature(feats, 'recipe_production')) return true;
+    if (href.startsWith('/reports/accounting-export') && !tenantHasOptInFeature(feats, 'accounting_export')) return true;
+    return false;
+  };
+  visibleNav = visibleNav
+    .map((item) => {
+      if (hideOptIn(item.href)) return null;
+      if (item.children) {
+        const children = item.children.filter((c) => !hideOptIn(c.href));
+        if (!item.href && children.length === 0) return null;
+        return { ...item, children };
+      }
+      return item;
+    })
+    .filter(Boolean) as typeof visibleNav;
   const platformStaff =
     Boolean(user?.platformRole) ||
     (user?.permissions ?? []).some((p) => p.startsWith('admin.bde') || p.startsWith('admin.partner'));

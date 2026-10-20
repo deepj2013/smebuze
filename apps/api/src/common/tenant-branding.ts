@@ -3,6 +3,11 @@ import {
   parseInvoicePrintSize,
   type InvoicePrintSize,
 } from './invoice-print-size';
+import {
+  DEFAULT_INVOICE_TEMPLATE,
+  parseInvoiceTemplate,
+  type InvoiceTemplate,
+} from './invoice-template';
 import { themeForBusinessType } from './variant-theme';
 
 export type TenantBranding = {
@@ -12,6 +17,10 @@ export type TenantBranding = {
   display_name: string | null;
   /** Printed invoice / quotation text size (all layouts including Ice Crest). */
   invoice_print_size: InvoicePrintSize;
+  /** Tally / Busy / Marg / GST / thermal. `auto` = existing POS vs A4 behaviour. */
+  invoice_template: InvoiceTemplate;
+  /** Uploaded UPI / payment QR printed next to bank details. */
+  invoice_qr_url: string | null;
   updated_at: string | null;
 };
 
@@ -21,6 +30,8 @@ export const DEFAULT_BRANDING: TenantBranding = {
   accent_color: '#0369a1',
   display_name: null,
   invoice_print_size: DEFAULT_INVOICE_PRINT_SIZE,
+  invoice_template: DEFAULT_INVOICE_TEMPLATE,
+  invoice_qr_url: null,
   updated_at: null,
 };
 
@@ -43,6 +54,12 @@ export function parseTenantBranding(settings: Record<string, unknown> | null | u
     invoice_print_size: parseInvoicePrintSize(
       (raw as { invoice_print_size?: unknown }).invoice_print_size ?? DEFAULT_INVOICE_PRINT_SIZE,
     ),
+    invoice_template: parseInvoiceTemplate((raw as { invoice_template?: unknown }).invoice_template),
+    invoice_qr_url:
+      typeof (raw as { invoice_qr_url?: unknown }).invoice_qr_url === 'string' &&
+      String((raw as { invoice_qr_url?: unknown }).invoice_qr_url).trim()
+        ? String((raw as { invoice_qr_url?: unknown }).invoice_qr_url).trim()
+        : null,
     updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : null,
   };
 }

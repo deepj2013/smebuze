@@ -78,6 +78,7 @@ export default function EditCustomerPage() {
   const [city, setCity] = useState('');
   const [pincode, setPincode] = useState('');
   const [creditLimit, setCreditLimit] = useState('');
+  const [loyaltyCard, setLoyaltyCard] = useState('');
   const [segment, setSegment] = useState('');
   const [tagsText, setTagsText] = useState('');
   const [contacts, setContacts] = useState<ContactPerson[]>([emptyContact()]);
@@ -106,6 +107,7 @@ export default function EditCustomerPage() {
         const state = INDIAN_STATES.find((s) => s.name === stateName || s.code === (addr.state_code ?? ''));
         if (state) setStateCode(state.code);
         setCreditLimit(d.credit_limit != null ? String(d.credit_limit) : '');
+        setLoyaltyCard(typeof d.loyalty_card === 'string' ? d.loyalty_card : '');
         setSegment((d.segment as string) ?? '');
         setTagsText(Array.isArray(d.tags) ? (d.tags as string[]).join(', ') : '');
         setContacts(parseContacts(d.contacts));
@@ -173,6 +175,7 @@ export default function EditCustomerPage() {
         })),
     };
     if (creditLimit !== '') body.credit_limit = parseFloat(creditLimit) || 0;
+    body.loyalty_card = loyaltyCard.trim() || null;
     if (tagsText.trim()) body.tags = tagsText.split(',').map((t) => t.trim()).filter(Boolean);
     const { error: err } = await apiPatch(`crm/customers/${id}`, body);
     setLoading(false);
@@ -249,6 +252,11 @@ export default function EditCustomerPage() {
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Credit limit</label>
           <input type="text" inputMode="decimal" min={0} value={creditLimit} onChange={(e) => setCreditLimit(limitDecimalPlaces(e.target.value))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Loyalty card / RFID</label>
+          <input type="text" value={loyaltyCard} onChange={(e) => setLoyaltyCard(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm uppercase" placeholder="Scan or type the card number" />
+          <p className="mt-0.5 text-xs text-slate-500">Scan this card on any POS (shop or restaurant) to attach the bill and earn points.</p>
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Segment</label>

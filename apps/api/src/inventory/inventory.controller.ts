@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UploadedFile,
   UseGuards,
@@ -235,5 +236,59 @@ export class InventoryController {
   @RequirePermissions('inventory.stock.view')
   async getStockTransfer(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
     return this.inventoryService.findOneStockTransfer(id, ctx);
+  }
+
+  @Get('recipes')
+  @RequirePermissions('inventory.item.view')
+  listRecipes(@CurrentTenant() ctx: TenantContext) {
+    return this.inventoryService.listRecipes(ctx);
+  }
+
+  @Put('recipes/:finishedItemId')
+  @RequirePermissions('inventory.item.create')
+  saveRecipe(
+    @Param('finishedItemId') finishedItemId: string,
+    @Body() body: { lines: Array<{ component_item_id: string; qty_per_unit: number }> },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.inventoryService.saveRecipe(ctx, finishedItemId, body);
+  }
+
+  @Get('production')
+  @RequirePermissions('inventory.stock.view')
+  listProduction(@CurrentTenant() ctx: TenantContext) {
+    return this.inventoryService.listProduction(ctx);
+  }
+
+  @Post('production')
+  @RequirePermissions('inventory.item.create')
+  runProduction(
+    @Body()
+    body: { warehouse_id: string; finished_item_id: string; qty_produced: number; produced_at?: string; notes?: string },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.inventoryService.runProduction(ctx, body);
+  }
+
+  @Get('promotions')
+  @RequirePermissions('inventory.item.view')
+  listPromotions(@Query('active') active: string | undefined, @CurrentTenant() ctx: TenantContext) {
+    return this.inventoryService.listPromotions(ctx, active === '1' || active === 'true');
+  }
+
+  @Post('promotions')
+  @RequirePermissions('inventory.item.create')
+  createPromotion(@Body() body: Record<string, unknown>, @CurrentTenant() ctx: TenantContext) {
+    return this.inventoryService.createPromotion(ctx, body as Parameters<InventoryService['createPromotion']>[1]);
+  }
+
+  @Patch('promotions/:id')
+  @RequirePermissions('inventory.item.create')
+  patchPromotion(
+    @Param('id') id: string,
+    @Body() body: { is_active?: boolean; name?: string },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.inventoryService.patchPromotion(ctx, id, body);
   }
 }

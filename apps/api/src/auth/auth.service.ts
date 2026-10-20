@@ -502,9 +502,17 @@ export class AuthService {
         await this.tenantRepo.save(refreshed);
       }
     } catch (err) {
-      // Pack seed is best-effort — workspace still usable without storefront.
+      // Pack seed is best-effort — still publish website + selling page.
       // eslint-disable-next-line no-console
       console.warn('[signup] applyPack failed', err instanceof Error ? err.message : err);
+      const fallback = await this.tenantRepo.findOne({ where: { id: tenant.id } });
+      if (fallback) {
+        try {
+          await this.growthService.provisionPublicPresence(fallback, businessType);
+        } catch (siteErr) {
+          console.warn('[signup] storefront seed failed', siteErr instanceof Error ? siteErr.message : siteErr);
+        }
+      }
     }
 
     const userWithRelations = await this.userRepo.findOne({
@@ -634,7 +642,7 @@ export class AuthService {
     if (ctx.tenantId) {
       const t = await this.tenantRepo.findOne({
         where: { id: ctx.tenantId },
-        select: ['id', 'slug', 'settings', 'plan', 'subscription_ends_at'],
+        select: ['id', 'slug', 'settings', 'plan', 'features', 'subscription_ends_at'],
       });
       if (t) tenant = tenantSessionFrom(t);
     }
@@ -764,7 +772,7 @@ export class AuthService {
       if (fresh.tenant_id) {
         const t = await this.tenantRepo.findOne({
           where: { id: fresh.tenant_id },
-          select: ['id', 'slug', 'settings', 'plan', 'subscription_ends_at'],
+          select: ['id', 'slug', 'settings', 'plan', 'features', 'subscription_ends_at'],
         });
         if (t) tenant = tenantSessionFrom(t);
       }
@@ -869,7 +877,7 @@ export class AuthService {
     if (user.tenant_id) {
       const t = user.tenant ?? (await this.tenantRepo.findOne({
         where: { id: user.tenant_id },
-        select: ['id', 'slug', 'settings', 'plan', 'subscription_ends_at'],
+        select: ['id', 'slug', 'settings', 'plan', 'features', 'subscription_ends_at'],
       }));
       if (t) tenant = tenantSessionFrom(t);
     }

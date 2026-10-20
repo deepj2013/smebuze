@@ -16,6 +16,24 @@ export class AdminStorefrontController {
     return this.growth.adminListSites(ctx);
   }
 
+  @Get('orders')
+  @RequirePermissions('admin.tenant.view')
+  orders(@CurrentTenant() ctx: TenantContext) {
+    return this.growth.adminListPortalOrders(ctx);
+  }
+
+  @Get('leads')
+  @RequirePermissions('admin.tenant.view')
+  leads(@CurrentTenant() ctx: TenantContext) {
+    return this.growth.adminListLeads(ctx);
+  }
+
+  @Post('backfill')
+  @RequirePermissions('admin.tenant.create')
+  backfill(@CurrentTenant() ctx: TenantContext) {
+    return this.growth.adminBackfillStorefronts(ctx);
+  }
+
   @Patch(':id')
   @RequirePermissions('admin.tenant.create')
   patch(

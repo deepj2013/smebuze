@@ -201,7 +201,9 @@ export class OnboardingService {
 
     const pack = getClientPack(dto.businessType);
     if (pack?.modules?.length) {
-      const mods = Array.from(new Set(['organization', 'onboarding', 'help', 'dashboard', ...pack.modules]));
+      const mods = Array.from(
+        new Set(['organization', 'onboarding', 'help', 'dashboard', ...pack.modules, ...picked]),
+      );
       tenant.settings = { ...(tenant.settings ?? {}), enabled_modules: mods };
       const features = new Set([...(tenant.features ?? []), ...pack.features]);
       tenant.features = [...features];

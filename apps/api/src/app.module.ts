@@ -31,7 +31,9 @@ import { TransportModule } from './transport/transport.module';
 import { PartnersModule } from './partners/partners.module';
 import { SupportModule } from './support/support.module';
 import { AdminBackupModule } from './admin-backup/admin-backup.module';
+import { MarketplaceModule } from './marketplace/marketplace.module';
 import { SubscriptionGuard } from './common/guards/subscription.guard';
+import { SchemaMigrateService } from './common/schema-migrate.service';
 
 @Module({
   imports: [
@@ -80,8 +82,11 @@ import { SubscriptionGuard } from './common/guards/subscription.guard';
     PartnersModule,
     SupportModule,
     AdminBackupModule,
+    // After BillingModule so forwardRef(Marketplace) from billing resolves cleanly
+    MarketplaceModule,
   ],
   providers: [
+    SchemaMigrateService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: SubscriptionGuard },

@@ -25,6 +25,11 @@ import { isPosBusinessType, isStockTrackedPos } from '../common/tenant-client-ty
 import { parseTenantBranding, TenantBranding } from '../common/tenant-branding';
 import { invoicePrintSizeCss } from '../common/invoice-print-size';
 import {
+  invoiceTemplateCopyLabel,
+  invoiceTemplateDocTitle,
+  invoiceTemplateSkinCss,
+} from '../common/invoice-template';
+import {
   buildInvoicePaySlip,
   frontendPayUrl,
   InvoicePaySlip,
@@ -369,6 +374,8 @@ export class SalesService {
       discount_amount: moneyStr(dto.discount_amount ?? 0),
       gst_applicable: dto.gst_applicable !== false,
       stock_deducted_at: null,
+      notes: dto.notes?.trim() || null,
+      counter_label: dto.counter_label?.trim() || null,
       created_by: ctx.userId,
     }));
     });
@@ -442,6 +449,16 @@ export class SalesService {
           }
         }
         await this.invoiceRepo.update(savedInvoice.id, { stock_deducted_at: new Date() });
+      }
+    }
+
+    if (customerId) {
+      const pts = Math.floor(total / 100);
+      if (pts > 0) {
+        await this.customerRepo.query(
+          `UPDATE customers SET loyalty_points = COALESCE(loyalty_points, 0) + $1 WHERE id = $2 AND tenant_id = $3`,
+          [pts, customerId, tenantId],
+        ).catch(() => undefined);
       }
     }
 
@@ -637,6 +654,57 @@ export class SalesService {
     return this.annotateInvoices(await qb.getMany());
   }
 
+  /** Shop counter home-delivery / pickup bills for the dispatch list. */
+  async listCounterFulfilments(ctx: TenantContext, from?: string, to?: string) {
+    const tenantId = this.assertTenantId(ctx);
+    const start = from || new Date().toISOString().slice(0, 10);
+    const end = to || start;
+    const rows = await this.dataSource.query(
+      `SELECT inv.id, inv.number, inv.invoice_date, inv.total, inv.paid_amount, inv.notes, inv.status,
+              c.name AS customer_name, c.phone AS customer_phone
+       FROM sales_invoices inv
+       LEFT JOIN customers c ON c.id = inv.customer_id
+       WHERE inv.tenant_id = $1
+         AND COALESCE(inv.status, '') <> 'deleted'
+         AND inv.invoice_date >= $2::date
+         AND inv.invoice_date <= $3::date
+         AND inv.notes IS NOT NULL
+         AND (
+           inv.notes ILIKE 'Home delivery%'
+           OR inv.notes ILIKE 'Pickup%'
+         )
+       ORDER BY inv.invoice_date DESC, inv.created_at DESC
+       LIMIT 200`,
+      [tenantId, start, end],
+    ) as Array<{
+      id: string;
+      number: string;
+      invoice_date: string | Date;
+      total: string;
+      paid_amount: string;
+      notes: string;
+      status: string;
+      customer_name: string | null;
+      customer_phone: string | null;
+    }>;
+    return rows.map((r) => {
+      const notes = String(r.notes || '');
+      const kind = /^Pickup/i.test(notes) ? 'pickup' : 'home_delivery';
+      return {
+        id: r.id,
+        number: r.number,
+        invoice_date: String(r.invoice_date).slice(0, 10),
+        total: round2(Number(r.total) || 0),
+        paid: round2(Number(r.paid_amount) || 0),
+        notes,
+        kind,
+        status: r.status,
+        customer_name: r.customer_name,
+        customer_phone: r.customer_phone,
+      };
+    });
+  }
+
   async findOneInvoice(id: string, ctx: TenantContext): Promise<SalesInvoice> {
     const tenantId = this.assertTenantId(ctx);
     const inv = await this.invoiceRepo.findOne({
@@ -646,6 +714,77 @@ export class SalesService {
     if (!inv) throw new NotFoundException('Invoice not found');
     await this.annotateInvoices([inv]);
     return inv;
+  }
+
+  /** JSON file for NIC / GSP upload — not a live portal push. */
+  async eInvoiceFile(id: string, ctx: TenantContext) {
+    const inv = await this.findOneInvoice(id, ctx);
+    const company = inv.company;
+    const buyerGstin = inv.customer?.gstin || inv.vendor?.gstin || '';
+    const payload = {
+      Version: '1.1',
+      TranDtls: { TaxSch: 'GST', SupTyp: buyerGstin ? 'B2B' : 'B2C', RegRev: 'N', EcmGstin: null, IgstOnIntra: 'N' },
+      DocDtls: {
+        Typ: 'INV',
+        No: inv.number,
+        Dt: new Date(inv.invoice_date).toLocaleDateString('en-GB').replace(/\//g, '/'),
+      },
+      SellerDtls: {
+        Gstin: company?.gstin || '',
+        LglNm: company?.legal_name || company?.name || '',
+        Addr1: String((company?.address as Record<string, unknown>)?.line1 || ''),
+      },
+      BuyerDtls: {
+        Gstin: buyerGstin || 'URP',
+        LglNm: inv.customer?.name || inv.vendor?.name || 'Cash',
+        Pos: gstPlaceOfSupply(company?.gstin || null),
+      },
+      ItemList: (inv.lines || []).map((l, i) => ({
+        SlNo: String(i + 1),
+        PrdDesc: l.description,
+        HsnCd: l.hsn_sac,
+        Qty: Number(l.qty),
+        Unit: l.unit,
+        UnitPrice: Number(l.rate),
+        TotAmt: Number(l.taxable_value),
+        GstRt: Number(l.cgst_rate) + Number(l.sgst_rate) + Number(l.igst_rate),
+        CgstAmt: Number(l.cgst_amount),
+        SgstAmt: Number(l.sgst_amount),
+        IgstAmt: Number(l.igst_amount),
+      })),
+      ValDtls: {
+        AssVal: Number(inv.subtotal),
+        CgstVal: (inv.lines || []).reduce((s, l) => s + Number(l.cgst_amount), 0),
+        SgstVal: (inv.lines || []).reduce((s, l) => s + Number(l.sgst_amount), 0),
+        IgstVal: (inv.lines || []).reduce((s, l) => s + Number(l.igst_amount), 0),
+        TotInvVal: Number(inv.total),
+      },
+    };
+    inv.e_invoice_payload = payload;
+    await this.invoiceRepo.save(inv);
+    return payload;
+  }
+
+  async eWayStub(id: string, ctx: TenantContext) {
+    const inv = await this.findOneInvoice(id, ctx);
+    return {
+      ready: false,
+      message: 'e-Way Bill is prepared as a JSON stub. File a bill on the GST portal / GSP with this payload.',
+      invoice_number: inv.number,
+      value: Number(inv.total),
+      e_way_bill_no: inv.e_way_bill_no,
+      payload: {
+        version: '1.0.0621',
+        billLists: [
+          {
+            docNo: inv.number,
+            docDate: new Date(inv.invoice_date).toISOString().slice(0, 10),
+            totInvValue: Number(inv.total),
+            transMode: '1',
+          },
+        ],
+      },
+    };
   }
 
   /**
@@ -2056,11 +2195,13 @@ export class SalesService {
     const branding = parseTenantBranding(tenant?.settings as Record<string, unknown>);
     const terms = tenant?.settings?.terms as string | undefined;
     const pay = await buildInvoicePaySlip(parseTenantRazorpay(tenant?.settings as Record<string, unknown>), inv);
-    if (tenant?.slug === 'star-ice') {
+    const template = branding.invoice_template;
+    if (tenant?.slug === 'star-ice' && template === 'auto') {
       return this.buildStarIceInvoiceHtml(inv, branding, pay);
     }
     const pos = isPosBusinessType(tenant?.settings?.business_type);
-    if (!pos) {
+    const useThermal = template === 'thermal' || (template === 'auto' && pos);
+    if (!useThermal) {
       return this.buildIceCrestInvoiceHtml(inv, terms, branding, pay);
     }
 
@@ -2127,6 +2268,7 @@ ${view.debit ? `<tr><td>Debit notes</td><td class="right">₹${view.debit.toFixe
 <tr><td>Paid</td><td class="right">₹${paid.toFixed(2)}</td></tr>
 <tr><td>Amount Due</td><td class="right">₹${due.toFixed(2)}</td></tr></table>
 </div>
+${this.invoiceUpiQrHtml(branding, true)}
 ${this.invoicePayBlockHtml(pay, true)}
 <p class="footer">Thank you | SMEBUZE</p>
 </body></html>`;
@@ -2259,10 +2401,13 @@ th{background:#f0f0f0;font-weight:bold}
   </table>
 </div>
 
-${bankName || bankAccount ? `<div class="star-ice-bank">
+${bankName || bankAccount || branding?.invoice_qr_url ? `<div class="star-ice-bank" style="display:flex;gap:16px;align-items:flex-start;justify-content:space-between">
+  <div>
   <p><strong>Bank Details:</strong> ${escapeHtml(bankName)}${bankBranch ? ', ' + escapeHtml(bankBranch) : ''}</p>
   ${bankAccount ? `<p><strong>Bank Account No.:</strong> ${escapeHtml(bankAccount)}</p>` : ''}
   ${bankIfsc ? `<p><strong>Bank Branch IFSC:</strong> ${escapeHtml(bankIfsc)}</p>` : ''}
+  </div>
+  ${this.invoiceUpiQrHtml(branding)}
 </div>` : ''}
 ${this.invoicePayBlockHtml(pay)}
 
@@ -2469,12 +2614,15 @@ ${this.invoicePayBlockHtml(pay)}
     const defaultTerms = dueDate
       ? 'Payment due by the date shown. Quality must be checked at delivery.'
       : 'Quality must be checked at delivery.';
-    const docTitle = inv.gst_applicable ? 'Tax Invoice' : 'Invoice';
+    const template = branding?.invoice_template ?? 'auto';
+    const docTitle = invoiceTemplateDocTitle(template, !!inv.gst_applicable);
+    const copyLabel = invoiceTemplateCopyLabel(template);
     const metaRow = (label: string, value: string) => (value ? `<tr><th>${label}</th><td>${escapeHtml(value)}</td></tr>` : '');
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(docTitle)} ${escapeHtml(inv.number)}</title>
 <style>
 ${invoicePrintSizeCss(branding?.invoice_print_size)}
+${invoiceTemplateSkinCss(template)}
 *{box-sizing:border-box}
 body{font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;margin:0;padding:10px;background:#fff}
 .sheet{border:1px solid #111;max-width:210mm;margin:0 auto}
@@ -2516,12 +2664,16 @@ table.grid th{background:#eee;font-size:12px}
 .foot-sign{flex:.9;text-align:right}
 .foot h3{margin:0 0 4px;font-size:13px;text-transform:uppercase}
 .sign-space{height:60px}
+.bank-pay{display:flex;gap:12px;align-items:flex-start;justify-content:space-between}
+.invoice-qr{text-align:center;flex-shrink:0}
+.invoice-qr img{width:108px;height:108px;object-fit:contain;background:#fff;border:1px solid #ccc}
+.invoice-qr p{margin:4px 0 0;font-size:10px}
 .ic-pay{margin:12px auto;max-width:210mm;padding:10px;border:1px dashed #111;display:flex;gap:14px;align-items:center}
 @page{size:A4;margin:8mm}
 @media print{body{padding:0}.sheet{border-width:1px}}
 </style></head><body>
 <div class="sheet">
-  <div class="topbar"><h1>${escapeHtml(docTitle)}</h1><span class="copy">Original for recipient</span></div>
+  <div class="topbar"><h1>${escapeHtml(docTitle)}</h1><span class="copy">${escapeHtml(copyLabel)}</span></div>
   <div class="head">
     <div class="head-left">
       ${logoBlock}
@@ -2634,11 +2786,16 @@ table.grid th{background:#eee;font-size:12px}
     </table>` : ''}
   <div class="foot">
     <div class="foot-bank">
-      <h3>Bank Details</h3>
-      ${bankName ? `<p><strong>Name:</strong> ${escapeHtml(bankName)}</p>` : '<p>Add bank details under Organization → Companies.</p>'}
-      ${str(bank.account_no) ? `<p><strong>Account No:</strong> ${escapeHtml(str(bank.account_no))}</p>` : ''}
-      ${str(bank.ifsc) ? `<p><strong>IFSC code:</strong> ${escapeHtml(str(bank.ifsc))}</p>` : ''}
-      ${str(bank.account_name) ? `<p><strong>Account holder's name:</strong> ${escapeHtml(str(bank.account_name))}</p>` : ''}
+      <div class="bank-pay">
+        <div>
+          <h3>Bank Details</h3>
+          ${bankName ? `<p><strong>Name:</strong> ${escapeHtml(bankName)}</p>` : '<p>Add bank details under Organization → Companies.</p>'}
+          ${str(bank.account_no) ? `<p><strong>Account No:</strong> ${escapeHtml(str(bank.account_no))}</p>` : ''}
+          ${str(bank.ifsc) ? `<p><strong>IFSC code:</strong> ${escapeHtml(str(bank.ifsc))}</p>` : ''}
+          ${str(bank.account_name) ? `<p><strong>Account holder's name:</strong> ${escapeHtml(str(bank.account_name))}</p>` : ''}
+        </div>
+        ${this.invoiceUpiQrHtml(branding)}
+      </div>
     </div>
     <div class="foot-terms">
       <h3>Terms and conditions</h3>
@@ -2739,6 +2896,13 @@ ${email ? `<p>Email: ${escapeHtml(email)}</p>` : ''}${phone ? `<p>Phone: ${escap
 ${name ? `<p>Bank: ${escapeHtml(name)}${branch ? `, ${escapeHtml(branch)}` : ''}</p>` : ''}
 ${account ? `<p>A/C No.: ${escapeHtml(account)}</p>` : ''}
 ${ifsc ? `<p>IFSC: ${escapeHtml(ifsc)}</p>` : ''}</div>`;
+  }
+
+  private invoiceUpiQrHtml(branding?: TenantBranding, compact = false): string {
+    const src = this.resolveLogoUrl(branding?.invoice_qr_url);
+    if (!src) return '';
+    const size = compact ? 88 : 108;
+    return `<div class="invoice-qr"${compact ? ' style="text-align:center;margin-top:8px"' : ''}><img src="${escapeHtml(src)}" alt="Pay QR" style="width:${size}px;height:${size}px;object-fit:contain;background:#fff;border:1px solid #ccc"/><p>Scan to pay</p></div>`;
   }
 
   private invoicePayBlockHtml(pay?: InvoicePaySlip, compact = false): string {

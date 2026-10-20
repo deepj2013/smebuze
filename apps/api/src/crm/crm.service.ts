@@ -83,10 +83,13 @@ export class CrmService {
       segment: string;
       entity_type: string;
       contacts: Record<string, unknown>[];
+      loyalty_card: string;
     }>,
     ctx: TenantContext,
   ): Promise<Customer> {
     const tenantId = this.assertTenantId(ctx);
+    const card = this.normalizeLoyaltyCard(dto.loyalty_card);
+    if (card) await this.assertCardFree(tenantId, card);
     const customer = this.customerRepo.create({
       tenant_id: tenantId,
       company_id: dto.company_id ?? null,
@@ -101,6 +104,7 @@ export class CrmService {
       tags: Array.isArray(dto.tags) ? dto.tags : [],
       contacts: Array.isArray(dto.contacts) ? dto.contacts : [],
       segment: dto.segment ?? null,
+      loyalty_card: card,
     });
     return this.customerRepo.save(customer);
   }
@@ -120,6 +124,44 @@ export class CrmService {
     const customer = await this.customerRepo.findOne({ where: { id, tenant_id: tenantId } });
     if (!customer) throw new NotFoundException('Customer not found');
     return customer;
+  }
+
+  async lookupCustomer(raw: string, ctx: TenantContext): Promise<Customer | null> {
+    const tenantId = this.assertTenantId(ctx);
+    const q = String(raw || '').trim();
+    if (q.length < 4) return null;
+    const digits = q.replace(/\D/g, '');
+    const card = this.normalizeLoyaltyCard(q);
+    const qb = this.customerRepo.createQueryBuilder('c').where('c.tenant_id = :tenantId', { tenantId }).andWhere('c.is_active = true');
+    if (card && card.length >= 4) {
+      const found = await qb.clone().andWhere('UPPER(c.loyalty_card) = :card', { card }).getOne();
+      if (found) return found;
+    }
+    if (digits.length >= 10) {
+      const last10 = digits.slice(-10);
+      const found = await qb
+        .clone()
+        .andWhere("RIGHT(regexp_replace(COALESCE(c.phone, ''), '[^0-9]', '', 'g'), 10) = :last10", { last10 })
+        .getOne();
+      if (found) return found;
+    }
+    return null;
+  }
+
+  private normalizeLoyaltyCard(value: unknown): string | null {
+    const s = String(value ?? '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    return s.length >= 4 ? s.slice(0, 64) : null;
+  }
+
+  private async assertCardFree(tenantId: string, card: string, exceptId?: string): Promise<void> {
+    const existing = await this.customerRepo
+      .createQueryBuilder('c')
+      .where('c.tenant_id = :tenantId', { tenantId })
+      .andWhere('UPPER(c.loyalty_card) = :card', { card })
+      .getOne();
+    if (existing && existing.id !== exceptId) {
+      throw new BadRequestException('This loyalty card is already on another customer.');
+    }
   }
 
   async updateLead(
@@ -168,6 +210,7 @@ export class CrmService {
       tags: string[];
       entity_type: string;
       contacts: Record<string, unknown>[];
+      loyalty_card: string | null;
     }>,
     ctx: TenantContext,
   ): Promise<Customer> {
@@ -183,6 +226,11 @@ export class CrmService {
     if (dto.category_id !== undefined) customer.category_id = dto.category_id;
     if (Array.isArray(dto.tags)) customer.tags = dto.tags;
     if (Array.isArray(dto.contacts)) customer.contacts = dto.contacts;
+    if (dto.loyalty_card !== undefined) {
+      const card = this.normalizeLoyaltyCard(dto.loyalty_card);
+      if (card) await this.assertCardFree(customer.tenant_id, card, customer.id);
+      customer.loyalty_card = card;
+    }
     return this.customerRepo.save(customer);
   }
 

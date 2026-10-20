@@ -33,6 +33,13 @@ function newTrackingToken(): string {
   return randomBytes(5).toString('hex');
 }
 
+export const BUYER_STATUSES = ['placed', 'confirmed', 'packed', 'out_for_delivery', 'delivered', 'cancelled'] as const;
+export type BuyerStatus = (typeof BUYER_STATUSES)[number];
+
+function isBuyerStatus(value: unknown): value is BuyerStatus {
+  return typeof value === 'string' && (BUYER_STATUSES as readonly string[]).includes(value);
+}
+
 function publicItem(item: Item) {
   return {
     id: item.id,
@@ -107,7 +114,23 @@ export class GrowthService {
 
   async ensureSite(tenant: Tenant, opts?: { published?: boolean; shop?: boolean; pages?: Record<string, unknown> }): Promise<StorefrontSite> {
     let site = await this.siteRepo.findOne({ where: { tenant_id: tenant.id } });
-    if (site) return site;
+    if (site) {
+      let dirty = false;
+      if (opts?.published === true && !site.is_published) {
+        site.is_published = true;
+        dirty = true;
+      }
+      if (opts?.shop === true && !site.shop_enabled) {
+        site.shop_enabled = true;
+        dirty = true;
+      }
+      if (opts?.pages && (!site.pages || Object.keys(site.pages).length === 0)) {
+        site.pages = opts.pages;
+        dirty = true;
+      }
+      if (dirty) site = await this.siteRepo.save(site);
+      return site;
+    }
     let slug = slugify(tenant.slug || tenant.name);
     const clash = await this.siteRepo.findOne({ where: { slug } });
     if (clash) slug = `${slug}-${tenant.id.slice(0, 6)}`;
@@ -116,7 +139,7 @@ export class GrowthService {
       slug,
       custom_domain: null,
       domain_status: 'none',
-      is_published: opts?.published ?? false,
+      is_published: opts?.published ?? true,
       shop_enabled: opts?.shop ?? true,
       theme: {},
       pages: opts?.pages ?? defaultPages(tenant.name),
@@ -124,11 +147,22 @@ export class GrowthService {
     return this.siteRepo.save(site);
   }
 
+  /** Every registered tenant gets a live website (`/site`) and selling page (`/shop`). */
+  async provisionPublicPresence(tenant: Tenant, type?: string) {
+    const pack = getClientPack(type || (typeof tenant.settings?.business_type === 'string' ? tenant.settings.business_type : '') || 'trading');
+    const pages = defaultPages(tenant.name, pack?.website);
+    return this.ensureSite(tenant, {
+      published: true,
+      shop: true,
+      pages,
+    });
+  }
+
   async getMySite(ctx: TenantContext) {
     const tenantId = this.assertTenant(ctx);
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
     if (!tenant) throw new NotFoundException('Tenant not found');
-    const site = await this.ensureSite(tenant);
+    const site = await this.provisionPublicPresence(tenant);
     return this.sitePayload(site, tenant);
   }
 
@@ -210,11 +244,65 @@ export class GrowthService {
     const where: { tenant_id: string; channel?: string } = { tenant_id: tenantId };
     if (channel) where.channel = channel;
     else where.channel = 'buyer_portal';
-    return this.orderRepo.find({
+    const orders = await this.orderRepo.find({
       where,
-      relations: ['customer', 'lines', 'lines.item'],
+      relations: ['customer', 'lines'],
       order: { created_at: 'DESC' },
+      take: 200,
     });
+    const site = await this.siteRepo.findOne({ where: { tenant_id: tenantId } });
+    const challans =
+      orders.length === 0
+        ? []
+        : await this.challanRepo.find({
+            where: { tenant_id: tenantId, order_id: In(orders.map((o) => o.id)) },
+          });
+    const byOrder = new Map<string, string[]>();
+    for (const c of challans) {
+      if (!c.order_id) continue;
+      const list = byOrder.get(c.order_id) ?? [];
+      list.push(c.status);
+      byOrder.set(c.order_id, list);
+    }
+    return orders.map((o) => this.serializePortalOrder(o, site?.slug, byOrder.get(o.id) ?? []));
+  }
+
+  async setPortalOrderStatus(ctx: TenantContext, orderId: string, status: string) {
+    const tenantId = this.assertTenant(ctx);
+    if (!isBuyerStatus(status)) throw new BadRequestException('Invalid fulfilment status');
+    const order = await this.orderRepo.findOne({
+      where: { id: orderId, tenant_id: tenantId, channel: 'buyer_portal' },
+      relations: ['customer', 'lines'],
+    });
+    if (!order) throw new NotFoundException('Portal order not found');
+    order.shipping_json = { ...(order.shipping_json ?? {}), buyer_status: status };
+    if (status === 'cancelled') order.status = 'cancelled';
+    else if (status === 'delivered') order.status = 'delivered';
+    else order.status = 'confirmed';
+    await this.orderRepo.save(order);
+    const site = await this.siteRepo.findOne({ where: { tenant_id: tenantId } });
+    return this.serializePortalOrder(order, site?.slug, []);
+  }
+
+  async deskSummary(ctx: TenantContext) {
+    const tenantId = this.assertTenant(ctx);
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const site = await this.provisionPublicPresence(tenant);
+    const listed = await this.itemRepo.count({
+      where: { tenant_id: tenantId, is_active: true, for_sale: true, portal_listed: true },
+    });
+    const orders = await this.portalOrders(ctx);
+    const open = orders.filter((o) => !['delivered', 'cancelled'].includes(o.buyer_status));
+    const leads = await this.ingestRepo.count({ where: { tenant_id: tenantId } });
+    return {
+      site: this.sitePayload(site, tenant),
+      listed_items: listed,
+      open_orders: open.length,
+      delivered_orders: orders.filter((o) => o.buyer_status === 'delivered').length,
+      leads,
+      recent_orders: orders.slice(0, 8),
+    };
   }
 
   async getChannels(ctx: TenantContext) {
@@ -423,14 +511,14 @@ export class GrowthService {
     let site = await this.siteRepo.findOne({ where: { tenant_id: tenantId } });
     const pages = defaultPages(tenant.name, pack.website);
     if (!site) {
-      site = await this.ensureSite(tenant, { published: true, shop: pack.shop_checkout, pages });
+      site = await this.ensureSite(tenant, { published: true, shop: true, pages });
     } else if (opts?.force || !site.pages || Object.keys(site.pages).length === 0) {
       site.pages = pages;
-      site.shop_enabled = pack.shop_checkout;
+      site.shop_enabled = true;
       site.is_published = true;
       await this.siteRepo.save(site);
     } else {
-      site.shop_enabled = pack.shop_checkout;
+      site.shop_enabled = true;
       site.is_published = true;
       await this.siteRepo.save(site);
     }
@@ -448,6 +536,66 @@ export class GrowthService {
     }
 
     return { pack: pack.id, listed_items: listed, site: this.sitePayload(site, tenant) };
+  }
+
+  async adminBackfillStorefronts(ctx: TenantContext) {
+    if (!ctx.isSuperAdmin) throw new ForbiddenException('Platform admin only');
+    const tenants = await this.tenantRepo.find();
+    let created = 0;
+    for (const tenant of tenants) {
+      if (!tenant.is_active) continue;
+      const before = await this.siteRepo.findOne({ where: { tenant_id: tenant.id } });
+      await this.provisionPublicPresence(tenant);
+      if (!before) created += 1;
+    }
+    return { tenants: tenants.length, created };
+  }
+
+  async adminListPortalOrders(ctx: TenantContext) {
+    if (!ctx.isSuperAdmin) throw new ForbiddenException('Platform admin only');
+    const orders = await this.orderRepo.find({
+      where: { channel: 'buyer_portal' },
+      relations: ['customer', 'lines'],
+      order: { created_at: 'DESC' },
+      take: 200,
+    });
+    const tenants = await this.tenantRepo.find();
+    const sites = await this.siteRepo.find();
+    const tenantById = new Map(tenants.map((t) => [t.id, t]));
+    const siteByTenant = new Map(sites.map((s) => [s.tenant_id, s]));
+    return orders.map((o) => {
+      const t = tenantById.get(o.tenant_id);
+      const site = siteByTenant.get(o.tenant_id);
+      return {
+        ...this.serializePortalOrder(o, site?.slug, []),
+        tenant_id: o.tenant_id,
+        tenant_name: t?.name ?? '',
+        tenant_slug: t?.slug ?? '',
+      };
+    });
+  }
+
+  async adminListLeads(ctx: TenantContext) {
+    if (!ctx.isSuperAdmin) throw new ForbiddenException('Platform admin only');
+    const events = await this.ingestRepo.find({ order: { created_at: 'DESC' }, take: 200 });
+    const tenants = await this.tenantRepo.find();
+    const tenantById = new Map(tenants.map((t) => [t.id, t]));
+    return events.map((e) => {
+      const t = tenantById.get(e.tenant_id);
+      return {
+        id: e.id,
+        tenant_id: e.tenant_id,
+        tenant_name: t?.name ?? '',
+        tenant_slug: t?.slug ?? '',
+        source: e.source,
+        name: e.name,
+        phone: e.phone,
+        email: e.email,
+        message: e.message,
+        lead_id: e.lead_id,
+        created_at: e.created_at,
+      };
+    });
   }
 
   async adminListSites(ctx: TenantContext) {
@@ -636,6 +784,16 @@ export class GrowthService {
           tags: ['buyer_portal'],
         }),
       );
+    } else {
+      if (name && customer.name !== name) customer.name = name;
+      if (body.email && !customer.email) customer.email = body.email.trim();
+      if (body.address && Object.keys(body.address).length) {
+        customer.address = { ...(customer.address ?? {}), ...body.address };
+      }
+      if (!Array.isArray(customer.tags) || !customer.tags.includes('buyer_portal')) {
+        customer.tags = [...(customer.tags ?? []), 'buyer_portal'];
+      }
+      await this.customerRepo.save(customer);
     }
 
     const itemIds = [...new Set(linesIn.map((l) => l.item_id))];
@@ -667,7 +825,7 @@ export class GrowthService {
         tax_amount: '0',
         channel: 'buyer_portal',
         tracking_token: newTrackingToken(),
-        shipping_json: body.address ?? {},
+        shipping_json: { ...(body.address ?? {}), buyer_status: 'placed' },
         buyer_note: body.note?.trim() || null,
         requirement_channel: 'website',
         requirement_given_by: name,
@@ -689,14 +847,18 @@ export class GrowthService {
       );
     }
 
-    await this.ingestLeadInternal(tenant, {
-      source: 'shop',
-      name,
-      phone,
-      email: body.email,
-      message: `Portal order ${order.number}`,
-      metadata: { order_id: order.id, tracking_token: order.tracking_token },
-    });
+    try {
+      await this.ingestLeadInternal(tenant, {
+        source: 'shop',
+        name,
+        phone,
+        email: body.email,
+        message: `Portal order ${order.number}`,
+        metadata: { order_id: order.id, tracking_token: order.tracking_token },
+      });
+    } catch {
+      /* lead hub optional — order still belongs to the tenant */
+    }
 
     return {
       number: order.number,
@@ -715,7 +877,7 @@ export class GrowthService {
     });
     if (!order) throw new NotFoundException('Order not found');
     const challans = await this.challanRepo.find({ where: { tenant_id: tenant.id, order_id: order.id } });
-    const buyerStatus = this.buyerStatus(order.status, challans.map((c) => c.status));
+    const buyerStatus = this.buyerStatus(order, challans.map((c) => c.status));
     return {
       slug: site.slug,
       number: order.number,
@@ -727,13 +889,41 @@ export class GrowthService {
     };
   }
 
-  private buyerStatus(orderStatus: string, challanStatuses: string[]): string {
-    if (['cancelled', 'rejected'].includes(orderStatus)) return 'cancelled';
-    if (challanStatuses.some((s) => s === 'delivered')) return 'delivered';
+  private buyerStatus(order: SalesOrder, challanStatuses: string[]): BuyerStatus {
+    const stored = order.shipping_json?.buyer_status;
+    if (isBuyerStatus(stored)) return stored;
+    if (['cancelled', 'rejected'].includes(order.status)) return 'cancelled';
+    if (order.status === 'delivered' || challanStatuses.some((s) => s === 'delivered')) return 'delivered';
     if (challanStatuses.some((s) => s === 'issued' || s === 'dispatched' || s === 'out_for_delivery')) return 'out_for_delivery';
     if (challanStatuses.some((s) => s === 'draft' || s === 'packed')) return 'packed';
-    if (orderStatus === 'confirmed' || orderStatus === 'accepted') return 'confirmed';
+    if (order.status === 'confirmed' || order.status === 'accepted') return 'confirmed';
     return 'placed';
+  }
+
+  private serializePortalOrder(order: SalesOrder, slug?: string | null, challanStatuses: string[] = []) {
+    const buyer_status = this.buyerStatus(order, challanStatuses);
+    return {
+      id: order.id,
+      number: order.number,
+      order_date: order.order_date,
+      status: order.status,
+      buyer_status,
+      total: order.total,
+      channel: order.channel,
+      tracking_token: order.tracking_token,
+      buyer_note: order.buyer_note,
+      shipping: order.shipping_json ?? {},
+      customer: order.customer
+        ? { id: order.customer.id, name: order.customer.name, phone: order.customer.phone, email: order.customer.email }
+        : null,
+      lines: (order.lines ?? []).map((l) => ({
+        description: l.description,
+        qty: l.quantity,
+        unit: l.unit,
+        rate: l.rate,
+      })),
+      track_path: slug && order.tracking_token ? `/shop/${slug}/track/${order.tracking_token}` : null,
+    };
   }
 
   async ingestPublicLead(body: {

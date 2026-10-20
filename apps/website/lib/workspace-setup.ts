@@ -14,7 +14,8 @@ export const WORKSPACE_MODULE_OPTIONS = [
 
 export type WorkspaceModuleId = (typeof WORKSPACE_MODULE_OPTIONS)[number]['id'];
 
-const ALWAYS_ON = ['organization', 'onboarding', 'help', 'dashboard', 'hr'] as const;
+/** Core chrome only — HR is opt-in (transport / ice / owner), never forced onto every shop. */
+const ALWAYS_ON = ['organization', 'onboarding', 'help', 'dashboard'] as const;
 
 export type LoginLikePayload = {
   user?: { isSuperAdmin?: boolean; tenantId?: string | null };
@@ -65,31 +66,33 @@ export function resolveEnabledModules(
 }
 
 export function defaultModulesForShop(type: string): string[] {
-  // Floor restaurants: waiter / kitchen / POS — hide purchase & accounts by default
   if (type === 'dine_restaurant' || type === 'cafe') {
     return ['sales', 'inventory', 'crm', 'reports'];
   }
-  // Salon / clinic: bill services + leads; no purchase/accounts clutter
   if (type === 'salon' || type === 'clinic') {
-    return ['sales', 'crm', 'reports'];
+    return ['sales', 'crm', 'inventory', 'reports'];
   }
-  // Counter shops with stock
+  if (type === 'department_store') {
+    return ['sales', 'inventory', 'purchase', 'crm', 'reports'];
+  }
   if (isPosBusinessType(type)) {
-    return ['sales', 'inventory', 'reports', 'crm'];
+    return ['sales', 'inventory', 'purchase', 'crm', 'reports'];
   }
-  // Desk services / lodging / coaching — no godown purchase loop
-  if (type === 'services' || type === 'coaching' || type === 'hotel') {
+  if (type === 'services') {
+    return ['crm', 'sales', 'accounting', 'reports', 'service'];
+  }
+  if (type === 'coaching' || type === 'hotel') {
     return ['crm', 'sales', 'accounting', 'reports'];
   }
-  // Transporter / fleet desk
   if (type === 'transport') {
     return ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'hr', 'transport'];
   }
-  // Ice vertical
   if (type === 'ice_crest') {
     return ['crm', 'sales', 'inventory', 'reports', 'hr'];
   }
-  // Trading / B2B / manufacturing / HORECA wholesale — full desk
+  if (type === 'manufacturing') {
+    return ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports'];
+  }
   return ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports'];
 }
 

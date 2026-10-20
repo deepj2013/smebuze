@@ -88,6 +88,21 @@ export class SalesInvoice {
   @Column({ default: true }) gst_applicable: boolean;
   @Column('timestamptz', { nullable: true }) stock_deducted_at: Date | null;
 
+  /** Counter fulfilment / delivery note (e.g. Home delivery · address). */
+  @Column({ type: 'text', nullable: true })
+  notes: string | null;
+
+  /** Which till / counter logged the bill (one login = one counter name). */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  counter_label: string | null;
+
+  /** Generated e-invoice JSON payload (file for NIC / GSP upload — not live portal push). */
+  @Column({ type: 'jsonb', nullable: true })
+  e_invoice_payload: Record<string, unknown> | null;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  e_way_bill_no: string | null;
+
   @Column('uuid', { nullable: true })
   created_by: string | null;
 

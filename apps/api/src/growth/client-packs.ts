@@ -19,12 +19,12 @@ const ERP = ['dashboard', 'crm', 'sales', 'purchase', 'inventory', 'accounting',
 const POS = ['dashboard', 'sales', 'inventory', 'reports'];
 /** Floor / dine-in: menu + tables, no purchase/accounts clutter. */
 const FLOOR = ['dashboard', 'sales', 'inventory', 'crm', 'reports', 'onboarding'];
-/** Service counter (salon/clinic): bill services, leads; light stock for retail add-ons. */
-const SERVICE_POS = ['dashboard', 'sales', 'crm', 'reports', 'onboarding'];
+/** Service counter (salon/clinic): bill services, leads; service list without purchase desk. */
+const SERVICE_POS = ['dashboard', 'sales', 'crm', 'inventory', 'reports', 'onboarding'];
 
 const POS_SHOP = {
-  modules: [...POS, 'crm', 'onboarding'],
-  features: ['sales', 'inventory', 'crm', 'reports', 'storefront', 'catalog', 'lead_hub'],
+  modules: [...POS, 'crm', 'purchase', 'onboarding'],
+  features: ['sales', 'inventory', 'purchase', 'crm', 'reports', 'storefront', 'catalog', 'lead_hub'],
   shop_checkout: true,
   list_existing_items: true,
 };
@@ -45,7 +45,7 @@ const FLOOR_ENQUIRY = {
 
 const SERVICE_ENQUIRY = {
   modules: SERVICE_POS,
-  features: ['sales', 'crm', 'reports', 'storefront', 'lead_hub'],
+  features: ['sales', 'crm', 'inventory', 'reports', 'storefront', 'lead_hub'],
   shop_checkout: false,
   list_existing_items: true,
 };
@@ -127,12 +127,12 @@ export const CLIENT_PACKS: ClientPack[] = [
     hero_title: 'Fresh mithai, made to order',
     hero_subtitle: 'Pre-order boxes for festivals, gifting and daily counter pickup.',
     about: 'Order online, collect from the shop or ask us to deliver.',
-  }),
+  }, { features: [...POS_SHOP.features, 'recipe_production'] }),
   pack('bakery', 'Bakery', 'POS plus pre-order for cakes, breads and daily bake.', POS_SHOP, {
     hero_title: 'Fresh from the oven',
     hero_subtitle: 'Order cakes and daily bread. Collect from the shop or we deliver.',
     about: 'Same bakery counter, now with online pre-order.',
-  }),
+  }, { features: [...POS_SHOP.features, 'recipe_production'] }),
   pack('pharmacy', 'Pharmacy / medical store', 'Medicine counter plus an OTC catalog.', POS_SHOP, {
     hero_title: 'Your neighbourhood pharmacy',
     hero_subtitle: 'Order OTC and wellness items. Prescription medicines at the counter.',
@@ -152,7 +152,7 @@ export const CLIENT_PACKS: ClientPack[] = [
     hero_title: 'See our collection',
     hero_subtitle: 'Browse designs and send an enquiry or reserve a piece.',
     about: 'Visit the store to try on. Online orders are confirmed by our staff.',
-  }),
+  }, { shop_checkout: false, list_existing_items: true }),
   pack('auto_parts', 'Auto parts', 'Spare-parts counter plus a public catalog.', POS_SHOP, {
     hero_title: 'Genuine spare parts',
     hero_subtitle: 'Search parts and order for your workshop or vehicle.',
@@ -168,11 +168,15 @@ export const CLIENT_PACKS: ClientPack[] = [
     hero_subtitle: 'Order notebooks, pens and kits. Collect from the shop.',
     about: 'Your neighbourhood stationery store, now online.',
   }),
-  pack('department_store', 'Department store', 'Barcode counter, departments, pack stock, cash and monthly credit.', POS_SHOP, {
+  pack('department_store', 'Department store', 'Barcode counter, departments, pack stock, cash and monthly credit + purchase desk.', POS_SHOP, {
     hero_title: 'Shop by department',
     hero_subtitle: 'Browse products and place an order for pickup or delivery.',
     about: 'One catalog for the floor and the website.',
-  }, { modules: [...POS, 'crm', 'purchase', 'onboarding'], features: ['sales', 'inventory', 'purchase', 'crm', 'reports', 'storefront', 'catalog', 'lead_hub'], list_existing_items: false }),
+  }, {
+    modules: [...POS, 'crm', 'purchase', 'onboarding'],
+    features: ['sales', 'inventory', 'purchase', 'crm', 'reports', 'storefront', 'catalog', 'lead_hub'],
+    list_existing_items: false,
+  }),
   pack('dine_restaurant', 'Dine-in restaurant', 'Waiter · kitchen · floor · POS — public menu for bookings, not a cart.', FLOOR_ENQUIRY, {
     hero_title: 'Our menu',
     hero_subtitle: 'See what we serve. Book a table or send an enquiry.',
@@ -193,10 +197,13 @@ export const CLIENT_PACKS: ClientPack[] = [
     hero_subtitle: 'See our services and send an appointment request.',
     about: 'Reception bills consultations and tests. Use this page to reach us.',
   }),
-  pack('services', 'Services / agency', 'Public website and lead hub — no product cart.', DESK_ENQUIRY, {
+  pack('services', 'Services / agency', 'Public website, lead hub and service tickets — no product cart.', DESK_ENQUIRY, {
     hero_title: 'How can we help?',
     hero_subtitle: 'Tell us what you need. We will get back with a quote.',
     about: 'Service firm website with a central inbox for every lead source.',
+  }, {
+    modules: ['dashboard', 'crm', 'sales', 'accounting', 'reports', 'service', 'onboarding'],
+    features: ['crm', 'sales', 'accounting', 'reports', 'storefront', 'lead_hub', 'whatsapp', 'service'],
   }),
   pack('coaching', 'Coaching / tuition', 'Course pages and a lead inbox for admissions.', DESK_ENQUIRY, {
     hero_title: 'Learn with us',
@@ -208,11 +215,15 @@ export const CLIENT_PACKS: ClientPack[] = [
     hero_subtitle: 'See rooms and send a booking enquiry. We confirm rates and dates.',
     about: 'Hotel website with a central inbox for website, WhatsApp and walk-in leads.',
   }),
-  pack('manufacturing', 'Manufacturing / job work', 'Finished-goods catalog plus GST desk.', DESK_SHOP, {
+  pack('manufacturing', 'Manufacturing / job work', 'Finished-goods catalog, recipes/production, GST desk (enquiry-first).', DESK_ENQUIRY, {
     hero_title: 'Our products',
-    hero_subtitle: 'Order finished goods. We confirm MOQ, lead time and GST invoice.',
-    about: 'Factory catalog for buyers. Stock and billing stay in SMEBUZE.',
-  }, { list_existing_items: true }),
+    hero_subtitle: 'Enquire for finished goods. We confirm MOQ, lead time and GST invoice.',
+    about: 'Factory catalog for buyers. Stock, recipes and billing stay in SMEBUZE.',
+  }, {
+    modules: [...ERP, 'onboarding'],
+    features: ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'storefront', 'lead_hub', 'whatsapp', 'recipe_production'],
+    list_existing_items: true,
+  }),
   pack('transport', 'Transporter / fleet', 'Freight billing, party ledger, diesel expenses and driver payroll.', {
     modules: ['dashboard', 'crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'hr', 'transport', 'onboarding'],
     features: ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'storefront', 'lead_hub', 'whatsapp', 'transport'],

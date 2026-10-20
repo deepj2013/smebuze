@@ -5,7 +5,7 @@ const INDEXABLE = new Set(['/', '/signup', '/privacy', '/terms', '/cookies', '/i
 
 function isIndexable(pathname: string): boolean {
   if (INDEXABLE.has(pathname)) return true;
-  if (pathname.startsWith('/shop/') || pathname.startsWith('/site/') || pathname === '/shops') return true;
+  if (pathname.startsWith('/shop/') || pathname.startsWith('/site/') || pathname.startsWith('/mall') || pathname === '/shops') return true;
   return false;
 }
 
@@ -14,7 +14,7 @@ export function middleware(request: NextRequest) {
   const host = request.headers.get('host')?.split(':')[0]?.toLowerCase() || '';
   const platform = new Set(['smebuze.com', 'www.smebuze.com', 'localhost', '127.0.0.1']);
 
-  if (!platform.has(host) && !pathname.startsWith('/_next') && !pathname.startsWith('/shop') && !pathname.startsWith('/site')) {
+  if (!platform.has(host) && !pathname.startsWith('/_next') && !pathname.startsWith('/shop') && !pathname.startsWith('/site') && !pathname.startsWith('/mall')) {
     const url = request.nextUrl.clone();
     url.pathname = `/site/${host}`;
     const res = NextResponse.rewrite(url);

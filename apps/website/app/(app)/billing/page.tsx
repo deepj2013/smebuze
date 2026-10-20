@@ -27,6 +27,8 @@ type BillingStatus = {
   package_note?: string;
   gateways: { razorpay: boolean; phonepe: boolean };
   payment_status?: string;
+  ecs?: { enabled: boolean; status: string | null; short_url?: string | null; next_charge_at?: string | null };
+  ecs_note?: string;
 };
 
 type RazorpayCheckout = { open: () => void };
@@ -276,6 +278,40 @@ export default function BillingPage() {
                   </span>
                 </span>
               </label>
+              <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+                <p className="text-sm font-medium text-slate-900">ECS / eMandate auto-debit</p>
+                <p className="text-xs text-slate-500">{status.ecs_note || 'Authorise once; SMEBUZE plan renews automatically. Separate from shop customer payments.'}</p>
+                {status.ecs?.status && <p className="text-xs">Status: {status.ecs.status}{status.ecs.next_charge_at ? ` · next ${status.ecs.next_charge_at.slice(0, 10)}` : ''}</p>}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={paying !== '' || !status.gateways.razorpay}
+                    onClick={async () => {
+                      setError('');
+                      const r = await apiPost<{ short_url?: string | null; already_active?: boolean; message?: string }>('billing/ecs/setup', { plan, interval });
+                      if (r.error) setError(Array.isArray(r.error) ? r.error.join(' ') : r.error);
+                      else if (r.data?.short_url) window.open(r.data.short_url, '_blank');
+                      else setOk(r.data?.message || 'ECS started');
+                      load();
+                    }}
+                    className="rounded-lg bg-slate-900 text-white px-3 py-2 text-xs"
+                  >
+                    {status.ecs?.enabled ? 'ECS active' : 'Set up auto-debit'}
+                  </button>
+                  {status.ecs?.enabled && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await apiPost('billing/ecs/cancel', {});
+                        load();
+                      }}
+                      className="rounded-lg border px-3 py-2 text-xs"
+                    >
+                      Cancel ECS
+                    </button>
+                  )}
+                </div>
+              </div>
               <div>
                 <p className="text-3xl font-bold text-slate-900">
                   {quote ? inr(quote.amount_rupees) : '—'}

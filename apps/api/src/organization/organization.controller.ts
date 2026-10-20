@@ -234,6 +234,27 @@ export class OrganizationController {
     return this.orgService.saveBranding(ctx, { logo_url: logoUrl });
   }
 
+  @Post('branding/qr')
+  @RequirePermissions('org.company.update')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
+  async uploadInvoiceQr(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('No file uploaded');
+    if (!ctx.tenantId) throw new BadRequestException('Workspace required');
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.png';
+    if (!['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
+      throw new BadRequestException('QR must be PNG, JPG or WEBP');
+    }
+    const dir = path.join(process.cwd(), 'uploads', 'invoice-qr');
+    fs.mkdirSync(dir, { recursive: true });
+    const filename = `tenant-${ctx.tenantId}${ext === '.jpeg' ? '.jpg' : ext}`;
+    fs.writeFileSync(path.join(dir, filename), file.buffer);
+    const invoiceQrUrl = `/uploads/invoice-qr/${filename}`;
+    return this.orgService.saveBranding(ctx, { invoice_qr_url: invoiceQrUrl });
+  }
+
   @Get('hardware')
   @RequirePermissions('org.company.view')
   async getHardware(@CurrentTenant() ctx: TenantContext) {

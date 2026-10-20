@@ -32,6 +32,9 @@ import LooseAsk from './LooseAsk';
 import CashNotePad from '../components/CashNotePad';
 import { formatNotesSummary, notesTotal, type NoteCounts } from '@/lib/cash-notes';
 import { isLooseItem } from '@/lib/loose-sale';
+import { showsCounterOrderModes } from '@/lib/business-types';
+import CounterCustomerBar from './CounterCustomerBar';
+import { lookupCounterCustomer, type CounterParty } from '@/lib/counter-customer';
 
 interface ShelfItem {
   id: string;
@@ -61,13 +64,7 @@ interface CategoryRow {
   parent_id?: string | null;
 }
 
-interface Customer {
-  id: string;
-  name: string;
-  phone?: string | null;
-  tags?: string[];
-  segment?: string | null;
-}
+interface Customer extends CounterParty {}
 
 interface CartLine {
   item_id: string;
@@ -151,6 +148,9 @@ export default function DepartmentCounter() {
   const [guestPhone, setGuestPhone] = useState('');
   const [savedGuest, setSavedGuest] = useState<{ id: string; name: string; phone: string } | null>(null);
   const [orderType, setOrderType] = useState<'takeaway' | 'dinein' | 'delivery'>('takeaway');
+  /** Product shops: in-shop, home delivery, or pickup — not restaurant dine-in. */
+  const [shopFulfilment, setShopFulfilment] = useState<'counter' | 'home_delivery' | 'pickup'>('counter');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
   const [looseItem, setLooseItem] = useState<ShelfItem | null>(null);
   const [subcategory, setSubcategory] = useState('all');
   const [query, setQuery] = useState('');
@@ -167,6 +167,7 @@ export default function DepartmentCounter() {
   const [tenantKey, setTenantKey] = useState('');
   const [lang, setLang] = useState<CounterLang>('en');
   const [seeCost, setSeeCost] = useState(false);
+  const [showOrderModes, setShowOrderModes] = useState(false);
   const [held, setHeld] = useState<HeldBill[]>([]);
   const [waiting, setWaiting] = useState(0);
   const [returnsOpen, setReturnsOpen] = useState(false);
@@ -189,7 +190,10 @@ export default function DepartmentCounter() {
       const [custRes, coRes, meRes] = await Promise.all([
         apiGet<Customer[] | { data: Customer[] }>('crm/customers'),
         apiGet<{ id: string; name?: string; gstin?: string | null; address?: Record<string, unknown> | null }[] | { data: { id: string; name?: string; gstin?: string | null; address?: Record<string, unknown> | null }[] }>('organization/companies'),
-        apiGet<{ user?: { permissions?: string[]; isSuperAdmin?: boolean }; tenant?: { id?: string; slug?: string } }>('auth/me'),
+        apiGet<{
+          user?: { permissions?: string[]; isSuperAdmin?: boolean };
+          tenant?: { id?: string; slug?: string; settings?: { business_type?: string; counter_order_modes?: boolean } };
+        }>('auth/me'),
       ]);
       const custList = Array.isArray(custRes.data) ? custRes.data : custRes.data?.data ?? [];
       const coList = Array.isArray(coRes.data) ? coRes.data : coRes.data?.data ?? [];
@@ -202,6 +206,14 @@ export default function DepartmentCounter() {
       if (walkIn) setCustomerId(walkIn.id);
       const perms = meRes.data?.user?.permissions ?? [];
       setSeeCost(!!meRes.data?.user?.isSuperAdmin || perms.includes('*') || perms.includes('reports.view') || perms.includes('org.company.update'));
+      const settings = meRes.data?.tenant?.settings;
+      // Explicit tenant setting wins; otherwise food counters only (restaurant / cafe / sweet / bakery).
+      const modes =
+        typeof settings?.counter_order_modes === 'boolean'
+          ? settings.counter_order_modes
+          : showsCounterOrderModes(settings?.business_type);
+      setShowOrderModes(modes);
+      if (!modes) setOrderType('takeaway');
       const key = meRes.data?.tenant?.slug || meRes.data?.tenant?.id || 'shop';
       setTenantKey(key);
       setHeld(loadHeld(key));
@@ -277,9 +289,24 @@ export default function DepartmentCounter() {
     // Keep product grid open on phone — user opens Buy list when ready to pay.
   }, [lang]);
 
+  const customersRef = useRef<Customer[]>([]);
+  customersRef.current = customers;
+
   const applyCode = useCallback(async (raw: string) => {
     const q = raw.trim();
     if (!q) return;
+    const party = await lookupCounterCustomer(q, customersRef.current);
+    if (party?.id) {
+      setCustomerId(party.id);
+      setGuestName(party.name);
+      if (party.phone) setGuestPhone(party.phone);
+      setSavedGuest({ id: party.id, name: party.name, phone: party.phone || '' });
+      setCustomers((prev) => (prev.some((c) => c.id === party.id) ? prev.map((c) => (c.id === party.id ? { ...c, ...party } : c)) : [party, ...prev]));
+      if (isCredit(party)) setPayMode('credit');
+      playScanBeep(true);
+      success(`${party.name} on this bill`);
+      return;
+    }
     const exact = itemsRef.current.find(
       (i) => (i.barcode || '').toLowerCase() === q.toLowerCase() || (i.sku || '').toLowerCase() === q.toLowerCase(),
     );
@@ -374,13 +401,29 @@ export default function DepartmentCounter() {
       showError(`Bill discount cannot be more than ₹${roomSum.toFixed(2)}. That is the discount still left on these items.`);
       return;
     }
+    if (!showOrderModes && shopFulfilment === 'home_delivery' && deliveryAddress.trim().length < 5) {
+      showError('Enter the delivery address (at least a few words / landmark).');
+      return;
+    }
     const today = new Date().toISOString().slice(0, 10);
     const credit = payMode === 'credit';
+    const fulfilmentNote = !showOrderModes
+      ? shopFulfilment === 'home_delivery'
+        ? `Home delivery · ${deliveryAddress.trim()}`
+        : shopFulfilment === 'pickup'
+          ? `Pickup · ${guestName.trim() || guestPhone.trim() || 'customer'}`
+          : 'In shop'
+      : orderType === 'delivery'
+        ? 'Delivery'
+        : orderType === 'dinein'
+          ? 'Dine-in'
+          : 'Takeaway';
     const invoiceBody = {
         company_id: companyId,
         customer_id: (await rememberCounterCustomer({
           name: guestName,
           phone: guestPhone,
+          address: !showOrderModes && shopFulfilment === 'home_delivery' ? deliveryAddress : undefined,
           customers,
           fallbackId: customerId,
           companyId,
@@ -388,6 +431,7 @@ export default function DepartmentCounter() {
         invoice_date: today,
         due_date: credit ? monthEnd() : today,
         gst_applicable: priced.some((row) => row.line.taxRate > 0),
+        notes: fulfilmentNote,
         lines: priced.map(({ line, money }) => ({
           item_id: line.item_id,
           hsn_sac: line.hsn,
@@ -400,18 +444,19 @@ export default function DepartmentCounter() {
         })),
     };
     const cashNoteRef = payMode === 'cash' && notesSum > 0 ? formatNotesSummary(noteCounts) : '';
+    const payBase =
+      payMode === 'cash'
+        ? cashNoteRef
+          ? `Counter cash · ${cashNoteRef}`
+          : 'Counter cash'
+        : payMode === 'upi'
+          ? 'Counter UPI'
+          : 'Counter card';
     const paymentBody = credit ? null : {
       amount: totals.total,
       payment_date: today,
       mode: payMode,
-      reference:
-        payMode === 'cash'
-          ? cashNoteRef
-            ? `Counter cash · ${cashNoteRef}`
-            : 'Counter cash'
-          : payMode === 'upi'
-            ? 'Counter UPI'
-            : 'Counter card',
+      reference: fulfilmentNote && fulfilmentNote !== 'In shop' ? `${payBase} · ${fulfilmentNote}` : payBase,
     };
     const slipLines = priced.map(({ line, money }) => ({
       description: line.name,
@@ -425,13 +470,15 @@ export default function DepartmentCounter() {
       setBillDiscount('');
       setCashTendered('');
       setNoteCounts({});
+      setDeliveryAddress('');
+      setShopFulfilment('counter');
       setCartOpen(false);
       success(note);
       void printCounterSlip({
         ...shop,
         number,
         date: today,
-        billTo: selected?.name || 'Customer',
+        billTo: selected?.name || guestName || 'Customer',
         lines: slipLines,
         taxable: totals.taxable,
         cgst: totals.cgst,
@@ -441,7 +488,7 @@ export default function DepartmentCounter() {
         paid: credit ? 0 : totals.total,
         due: credit ? totals.total : 0,
         paidBy,
-        footer: note,
+        footer: fulfilmentNote !== 'In shop' ? `${fulfilmentNote} · ${note}` : note,
       }).catch(() => undefined);
     };
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -548,90 +595,184 @@ export default function DepartmentCounter() {
 
   const gstTotal = round2(totals.cgst + totals.sgst + totals.igst);
 
+  const walkInCustomer = customers.find((c) => isWalkIn(c));
+  const creditCustomers = customers.filter((c) => isCredit(c));
+  const accountIsCredit = payMode === 'credit' || (!!selected && isCredit(selected) && !isWalkIn(selected));
+
+  const pickWalkInCash = () => {
+    if (walkInCustomer) setCustomerId(walkInCustomer.id);
+    setPayMode('cash');
+  };
+
+  const pickMonthlyCredit = () => {
+    setPayMode('credit');
+    if (selected && isCredit(selected)) return;
+    const first = creditCustomers[0];
+    if (first) setCustomerId(first.id);
+  };
+
   const cartPanel = (
     <div className="flex h-full min-h-0 flex-col">
-      {/* One scroll region (works on phone too) — Take stays pinned below */}
+      {/* Setup first — then scrollable buy list — Take stays pinned */}
       <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
-        <div className="grid grid-cols-3 gap-0.5">
-          {(['takeaway', 'dinein', 'delivery'] as const).map((id) => (
-            <button key={id} type="button" onClick={() => setOrderType(id)} className={`h-6 rounded text-[10px] font-semibold ${orderType === id ? 'bg-sky-500 text-white' : 'border border-slate-200'}`}>
-              {id === 'dinein' ? 'Dine-in' : id === 'takeaway' ? 'Takeaway' : 'Delivery'}
-            </button>
-          ))}
+        {showOrderModes ? (
+          <div className="grid grid-cols-3 gap-0.5">
+            {(['takeaway', 'dinein', 'delivery'] as const).map((id) => (
+              <button key={id} type="button" onClick={() => setOrderType(id)} className={`h-6 rounded text-[10px] font-semibold ${orderType === id ? 'bg-sky-500 text-white' : 'border border-slate-200'}`}>
+                {id === 'dinein' ? 'Dine-in' : id === 'takeaway' ? 'Takeaway' : 'Delivery'}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <div className="grid grid-cols-3 gap-0.5">
+              {(
+                [
+                  ['counter', 'In shop'],
+                  ['home_delivery', 'Home delivery'],
+                  ['pickup', 'Pickup'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setShopFulfilment(id)}
+                  className={`h-7 rounded text-[10px] font-semibold ${shopFulfilment === id ? 'bg-sky-500 text-white' : 'border border-slate-200 text-slate-700'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {shopFulfilment === 'home_delivery' && (
+              <textarea
+                value={deliveryAddress}
+                onChange={(e) => setDeliveryAddress(e.target.value)}
+                rows={2}
+                placeholder="Delivery address / landmark / flat no."
+                className="w-full resize-none rounded border border-slate-300 px-2 py-1.5 text-[11px]"
+              />
+            )}
+          </div>
+        )}
+
+        <CounterCustomerBar
+          compact
+          name={guestName}
+          phone={guestPhone}
+          customers={customers}
+          selectedId={customerId}
+          onName={setGuestName}
+          onPhone={setGuestPhone}
+          onSelect={(c) => {
+            setCustomerId(c.id);
+            setSavedGuest({ id: c.id, name: c.name, phone: c.phone || '' });
+            setCustomers((prev) => (prev.some((row) => row.id === c.id) ? prev.map((row) => (row.id === c.id ? { ...row, ...c } : row)) : [c, ...prev]));
+            if (isCredit(c)) setPayMode('credit');
+          }}
+          onSave={() => void rememberCounterCustomer({ name: guestName, phone: guestPhone, customers, fallbackId: customerId, companyId }).then((saved) => {
+            if (!saved) { showError('Enter a mobile number to remember this customer.'); return; }
+            setSavedGuest(saved);
+            setCustomerId(saved.id);
+            setCustomers((prev) => (prev.some((c) => c.id === saved.id) ? prev : [{ id: saved.id, name: saved.name, phone: saved.phone }, ...prev]));
+            success(`${saved.name} saved for wishes and offers.`);
+          })}
+        />
+
+        <div className="grid grid-cols-2 gap-1">
+          <button
+            type="button"
+            onClick={pickWalkInCash}
+            className={`h-8 rounded-lg border text-[11px] font-semibold ${!accountIsCredit && payMode !== 'credit' ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-700'}`}
+          >
+            Walk-in cash
+          </button>
+          <button
+            type="button"
+            onClick={pickMonthlyCredit}
+            className={`h-8 rounded-lg border text-[11px] font-semibold ${accountIsCredit || payMode === 'credit' ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-700'}`}
+          >
+            Monthly credit
+          </button>
         </div>
-        <div className="flex items-center justify-between gap-2">
+
+        {(payMode === 'credit' || accountIsCredit) && (
+          <select
+            value={customerId}
+            onChange={(e) => {
+              const id = e.target.value;
+              setCustomerId(id);
+              const c = customers.find((row) => row.id === id);
+              if (c && isCredit(c)) setPayMode('credit');
+              if (c && isWalkIn(c) && payMode === 'credit') setPayMode('cash');
+            }}
+            className="h-7 w-full rounded border border-slate-300 px-1.5 text-[11px]"
+          >
+            {(creditCustomers.length ? creditCustomers : customers).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}{c.phone ? ` · ${c.phone}` : ''}{isCredit(c) ? ' · credit' : ''}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {!(payMode === 'credit' || accountIsCredit) && (
+          <div className="grid grid-cols-3 gap-0.5">
+            {([
+              ['cash', 'Cash', Banknote],
+              ['upi', 'UPI', Smartphone],
+              ['card', 'Card', CreditCard],
+            ] as const).map(([mode, label, Icon]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => {
+                  setPayMode(mode);
+                  if (walkInCustomer) setCustomerId(walkInCustomer.id);
+                }}
+                className={`inline-flex h-7 items-center justify-center gap-1 rounded border text-[10px] font-semibold ${payMode === mode ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-700'}`}
+              >
+                <Icon className="h-3 w-3" />
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-2 pt-0.5">
           <h2 className="text-xs font-semibold text-slate-900">Buy list</h2>
           <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-semibold text-brand-800">
             {cart.length} · ₹{totals.total.toFixed(0)}
           </span>
         </div>
 
-        <ul className="space-y-1 rounded-md border border-slate-200 bg-slate-50/80 p-1">
-          {priced.length === 0 && <li className="px-1 py-4 text-center text-xs text-slate-500">Scan or tap — items appear here.</li>}
+        <ul className="space-y-0.5 rounded-md border border-slate-200 bg-slate-50/80 p-1">
+          {priced.length === 0 && <li className="px-1 py-3 text-center text-xs text-slate-500">Scan or tap — items appear here.</li>}
           {priced.map(({ line, money }) => (
-            <li key={line.item_id} className="rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs">
-              <div className="flex items-center gap-1">
-                <p className="min-w-0 flex-1 truncate font-medium text-slate-900" title={line.name}>{line.name}</p>
-                <span className="shrink-0 font-semibold tabular-nums">₹{money.inclusive.toFixed(0)}</span>
-                <button type="button" onClick={() => setQty(line.item_id, 0)} className="shrink-0 p-0.5 text-slate-400" aria-label="Remove">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="mt-0.5 flex items-center gap-1">
+            <li key={line.item_id} className="flex items-center gap-1 rounded border border-slate-200 bg-white px-1 py-0.5 text-xs">
+              <p className="min-w-0 flex-1 truncate font-medium text-slate-900" title={line.name}>{line.name}</p>
+              <div className="flex shrink-0 items-center gap-0.5">
                 <button type="button" onClick={() => setQty(line.item_id, line.qty - 1)} className="inline-flex h-6 w-6 items-center justify-center rounded border"><Minus className="h-3 w-3" /></button>
-                <span className="w-6 text-center text-xs font-semibold">{line.qty}</span>
+                <span className="w-5 text-center text-xs font-semibold tabular-nums">{line.qty}</span>
                 <button type="button" onClick={() => setQty(line.item_id, line.qty + 1)} className="inline-flex h-6 w-6 items-center justify-center rounded border"><Plus className="h-3 w-3" /></button>
-                <label className="ml-auto flex items-center gap-0.5 text-[10px] text-slate-500">
-                  Disc%
-                  <input
-                    type="number"
-                    min={0}
-                    max={line.maxDiscount}
-                    step="0.01"
-                    value={line.discountPercent}
-                    onChange={(e) => setLineDiscount(line.item_id, Number(e.target.value))}
-                    className="h-6 w-12 rounded border border-slate-300 px-1 text-right text-xs"
-                  />
-                </label>
               </div>
+              <input
+                type="number"
+                min={0}
+                max={line.maxDiscount}
+                step="0.01"
+                value={line.discountPercent}
+                onChange={(e) => setLineDiscount(line.item_id, Number(e.target.value))}
+                title="Disc %"
+                aria-label="Discount percent"
+                className="h-6 w-10 shrink-0 rounded border border-slate-300 px-0.5 text-right text-[10px]"
+              />
+              <span className="w-12 shrink-0 text-right text-xs font-semibold tabular-nums">₹{money.inclusive.toFixed(0)}</span>
+              <button type="button" onClick={() => setQty(line.item_id, 0)} className="shrink-0 p-0.5 text-slate-400" aria-label="Remove">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
             </li>
           ))}
         </ul>
-
-        <div className="flex gap-1">
-          <input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Name" className="h-7 min-w-0 flex-1 rounded border border-slate-200 px-1.5 text-[11px]" />
-          <input value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} inputMode="tel" placeholder="Mobile" className="h-7 w-[5.5rem] rounded border border-slate-200 px-1.5 text-[11px]" />
-          <button
-            type="button"
-            onClick={() => void rememberCounterCustomer({ name: guestName, phone: guestPhone, customers, fallbackId: customerId, companyId }).then((saved) => {
-              if (!saved) { showError('Enter a mobile number to remember this customer.'); return; }
-              setSavedGuest(saved);
-              setCustomerId(saved.id);
-              setCustomers((prev) => (prev.some((c) => c.id === saved.id) ? prev : [{ id: saved.id, name: saved.name, phone: saved.phone }, ...prev]));
-              success(`${saved.name} saved for wishes and offers.`);
-            })}
-            className="h-7 shrink-0 rounded bg-slate-800 px-2 text-[10px] font-semibold text-white"
-          >
-            Save
-          </button>
-        </div>
-        <select
-          value={customerId}
-          onChange={(e) => {
-            const id = e.target.value;
-            setCustomerId(id);
-            const c = customers.find((row) => row.id === id);
-            if (c && isCredit(c)) setPayMode('credit');
-            if (c && isWalkIn(c) && payMode === 'credit') setPayMode('cash');
-          }}
-          className="h-7 w-full rounded border border-slate-300 px-1.5 text-[11px]"
-        >
-          {customers.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}{isCredit(c) ? ' · credit' : isWalkIn(c) ? ' · cash' : ''}
-            </option>
-          ))}
-        </select>
 
         <div className="rounded-md bg-slate-50 px-2 py-1 text-[11px] leading-snug text-slate-700">
           <div className="flex items-center justify-between gap-2">
@@ -663,25 +804,6 @@ export default function DepartmentCounter() {
           {seeCost && (
             <p className="text-[10px] text-slate-500">Cost ₹{totals.cost.toFixed(0)} · margin ₹{round2(totals.total - totals.cost).toFixed(0)}</p>
           )}
-        </div>
-
-        <div className="grid grid-cols-4 gap-0.5">
-          {([
-            ['cash', 'Cash', Banknote],
-            ['upi', 'UPI', Smartphone],
-            ['card', 'Card', CreditCard],
-            ['credit', 'Credit', Users],
-          ] as const).map(([mode, label, Icon]) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setPayMode(mode)}
-              className={`inline-flex h-8 flex-col items-center justify-center gap-0 rounded border text-[10px] font-semibold ${payMode === mode ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-700'}`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
-            </button>
-          ))}
         </div>
 
         {payMode === 'cash' && (
@@ -768,7 +890,15 @@ export default function DepartmentCounter() {
           {waiting} {ct(lang, 'bill(s) are on this device. Stock updates after they sync. The counter needs the network for live stock.', 'बिल इस डिवाइस पर हैं। सिंक के बाद स्टॉक बदलेगा।')}
         </p>
       )}
-      <div className="md:col-span-2 lg:col-span-3 flex justify-end">
+      <div className="md:col-span-2 lg:col-span-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2 text-xs">
+          <Link href="/sales/portal-orders" className="rounded-full border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-700">
+            Online orders
+          </Link>
+          <Link href="/catalog" className="rounded-full border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-700">
+            Selling page
+          </Link>
+        </div>
         <label className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
           <span className="text-slate-500">Lang</span>
           <select

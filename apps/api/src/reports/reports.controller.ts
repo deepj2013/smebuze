@@ -386,4 +386,24 @@ export class ReportsController {
     const month = period || (from ? String(from).slice(0, 7) : new Date().toISOString().slice(0, 7));
     return this.gstReturns.reconcileGstr2a(ctx, month, companyId);
   }
+
+  @Get('accounting-export')
+  @RequirePermissions('reports.view')
+  async accountingExport(
+    @CurrentTenant() ctx: TenantContext,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('flavour') flavour?: string,
+    @Query('format') format?: string,
+    @Res({ passthrough: true }) res?: Response,
+  ) {
+    const data = await this.reportsService.accountingExportCsv(ctx, from, to, flavour || 'tally');
+    if ((format === 'csv' || !format) && res) {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=${data.filename}`);
+      res.send(data.csv);
+      return;
+    }
+    return data;
+  }
 }

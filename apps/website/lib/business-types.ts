@@ -277,6 +277,21 @@ export function isFloorBusinessType(type: unknown): boolean {
   return typeof type === 'string' && (FLOOR_BUSINESS_TYPES as readonly string[]).includes(type);
 }
 
+/**
+ * Counters that sell prepared food / dine-in need Takeaway · Dine-in · Delivery.
+ * Product shops (kirana, garments, department store, pharmacy, …) do not.
+ */
+export const COUNTER_ORDER_MODE_TYPES = [
+  'dine_restaurant',
+  'cafe',
+  'sweet_shop',
+  'bakery',
+] as const;
+
+export function showsCounterOrderModes(type: unknown): boolean {
+  return typeof type === 'string' && (COUNTER_ORDER_MODE_TYPES as readonly string[]).includes(type);
+}
+
 export function businessTypeMeta(type: unknown) {
   return SIGNUP_BUSINESS_TYPES.find((t) => t.id === type) ?? SIGNUP_BUSINESS_TYPES.find((t) => t.id === 'trading')!;
 }

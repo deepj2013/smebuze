@@ -21,4 +21,12 @@ export class SaveBrandingDto {
   @IsOptional()
   @IsIn(['s', 'm', 'l', 'xl'])
   invoice_print_size?: 's' | 'm' | 'l' | 'xl';
+
+  @IsOptional()
+  @IsIn(['auto', 'gst', 'tally', 'busy', 'marg', 'thermal'])
+  invoice_template?: 'auto' | 'gst' | 'tally' | 'busy' | 'marg' | 'thermal';
+
+  @IsOptional()
+  @IsString()
+  invoice_qr_url?: string | null;
 }

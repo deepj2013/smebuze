@@ -52,6 +52,12 @@ export class CrmController {
     return this.crmService.findCustomers(ctx, tag);
   }
 
+  @Get('customers/lookup')
+  @RequirePermissions('crm.customer.view')
+  async lookupCustomer(@Query('q') q: string | undefined, @CurrentTenant() ctx: TenantContext) {
+    return this.crmService.lookupCustomer(q ?? '', ctx);
+  }
+
   @Get('customers/:id')
   @RequirePermissions('crm.customer.view')
   async getCustomer(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {

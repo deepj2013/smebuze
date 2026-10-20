@@ -66,6 +66,22 @@ export class GrowthController {
     return this.growth.portalOrders(ctx, channel);
   }
 
+  @Patch('portal-orders/:id/status')
+  @RequirePermissions('sales.order.create')
+  setPortalOrderStatus(
+    @Param('id') id: string,
+    @Body() body: { status: string },
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.growth.setPortalOrderStatus(ctx, id, body.status);
+  }
+
+  @Get('desk')
+  @RequirePermissions('sales.order.view')
+  desk(@CurrentTenant() ctx: TenantContext) {
+    return this.growth.deskSummary(ctx);
+  }
+
   @Get('channels')
   @RequirePermissions('org.company.view')
   channels(@CurrentTenant() ctx: TenantContext) {

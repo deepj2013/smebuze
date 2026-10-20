@@ -38,7 +38,7 @@ export function monthlyOffer(plan: string): { list: number; sale: number; saving
   };
 }
 
-export function quotePlan(plan: string, interval: string): {
+export function quotePlan(plan: string, interval: string, addonMonthly = 0): {
   list_rupees: number;
   amount_rupees: number;
   discount_percent: number;
@@ -48,10 +48,13 @@ export function quotePlan(plan: string, interval: string): {
   if (!saleMonthly) return null;
   const listMonthly = PLAN_LIST_RUPEES[plan] ?? saleMonthly;
   const months = INTERVAL_MONTHS[interval] || 1;
-  const list_rupees = listMonthly * months;
-  let amount_rupees = saleMonthly * months;
+  const extra = Math.max(0, Math.round(addonMonthly)) * months;
+  const list_rupees = listMonthly * months + extra;
+  let amount_rupees = saleMonthly * months + extra;
   if (interval === 'yearly') {
-    amount_rupees = Math.round((amount_rupees * (100 - YEARLY_DISCOUNT_PERCENT)) / 100);
+    const planOnly = saleMonthly * months;
+    const planYear = Math.round((planOnly * (100 - YEARLY_DISCOUNT_PERCENT)) / 100);
+    amount_rupees = planYear + extra;
   }
   return {
     list_rupees,

@@ -434,6 +434,18 @@ export default function EditInvoicePage() {
             {deleting ? 'Deleting…' : 'Delete invoice'}
           </button>
           <Link href={`/sales/invoices/${id}/print`} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Print</Link>
+          <a href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/api/v1/sales/invoices/${id}/e-invoice?format=file`} onClick={(e) => {
+            e.preventDefault();
+            const token = typeof window !== 'undefined' ? localStorage.getItem('smebuzz_token') : null;
+            fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/api/v1/sales/invoices/${id}/e-invoice?format=file`, { headers: { Authorization: `Bearer ${token}` } })
+              .then((r) => r.blob())
+              .then((blob) => {
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `einvoice-${id.slice(0, 8)}.json`;
+                a.click();
+              });
+          }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">e-Invoice JSON</a>
         </div>
       </form>
     </div>

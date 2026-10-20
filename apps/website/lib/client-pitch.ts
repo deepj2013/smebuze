@@ -116,7 +116,8 @@ export const EXTRA_PITCHES: ClientPitch[] = [
     demo: ['Ice dashboard', 'Stock movements', 'Leads', 'Invoices'],
     modules: defaultModulesForShop('ice_crest'),
     home: '/ice-crest/dashboard',
-    hide: [...HIDE_DESK_POS, 'Purchase', 'Accounts', 'HR'],
+    // Staff & Payroll stays on iceCrestNav (drivers / plant staff) — pitch matches UI.
+    hide: [...HIDE_DESK_POS, 'Purchase', 'Accounts'],
   },
 ];
 

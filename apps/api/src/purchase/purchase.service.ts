@@ -7,6 +7,9 @@ import { VendorPayment } from './entities/vendor-payment.entity';
 import { Grn } from './entities/grn.entity';
 import { GrnLine } from './entities/grn-line.entity';
 import { DebitNote } from './entities/debit-note.entity';
+import { PurchaseInvoice } from './entities/purchase-invoice.entity';
+import { PurchaseInvoiceLine } from './entities/purchase-invoice-line.entity';
+import { InventoryService } from '../inventory/inventory.service';
 import { TenantContext } from '../common/tenant-context';
 import { RecordVendorPaymentDto } from './dto/record-vendor-payment.dto';
 import { allocateDocumentNumber, PURCHASE_DEBIT_NOTE_REASONS } from '../common/document-series';
@@ -27,6 +30,11 @@ export class PurchaseService {
     private readonly grnLineRepo: Repository<GrnLine>,
     @InjectRepository(DebitNote)
     private readonly debitNoteRepo: Repository<DebitNote>,
+    @InjectRepository(PurchaseInvoice)
+    private readonly purchaseInvoiceRepo: Repository<PurchaseInvoice>,
+    @InjectRepository(PurchaseInvoiceLine)
+    private readonly purchaseInvoiceLineRepo: Repository<PurchaseInvoiceLine>,
+    private readonly inventoryService: InventoryService,
   ) {}
 
   private assertTenantId(ctx: TenantContext): string {
@@ -330,5 +338,162 @@ export class PurchaseService {
     });
     if (!dn) throw new NotFoundException('Debit note not found');
     return dn;
+  }
+
+  /**
+   * Supplier bill: records cost + input GST, optionally receives stock (purchase inward).
+   * This is how margin stays true vs sale price on the counter.
+   */
+  async createVendorInvoice(
+    dto: {
+      company_id: string;
+      branch_id?: string;
+      vendor_id: string;
+      warehouse_id?: string;
+      number?: string;
+      bill_date: string;
+      vendor_bill_no?: string;
+      notes?: string;
+      receive_stock?: boolean;
+      lines: Array<{
+        item_id?: string;
+        description?: string;
+        qty: number;
+        unit?: string;
+        unit_cost: number;
+        cgst_rate?: number;
+        sgst_rate?: number;
+        igst_rate?: number;
+        batch_code?: string;
+        expiry_date?: string;
+      }>;
+    },
+    ctx: TenantContext,
+  ): Promise<PurchaseInvoice> {
+    const tenantId = this.assertTenantId(ctx);
+    if (!dto.lines?.length) throw new BadRequestException('Add at least one line.');
+    const vendor = await this.vendorRepo.findOne({ where: { id: dto.vendor_id, tenant_id: tenantId } });
+    if (!vendor) throw new NotFoundException('Vendor not found');
+
+    let taxable = 0;
+    let cgst = 0;
+    let sgst = 0;
+    let igst = 0;
+    const computed = dto.lines.map((l, i) => {
+      const qty = Math.max(0, Number(l.qty) || 0);
+      const unitCost = Math.max(0, Number(l.unit_cost) || 0);
+      const lineTaxable = round2(qty * unitCost);
+      const cRate = Number(l.cgst_rate ?? 0);
+      const sRate = Number(l.sgst_rate ?? 0);
+      const iRate = Number(l.igst_rate ?? 0);
+      if (iRate > 0 && (cRate > 0 || sRate > 0)) {
+        throw new BadRequestException('Use CGST+SGST or IGST on a line, not both.');
+      }
+      const cAmt = round2((lineTaxable * cRate) / 100);
+      const sAmt = round2((lineTaxable * sRate) / 100);
+      const iAmt = round2((lineTaxable * iRate) / 100);
+      taxable = round2(taxable + lineTaxable);
+      cgst = round2(cgst + cAmt);
+      sgst = round2(sgst + sAmt);
+      igst = round2(igst + iAmt);
+      return {
+        item_id: l.item_id ?? null,
+        description: l.description?.trim() || null,
+        qty,
+        unit: l.unit || 'pcs',
+        unit_cost: unitCost,
+        cgst_rate: cRate,
+        sgst_rate: sRate,
+        igst_rate: iRate,
+        taxable_value: lineTaxable,
+        cgst_amount: cAmt,
+        sgst_amount: sAmt,
+        igst_amount: iAmt,
+        batch_code: l.batch_code?.trim() || null,
+        expiry_date: l.expiry_date || null,
+        sort_order: i,
+      };
+    });
+    const total = round2(taxable + cgst + sgst + igst);
+    const receive = !!dto.receive_stock && !!dto.warehouse_id;
+
+    const bill = this.purchaseInvoiceRepo.create({
+      tenant_id: tenantId,
+      company_id: dto.company_id,
+      branch_id: dto.branch_id ?? null,
+      vendor_id: dto.vendor_id,
+      warehouse_id: dto.warehouse_id ?? null,
+      number: dto.number?.trim() || `PB-${Date.now()}`,
+      bill_date: new Date(dto.bill_date),
+      vendor_bill_no: dto.vendor_bill_no?.trim() || null,
+      status: 'posted',
+      taxable_amount: moneyStr(taxable),
+      cgst_amount: moneyStr(cgst),
+      sgst_amount: moneyStr(sgst),
+      igst_amount: moneyStr(igst),
+      total: moneyStr(total),
+      notes: dto.notes?.trim() || null,
+      stock_received: receive,
+      created_by: ctx.userId,
+    });
+    const saved = await this.purchaseInvoiceRepo.save(bill);
+
+    for (const line of computed) {
+      await this.purchaseInvoiceLineRepo.save(
+        this.purchaseInvoiceLineRepo.create({
+          purchase_invoice_id: saved.id,
+          item_id: line.item_id,
+          description: line.description,
+          qty: String(line.qty),
+          unit: line.unit,
+          unit_cost: String(line.unit_cost),
+          cgst_rate: String(line.cgst_rate),
+          sgst_rate: String(line.sgst_rate),
+          igst_rate: String(line.igst_rate),
+          taxable_value: moneyStr(line.taxable_value),
+          cgst_amount: moneyStr(line.cgst_amount),
+          sgst_amount: moneyStr(line.sgst_amount),
+          igst_amount: moneyStr(line.igst_amount),
+          batch_code: line.batch_code,
+          expiry_date: line.expiry_date ? new Date(line.expiry_date) : null,
+          sort_order: line.sort_order,
+        }),
+      );
+
+      if (line.item_id && line.unit_cost > 0) {
+        await this.inventoryService.setItemCost(ctx, line.item_id, line.unit_cost);
+      }
+      if (receive && line.item_id && line.qty > 0 && dto.warehouse_id) {
+        const measured = Math.abs(line.qty - Math.round(line.qty)) > 0.0001;
+        const opts = { batch_code: line.batch_code, expiry_date: line.expiry_date };
+        if (measured) {
+          await this.inventoryService.receiveMeasured(ctx, dto.warehouse_id, line.item_id, line.qty, opts);
+        } else {
+          await this.inventoryService.receiveStock(ctx, dto.warehouse_id, line.item_id, line.qty, opts);
+        }
+      }
+    }
+
+    return this.findOneVendorInvoice(saved.id, ctx);
+  }
+
+  async findVendorInvoices(ctx: TenantContext): Promise<PurchaseInvoice[]> {
+    const tenantId = this.assertTenantId(ctx);
+    return this.purchaseInvoiceRepo.find({
+      where: { tenant_id: tenantId },
+      relations: ['vendor', 'company'],
+      order: { bill_date: 'DESC', created_at: 'DESC' },
+      take: 200,
+    });
+  }
+
+  async findOneVendorInvoice(id: string, ctx: TenantContext): Promise<PurchaseInvoice> {
+    const tenantId = this.assertTenantId(ctx);
+    const inv = await this.purchaseInvoiceRepo.findOne({
+      where: { id, tenant_id: tenantId },
+      relations: ['vendor', 'company', 'lines', 'lines.item', 'warehouse'],
+    });
+    if (!inv) throw new NotFoundException('Vendor invoice not found');
+    return inv;
   }
 }

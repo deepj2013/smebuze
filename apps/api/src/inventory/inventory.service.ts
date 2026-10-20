@@ -7,7 +7,13 @@ import { ItemCategory } from './entities/item-category.entity';
 import { Stock } from './entities/stock.entity';
 import { StockTransfer } from './entities/stock-transfer.entity';
 import { StockTransferLine } from './entities/stock-transfer-line.entity';
+import { ItemRecipeLine } from './entities/item-recipe-line.entity';
+import { ProductionRun } from './entities/production-run.entity';
+import { ProductionRunLine } from './entities/production-run-line.entity';
+import { ItemPromotion } from './entities/item-promotion.entity';
+import { Tenant } from '../tenant/entities/tenant.entity';
 import { TenantContext } from '../common/tenant-context';
+import { tenantHasOptIn } from '../common/opt-in-features';
 import { moneyStr, optionalMoneyStr, round2, roundQty } from '../common/money';
 
 @Injectable()
@@ -25,6 +31,16 @@ export class InventoryService {
     private readonly stockTransferRepo: Repository<StockTransfer>,
     @InjectRepository(StockTransferLine)
     private readonly stockTransferLineRepo: Repository<StockTransferLine>,
+    @InjectRepository(ItemRecipeLine)
+    private readonly recipeRepo: Repository<ItemRecipeLine>,
+    @InjectRepository(ProductionRun)
+    private readonly productionRepo: Repository<ProductionRun>,
+    @InjectRepository(ProductionRunLine)
+    private readonly productionLineRepo: Repository<ProductionRunLine>,
+    @InjectRepository(ItemPromotion)
+    private readonly promoRepo: Repository<ItemPromotion>,
+    @InjectRepository(Tenant)
+    private readonly tenantRepo: Repository<Tenant>,
   ) {}
 
   private assertTenantId(ctx: TenantContext): string {
@@ -1067,5 +1083,193 @@ export class InventoryService {
     });
     if (!st) throw new NotFoundException('Stock transfer not found');
     return st;
+  }
+
+  private async assertOptIn(ctx: TenantContext, feature: string) {
+    const tenantId = this.assertTenantId(ctx);
+    if (ctx.isSuperAdmin) return;
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenantHasOptIn(tenant?.features, feature)) {
+      throw new ForbiddenException(
+        'This pack is off for this shop. Ask SMEBUZE admin to enable it on Admin → Tenants.',
+      );
+    }
+  }
+
+  async listRecipes(ctx: TenantContext) {
+    await this.assertOptIn(ctx, 'recipe_production');
+    const tenantId = this.assertTenantId(ctx);
+    const lines = await this.recipeRepo.find({
+      where: { tenant_id: tenantId },
+      relations: ['finished_item', 'component_item'],
+      order: { created_at: 'ASC' },
+    });
+    const byFg = new Map<string, { finished_item_id: string; name: string; lines: typeof lines; unit_cost: number }>();
+    for (const l of lines) {
+      const fg = l.finished_item_id;
+      const row = byFg.get(fg) ?? {
+        finished_item_id: fg,
+        name: l.finished_item?.name ?? fg,
+        lines: [],
+        unit_cost: 0,
+      };
+      row.lines.push(l);
+      row.unit_cost += (parseFloat(l.component_item?.cost_price || '0') || 0) * (parseFloat(l.qty_per_unit) || 0);
+      byFg.set(fg, row);
+    }
+    return [...byFg.values()].map((r) => ({
+      ...r,
+      unit_cost: Math.round(r.unit_cost * 10000) / 10000,
+    }));
+  }
+
+  async saveRecipe(
+    ctx: TenantContext,
+    finishedItemId: string,
+    body: { lines: Array<{ component_item_id: string; qty_per_unit: number }> },
+  ) {
+    await this.assertOptIn(ctx, 'recipe_production');
+    const tenantId = this.assertTenantId(ctx);
+    const fg = await this.findOneItem(finishedItemId, ctx);
+    await this.recipeRepo.delete({ tenant_id: tenantId, finished_item_id: finishedItemId });
+    const saved = [];
+    for (const line of body.lines || []) {
+      if (!line.component_item_id || line.component_item_id === finishedItemId) continue;
+      const qty = Number(line.qty_per_unit);
+      if (!(qty > 0)) continue;
+      await this.findOneItem(line.component_item_id, ctx);
+      saved.push(
+        await this.recipeRepo.save(
+          this.recipeRepo.create({
+            tenant_id: tenantId,
+            finished_item_id: fg.id,
+            component_item_id: line.component_item_id,
+            qty_per_unit: String(qty),
+          }),
+        ),
+      );
+    }
+    return this.listRecipes(ctx).then((all) => all.find((r) => r.finished_item_id === finishedItemId) ?? { finished_item_id: finishedItemId, lines: saved });
+  }
+
+  async runProduction(
+    ctx: TenantContext,
+    dto: { warehouse_id: string; finished_item_id: string; qty_produced: number; produced_at?: string; notes?: string },
+  ) {
+    await this.assertOptIn(ctx, 'recipe_production');
+    const tenantId = this.assertTenantId(ctx);
+    const qty = Number(dto.qty_produced);
+    if (!(qty > 0)) throw new BadRequestException('Quantity produced must be greater than zero.');
+    const recipe = await this.recipeRepo.find({
+      where: { tenant_id: tenantId, finished_item_id: dto.finished_item_id },
+      relations: ['component_item'],
+    });
+    if (!recipe.length) throw new BadRequestException('Set a recipe for this finished item first.');
+    let totalCost = 0;
+    const used: Array<{ component_item_id: string; qty_used: number; unit_cost: number; line_cost: number }> = [];
+    for (const r of recipe) {
+      const per = parseFloat(r.qty_per_unit) || 0;
+      const qtyUsed = Math.round(per * qty * 10000) / 10000;
+      const unitCost = parseFloat(r.component_item?.cost_price || '0') || 0;
+      const lineCost = Math.round(qtyUsed * unitCost * 10000) / 10000;
+      totalCost += lineCost;
+      await this.deductForSale(ctx, dto.warehouse_id, r.component_item_id, qtyUsed);
+      used.push({ component_item_id: r.component_item_id, qty_used: qtyUsed, unit_cost: unitCost, line_cost: lineCost });
+    }
+    const unitCost = Math.round((totalCost / qty) * 10000) / 10000;
+    await this.receiveMeasured(ctx, dto.warehouse_id, dto.finished_item_id, qty);
+    await this.setItemCost(ctx, dto.finished_item_id, unitCost);
+    const run = await this.productionRepo.save(
+      this.productionRepo.create({
+        tenant_id: tenantId,
+        warehouse_id: dto.warehouse_id,
+        finished_item_id: dto.finished_item_id,
+        qty_produced: String(qty),
+        unit_cost: String(unitCost),
+        total_cost: String(Math.round(totalCost * 10000) / 10000),
+        produced_at: dto.produced_at || new Date().toISOString().slice(0, 10),
+        notes: dto.notes?.trim() || null,
+        created_by: ctx.userId,
+      }),
+    );
+    for (const u of used) {
+      await this.productionLineRepo.save(
+        this.productionLineRepo.create({
+          run_id: run.id,
+          tenant_id: tenantId,
+          component_item_id: u.component_item_id,
+          qty_used: String(u.qty_used),
+          unit_cost: String(u.unit_cost),
+          line_cost: String(u.line_cost),
+        }),
+      );
+    }
+    return this.productionRepo.findOne({ where: { id: run.id }, relations: ['finished_item', 'warehouse', 'lines'] });
+  }
+
+  async listProduction(ctx: TenantContext) {
+    await this.assertOptIn(ctx, 'recipe_production');
+    const tenantId = this.assertTenantId(ctx);
+    return this.productionRepo.find({
+      where: { tenant_id: tenantId },
+      relations: ['finished_item', 'warehouse'],
+      order: { created_at: 'DESC' },
+      take: 100,
+    });
+  }
+
+  async listPromotions(ctx: TenantContext, activeOnly = false) {
+    const tenantId = this.assertTenantId(ctx);
+    const rows = await this.promoRepo.find({
+      where: { tenant_id: tenantId, ...(activeOnly ? { is_active: true } : {}) },
+      relations: ['buy_item', 'free_item'],
+      order: { created_at: 'DESC' },
+    });
+    const today = new Date().toISOString().slice(0, 10);
+    return rows.filter((p) => {
+      if (p.starts_on && p.starts_on > today) return false;
+      if (p.ends_on && p.ends_on < today) return false;
+      return true;
+    });
+  }
+
+  async createPromotion(
+    ctx: TenantContext,
+    dto: {
+      name: string;
+      buy_item_id: string;
+      buy_qty?: number;
+      free_item_id?: string;
+      free_qty?: number;
+      starts_on?: string;
+      ends_on?: string;
+    },
+  ) {
+    const tenantId = this.assertTenantId(ctx);
+    await this.findOneItem(dto.buy_item_id, ctx);
+    if (dto.free_item_id) await this.findOneItem(dto.free_item_id, ctx);
+    return this.promoRepo.save(
+      this.promoRepo.create({
+        tenant_id: tenantId,
+        name: dto.name.trim() || 'BOGO',
+        promo_type: 'bogo',
+        buy_item_id: dto.buy_item_id,
+        buy_qty: String(Math.max(1, Number(dto.buy_qty) || 1)),
+        free_item_id: dto.free_item_id || dto.buy_item_id,
+        free_qty: String(Math.max(1, Number(dto.free_qty) || 1)),
+        is_active: true,
+        starts_on: dto.starts_on || null,
+        ends_on: dto.ends_on || null,
+      }),
+    );
+  }
+
+  async patchPromotion(ctx: TenantContext, id: string, dto: { is_active?: boolean; name?: string }) {
+    const tenantId = this.assertTenantId(ctx);
+    const row = await this.promoRepo.findOne({ where: { id, tenant_id: tenantId } });
+    if (!row) throw new NotFoundException('Promotion not found');
+    if (dto.is_active != null) row.is_active = Boolean(dto.is_active);
+    if (dto.name != null) row.name = dto.name.trim();
+    return this.promoRepo.save(row);
   }
 }

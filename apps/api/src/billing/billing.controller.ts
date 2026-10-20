@@ -73,6 +73,18 @@ export class BillingController {
     return this.billing.setAutoRenew(ctx, body.auto_renew !== false);
   }
 
+  @Post('ecs/setup')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  ecsSetup(@CurrentTenant() ctx: TenantContext, @Body() dto: BillingPayDto) {
+    return this.billing.setupEcs(ctx, dto);
+  }
+
+  @Post('ecs/cancel')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  ecsCancel(@CurrentTenant() ctx: TenantContext) {
+    return this.billing.cancelEcs(ctx);
+  }
+
   @Post('phonepe/start')
   @UseGuards(JwtAuthGuard, TenantGuard)
   phonepeStart(@CurrentTenant() ctx: TenantContext, @Body() dto: BillingPayDto) {

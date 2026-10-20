@@ -84,6 +84,16 @@ export class CreateInvoiceDto {
   @IsOptional() @Type(() => Number) @To2Decimals() @IsNumber() @Min(0) other_charges?: number;
   @IsOptional() @Type(() => Number) @To2Decimals() @IsNumber() @Min(0) discount_amount?: number;
 
+  /** Fulfilment note from the counter (home delivery address, pickup, etc.). */
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  /** Till / counter name for this login (multi-counter soft label). */
+  @IsOptional()
+  @IsString()
+  counter_label?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateInvoiceLineDto)

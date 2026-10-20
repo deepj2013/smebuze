@@ -115,4 +115,22 @@ export class PurchaseController {
   async getDebitNote(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
     return this.purchaseService.findOneDebitNote(id, ctx);
   }
+
+  @Post('vendor-invoices')
+  @RequirePermissions('purchase.order.create')
+  async createVendorInvoice(@Body() body: Record<string, unknown>, @CurrentTenant() ctx: TenantContext) {
+    return this.purchaseService.createVendorInvoice(body as Parameters<PurchaseService['createVendorInvoice']>[0], ctx);
+  }
+
+  @Get('vendor-invoices')
+  @RequirePermissions('purchase.order.view')
+  async listVendorInvoices(@CurrentTenant() ctx: TenantContext) {
+    return this.purchaseService.findVendorInvoices(ctx);
+  }
+
+  @Get('vendor-invoices/:id')
+  @RequirePermissions('purchase.order.view')
+  async getVendorInvoice(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
+    return this.purchaseService.findOneVendorInvoice(id, ctx);
+  }
 }

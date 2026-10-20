@@ -19,6 +19,7 @@ import { Permission } from '../auth/entities/permission.entity';
 import { Tenant } from '../tenant/entities/tenant.entity';
 import { parseTenantBranding, sanitizeHex, TenantBranding } from '../common/tenant-branding';
 import { parseInvoicePrintSize } from '../common/invoice-print-size';
+import { parseInvoiceTemplate } from '../common/invoice-template';
 import {
   decryptSecret,
   encryptSecret,
@@ -501,6 +502,8 @@ export class OrganizationService {
       display_name: string | null;
       logo_url: string | null;
       invoice_print_size: 's' | 'm' | 'l' | 'xl';
+      invoice_template: 'auto' | 'gst' | 'tally' | 'busy' | 'marg' | 'thermal';
+      invoice_qr_url: string | null;
     }>,
   ): Promise<TenantBranding> {
     const tenantId = this.assertTenantId(ctx);
@@ -522,6 +525,16 @@ export class OrganizationService {
         dto.invoice_print_size !== undefined
           ? parseInvoicePrintSize(dto.invoice_print_size)
           : current.invoice_print_size,
+      invoice_template:
+        dto.invoice_template !== undefined
+          ? parseInvoiceTemplate(dto.invoice_template)
+          : current.invoice_template,
+      invoice_qr_url:
+        dto.invoice_qr_url === undefined
+          ? current.invoice_qr_url
+          : dto.invoice_qr_url && String(dto.invoice_qr_url).trim()
+            ? String(dto.invoice_qr_url).trim()
+            : null,
       updated_at: new Date().toISOString(),
     };
     tenant.settings = { ...(tenant.settings ?? {}), branding: next };

@@ -52,6 +52,21 @@ type CashCounterReport = {
   month: CashPeriod;
 };
 
+type DeskSummary = {
+  site: { shop_url: string; site_url: string; slug: string; is_published: boolean; shop_enabled: boolean };
+  listed_items: number;
+  open_orders: number;
+  delivered_orders: number;
+  leads: number;
+  recent_orders: Array<{
+    id: string;
+    number: string;
+    buyer_status: string;
+    total: string | number;
+    customer?: { name?: string | null } | null;
+  }>;
+};
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,6 +76,7 @@ export default function DashboardPage() {
   const [shopType, setShopType] = useState<string>('trading');
   const [cashReport, setCashReport] = useState<CashCounterReport | null>(null);
   const [renewals, setRenewals] = useState<Array<{ registration_no?: string; doc_type: string; days_left: number; urgency: string; expires_on: string }>>([]);
+  const [desk, setDesk] = useState<DeskSummary | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -99,6 +115,9 @@ export default function DashboardPage() {
       const { data: ob } = await apiGet<OnboardingChecklist>('onboarding/checklist');
       if (ob) setOnboarding(ob);
     })();
+    void apiGet<DeskSummary>('growth/desk').then((r) => {
+      if (r.data) setDesk(r.data);
+    });
   }, []);
 
   const handleCompleteOnboarding = async () => {
@@ -165,6 +184,61 @@ export default function DashboardPage() {
             ))}
           </ul>
         </div>
+      )}
+
+      {desk && (
+        <section className="mb-6 rounded-xl border border-slate-200 bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-slate-900">Your website & selling page</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Buyers order on your shop; you update delivery here. Their name and phone land in Customers.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                <a className="text-brand-600 hover:underline" href={desk.site.site_url} target="_blank" rel="noreferrer">
+                  Website
+                </a>
+                <a className="text-brand-600 hover:underline" href={desk.site.shop_url} target="_blank" rel="noreferrer">
+                  Selling page
+                </a>
+                <Link href="/website" className="text-slate-700 hover:underline">Edit website</Link>
+                <Link href="/catalog" className="text-slate-700 hover:underline">List products</Link>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+              <Link href="/catalog" className="rounded-lg bg-slate-50 px-3 py-2">
+                <p className="text-lg font-semibold tabular-nums">{desk.listed_items}</p>
+                <p className="text-xs text-slate-500">Listed</p>
+              </Link>
+              <Link href="/sales/portal-orders" className="rounded-lg bg-amber-50 px-3 py-2">
+                <p className="text-lg font-semibold tabular-nums">{desk.open_orders}</p>
+                <p className="text-xs text-slate-500">To deliver</p>
+              </Link>
+              <Link href="/sales/portal-orders" className="rounded-lg bg-emerald-50 px-3 py-2">
+                <p className="text-lg font-semibold tabular-nums">{desk.delivered_orders}</p>
+                <p className="text-xs text-slate-500">Delivered</p>
+              </Link>
+              <Link href="/crm/lead-hub" className="rounded-lg bg-sky-50 px-3 py-2">
+                <p className="text-lg font-semibold tabular-nums">{desk.leads}</p>
+                <p className="text-xs text-slate-500">Leads</p>
+              </Link>
+            </div>
+          </div>
+          {desk.recent_orders.length > 0 && (
+            <ul className="mt-4 divide-y divide-slate-100 text-sm">
+              {desk.recent_orders.map((o) => (
+                <li key={o.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <Link href="/sales/portal-orders" className="font-medium text-slate-800 hover:underline">
+                    {o.number} · {o.customer?.name ?? 'Buyer'}
+                  </Link>
+                  <span className="capitalize text-slate-600">
+                    {o.buyer_status?.replace(/_/g, ' ')} · ₹{Number(o.total).toFixed(0)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
 
       {showOnboardingCard && (

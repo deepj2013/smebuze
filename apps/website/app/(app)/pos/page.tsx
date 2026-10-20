@@ -6,7 +6,7 @@ import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import LooseAsk from './LooseAsk';
 import { formatLooseQty, isLooseItem } from '@/lib/loose-sale';
 import { useToast } from '../components/ToastContext';
-import { businessTypeMeta, isFloorBusinessType, isStockTrackedPos, posSellingRate } from '@/lib/business-types';
+import { businessTypeMeta, isFloorBusinessType, isStockTrackedPos, posSellingRate, showsCounterOrderModes } from '@/lib/business-types';
 import { Minus, Plus, Search, Banknote, Smartphone, CreditCard, ShoppingBag, UtensilsCrossed, Bike } from 'lucide-react';
 import BarcodeCapture from '../components/BarcodeCapture';
 import { useHidBarcode } from '@/lib/use-hid-barcode';
@@ -29,6 +29,9 @@ import {
 } from '@/lib/counter-desk';
 import { minutesAgo, type CounterBoard, type DeliveryOrder, type FloorLine } from '@/lib/floor';
 import DepartmentCounter from './DepartmentCounter';
+import CounterCustomerBar from './CounterCustomerBar';
+import { withBogoLines, type BogoPromo } from '@/lib/bogo';
+import { lookupCounterCustomer, type CounterParty } from '@/lib/counter-customer';
 
 interface PosItem {
   id: string;
@@ -49,13 +52,7 @@ interface PosItem {
   metadata?: Record<string, unknown> | null;
 }
 
-interface Customer {
-  id: string;
-  name: string;
-  phone?: string | null;
-  tags?: string[];
-  segment?: string | null;
-}
+interface Customer extends CounterParty {}
 
 interface Company {
   id: string;
@@ -96,6 +93,7 @@ export default function PosPage() {
   const [businessType, setBusinessType] = useState<string | null>(null);
   const [lang, setLang] = useState<CounterLang>('en');
   const [items, setItems] = useState<PosItem[]>([]);
+  const [promos, setPromos] = useState<BogoPromo[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyId, setCompanyId] = useState('');
@@ -130,21 +128,28 @@ export default function PosPage() {
   const [tenantKey, setTenantKey] = useState('');
   const [held, setHeld] = useState<HeldBill[]>([]);
   const [waiting, setWaiting] = useState(0);
+  const [orderModesOverride, setOrderModesOverride] = useState<boolean | null>(null);
   const itemsRef = useRef<PosItem[]>([]);
+  const customersRef = useRef<Customer[]>([]);
 
   const meta = businessTypeMeta(businessType ?? 'retail_shop');
   const floorMode = isFloorBusinessType(businessType);
+  const showOrderModes =
+    orderModesOverride != null ? orderModesOverride : showsCounterOrderModes(businessType) || floorMode;
   itemsRef.current = items;
+  customersRef.current = customers;
 
   const loadCatalog = async () => {
     const today = new Date().toISOString().slice(0, 10);
-    const [itemRes, shortRes, billRes] = await Promise.all([
+    const [itemRes, shortRes, billRes, promoRes] = await Promise.all([
       apiGet<PosItem[] | { data: PosItem[] }>('inventory/items?with_stock=1'),
       apiGet<{ item_id: string; name: string; current_stock: number }[]>('inventory/stock/low'),
       apiGet<{ id: string; number: string; total?: string | number }[]>(`sales/invoices?from=${today}&limit=8`),
+      apiGet<BogoPromo[]>('inventory/promotions?active=1'),
     ]);
     const itemList = Array.isArray(itemRes.data) ? itemRes.data : itemRes.data?.data ?? [];
     setItems(itemList.filter((i) => i.id));
+    if (Array.isArray(promoRes.data)) setPromos(promoRes.data);
     if (Array.isArray(shortRes.data)) setShort(shortRes.data);
     if (Array.isArray(billRes.data)) setTodayBills(billRes.data);
   };
@@ -152,6 +157,14 @@ export default function PosPage() {
   useEffect(() => {
     setLang(counterLang());
   }, []);
+
+  useEffect(() => {
+    if (!showOrderModes && orderType !== 'takeaway') {
+      setOrderType('takeaway');
+      setActiveTable(null);
+      setActiveDeliveryId(null);
+    }
+  }, [showOrderModes, orderType]);
 
   useEffect(() => {
     let timer = 0;
@@ -166,6 +179,9 @@ export default function PosPage() {
           const d = await response.json();
           const t = d?.tenant?.settings?.business_type;
           if (typeof t === 'string') type = t;
+          const modesFlag = d?.tenant?.settings?.counter_order_modes;
+          if (typeof modesFlag === 'boolean') setOrderModesOverride(modesFlag);
+          else setOrderModesOverride(null);
           const key = d?.tenant?.slug || d?.tenant?.id || '';
           if (key) {
             setTenantKey(key);
@@ -247,27 +263,51 @@ export default function PosPage() {
     const addQty = qty > 0 ? qty : 1;
     setCart((prev) => {
       const existing = prev.find((l) => l.item_id === item.id && l.rate === rate);
-      if (existing) return prev.map((l) => (l.item_id === item.id && l.rate === rate ? { ...l, qty: Math.round((l.qty + addQty) * 10000) / 10000 } : l));
-      return [
-        ...prev,
-        {
-          item_id: item.id,
-          name: displayItemName(item, lang),
-          qty: addQty,
-          rate,
-          tax_rate: tax,
-          hsn_sac: item.hsn_sac || '9983',
-          unit: item.unit || 'pcs',
-        },
-      ];
+      const next = existing
+        ? prev.map((l) => (l.item_id === item.id && l.rate === rate ? { ...l, qty: Math.round((l.qty + addQty) * 10000) / 10000 } : l))
+        : [
+            ...prev,
+            {
+              item_id: item.id,
+              name: displayItemName(item, lang),
+              qty: addQty,
+              rate,
+              tax_rate: tax,
+              hsn_sac: item.hsn_sac || '9983',
+              unit: item.unit || 'pcs',
+            },
+          ];
+      return withBogoLines(next, promos, (id, qty, name) => {
+        const src = items.find((i) => i.id === id);
+        return {
+          item_id: id,
+          name,
+          qty,
+          rate: 0,
+          tax_rate: 0,
+          hsn_sac: src?.hsn_sac || '9983',
+          unit: src?.unit || 'pcs',
+        };
+      });
     });
     // Keep product grid open on phone — user opens Buy list when ready to pay.
-  }, [lang]);
+  }, [lang, promos, items]);
 
   const applyCode = useCallback(
     async (raw: string) => {
       const q = raw.trim();
       if (!q) return;
+      const party = await lookupCounterCustomer(q, customersRef.current);
+      if (party?.id) {
+        setCustomerId(party.id);
+        setGuestName(party.name);
+        if (party.phone) setGuestPhone(party.phone);
+        setSavedGuest({ id: party.id, name: party.name, phone: party.phone || '' });
+        setCustomers((prev) => (prev.some((c) => c.id === party.id) ? prev.map((c) => (c.id === party.id ? { ...c, ...party } : c)) : [party, ...prev]));
+        playScanBeep(true);
+        success(`${party.name} on this bill`);
+        return;
+      }
       const list = itemsRef.current;
       const exact = list.find(
         (i) => (i.barcode || '').toLowerCase() === q.toLowerCase() || (i.sku || '').toLowerCase() === q.toLowerCase(),
@@ -303,9 +343,11 @@ export default function PosPage() {
 
   const setQty = (itemId: string, qty: number) => {
     setCart((prev) => {
-      if (qty <= 0) return prev.filter((l) => l.item_id !== itemId);
-      const next = Math.round(qty * 10000) / 10000;
-      return prev.map((l) => (l.item_id === itemId ? { ...l, qty: next } : l));
+      let next = qty <= 0 ? prev.filter((l) => l.item_id !== itemId) : prev.map((l) => (l.item_id === itemId ? { ...l, qty: Math.round(qty * 10000) / 10000 } : l));
+      return withBogoLines(next.filter((l) => l.rate > 0), promos, (id, q, name) => {
+        const src = items.find((i) => i.id === id);
+        return { item_id: id, name, qty: q, rate: 0, tax_rate: 0, hsn_sac: src?.hsn_sac || '9983', unit: src?.unit || 'pcs' };
+      });
     });
   };
 
@@ -837,14 +879,20 @@ export default function PosPage() {
       </ul>
       <div className="mt-2 shrink-0 space-y-2 overflow-y-auto border-t border-slate-100 pt-2">
       <div className="rounded border border-slate-200 bg-slate-50 p-1.5">
-        <div className="grid grid-cols-2 gap-1">
-          <input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Name" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
-          <input value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} inputMode="tel" placeholder="Mobile" className="h-7 rounded border border-slate-200 bg-white px-2 text-xs" />
-        </div>
-        <div className="mt-1 flex items-center justify-between gap-2">
-          <button type="button" onClick={() => void saveGuest()} className="h-6 rounded bg-slate-800 px-2 text-[11px] font-semibold text-white">Save</button>
-          <span className="truncate text-[11px] text-slate-600">{savedGuest ? `${savedGuest.name} · ${savedGuest.phone}` : 'Saved here for wishes'}</span>
-        </div>
+        <CounterCustomerBar
+          name={guestName}
+          phone={guestPhone}
+          customers={customers}
+          selectedId={customerId}
+          onName={setGuestName}
+          onPhone={setGuestPhone}
+          onSelect={(c) => {
+            setCustomerId(c.id);
+            setSavedGuest({ id: c.id, name: c.name, phone: c.phone || '' });
+            setCustomers((prev) => (prev.some((row) => row.id === c.id) ? prev.map((row) => (row.id === c.id ? { ...row, ...c } : row)) : [c, ...prev]));
+          }}
+          onSave={() => void saveGuest()}
+        />
         {orderType === 'delivery' && (
           <textarea
             value={guestAddress}
@@ -958,7 +1006,15 @@ export default function PosPage() {
 
   return (
     <div className="flex min-h-0 flex-col gap-3 pb-24 md:h-[calc(100dvh-5.5rem)] md:overflow-hidden md:pb-0">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2 text-xs">
+          <Link href="/sales/portal-orders" className="rounded-full border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-700">
+            Online orders
+          </Link>
+          <Link href="/catalog" className="rounded-full border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-700">
+            Selling page
+          </Link>
+        </div>
         <label className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
           <span className="text-slate-500">Lang</span>
           <select
@@ -982,38 +1038,40 @@ export default function PosPage() {
           {waiting} bill(s) are on this device. Stock updates after they sync.
         </p>
       )}
-      <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
-        {ORDER_TYPES.map((row) => {
-          const Icon = MODE_ICON[row.id];
-          const on = orderType === row.id;
-          return (
-            <button
-              key={row.id}
-              type="button"
-              onClick={() => {
-                if (row.id === orderType) return;
-                if (orderType === 'dinein') {
-                  setCart([]);
-                  setActiveTable(null);
-                  setCashTendered('');
-                }
-                if (orderType === 'delivery' && row.id !== 'delivery') {
-                  setCart([]);
-                  setActiveDeliveryId(null);
-                  setGuestAddress('');
-                  setGuestName('');
-                  setGuestPhone('');
-                }
-                setOrderType(row.id);
-              }}
-              className={`flex h-12 items-center justify-center gap-2 border-r border-slate-200 text-sm font-semibold last:border-r-0 ${on ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'}`}
-            >
-              <Icon className="h-4 w-4" />
-              <span className="truncate">{row.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      {showOrderModes && (
+        <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
+          {ORDER_TYPES.map((row) => {
+            const Icon = MODE_ICON[row.id];
+            const on = orderType === row.id;
+            return (
+              <button
+                key={row.id}
+                type="button"
+                onClick={() => {
+                  if (row.id === orderType) return;
+                  if (orderType === 'dinein') {
+                    setCart([]);
+                    setActiveTable(null);
+                    setCashTendered('');
+                  }
+                  if (orderType === 'delivery' && row.id !== 'delivery') {
+                    setCart([]);
+                    setActiveDeliveryId(null);
+                    setGuestAddress('');
+                    setGuestName('');
+                    setGuestPhone('');
+                  }
+                  setOrderType(row.id);
+                }}
+                className={`flex h-12 items-center justify-center gap-2 border-r border-slate-200 text-sm font-semibold last:border-r-0 ${on ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'}`}
+              >
+                <Icon className="h-4 w-4" />
+                <span className="truncate">{row.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-[168px_minmax(0,1fr)_340px] md:overflow-hidden">
         <aside className="hidden min-h-0 flex-col gap-1 overflow-y-auto md:flex">
           <p className="px-1 text-[11px] font-semibold uppercase text-slate-500">Menu</p>
@@ -1171,7 +1229,7 @@ export default function PosPage() {
                 title="Type or paste SKU or barcode, then Enter to add to cart"
                 className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2.5 text-sm min-h-[44px] sm:w-36 sm:flex-none"
               />
-              {!floorMode && <BarcodeCapture onDetected={applyCode} label="Scan" className="shrink-0" />}
+              <BarcodeCapture onDetected={applyCode} label="Scan" className="shrink-0" />
             </div>
           </div>
           {scanHint && <p className="mb-2 text-xs font-medium text-emerald-700">Added: {scanHint}</p>}

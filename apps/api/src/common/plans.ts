@@ -43,15 +43,18 @@ export function payablePlan(plan: string): boolean {
   return Boolean(PLAN_PRICE_RUPEES[plan]);
 }
 
-export function quotePlan(plan: string, interval: string): PlanQuote | null {
+export function quotePlan(plan: string, interval: string, addonMonthly = 0): PlanQuote | null {
   const saleMonthly = PLAN_PRICE_RUPEES[plan];
   if (!saleMonthly) return null;
   const listMonthly = PLAN_LIST_RUPEES[plan] ?? saleMonthly;
   const months = INTERVAL_MONTHS[interval] || 1;
-  const list_rupees = listMonthly * months;
-  let amount_rupees = saleMonthly * months;
+  const extra = Math.max(0, Math.round(addonMonthly)) * months;
+  const list_rupees = listMonthly * months + extra;
+  let amount_rupees = saleMonthly * months + extra;
   if (interval === 'yearly') {
-    amount_rupees = Math.round((amount_rupees * (100 - YEARLY_DISCOUNT_PERCENT)) / 100);
+    const planOnly = saleMonthly * months;
+    const planYear = Math.round((planOnly * (100 - YEARLY_DISCOUNT_PERCENT)) / 100);
+    amount_rupees = planYear + extra;
   }
   return {
     list_rupees,
@@ -62,12 +65,12 @@ export function quotePlan(plan: string, interval: string): PlanQuote | null {
   };
 }
 
-export function planAmountRupees(plan: string, interval: string): number | null {
-  return quotePlan(plan, interval)?.amount_rupees ?? null;
+export function planAmountRupees(plan: string, interval: string, addonMonthly = 0): number | null {
+  return quotePlan(plan, interval, addonMonthly)?.amount_rupees ?? null;
 }
 
-export function planAmountPaise(plan: string, interval: string): number | null {
-  return quotePlan(plan, interval)?.amount_paise ?? null;
+export function planAmountPaise(plan: string, interval: string, addonMonthly = 0): number | null {
+  return quotePlan(plan, interval, addonMonthly)?.amount_paise ?? null;
 }
 
 export function extendSubscriptionFrom(now: Date, currentEnd: Date | null, interval: string): Date {

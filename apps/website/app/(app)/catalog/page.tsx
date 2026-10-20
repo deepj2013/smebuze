@@ -59,15 +59,17 @@ export default function CatalogPage() {
 
   return (
     <div>
-      <PageHeader title="Public catalog" description="Choose which items buyers see on your shop. Orders land in Portal orders.">
+      <PageHeader title="Selling page" description="Tick items to show on your public shop. Buyer orders appear under Online orders with name and phone.">
         <button type="button" onClick={() => listAll(true)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]">List all for sale</button>
         <button type="button" onClick={() => listAll(false)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]">Unlist all</button>
       </PageHeader>
       {site && (
         <p className="mb-4 text-sm text-slate-600">
-          Shop: {site.shop_url ? <a className="text-brand-600 hover:underline" href={site.shop_url} target="_blank" rel="noreferrer">{site.shop_url}</a> : 'Publish your website first.'}
+          Shop: {site.shop_url ? <a className="text-brand-600 hover:underline" href={site.shop_url} target="_blank" rel="noreferrer">{site.shop_url}</a> : 'Opening this page publishes your shop.'}
           {' · '}
           <Link href="/website" className="text-brand-600 hover:underline">Edit website</Link>
+          {' · '}
+          <Link href="/sales/portal-orders" className="text-brand-600 hover:underline">Online orders</Link>
           {' · '}
           {listed} of {items.length} listed
         </p>

@@ -67,6 +67,14 @@ export class Customer {
   @Column({ default: true })
   is_active: boolean;
 
+  /** Loyalty points earned from counter / invoice sales (1 point ≈ ₹100 billed by default). */
+  @Column('decimal', { precision: 18, scale: 2, default: 0 })
+  loyalty_points: string;
+
+  /** Optional RFID / barcode on a loyalty card. Unique per tenant when set. */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  loyalty_card: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 

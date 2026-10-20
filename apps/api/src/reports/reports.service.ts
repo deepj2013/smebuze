@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { SalesService } from '../sales/sales.service';
 import { PurchaseService } from '../purchase/purchase.service';
@@ -1109,5 +1109,49 @@ export class ReportsService {
         margin: round(Number(r.sale_price || 0) - Number(r.cost_price || 0)),
       })),
     };
+  }
+
+  /** Day-book CSV for Tally / Busy / Marg upload. Same columns; filename differs. */
+  async accountingExportCsv(ctx: TenantContext, from?: string, to?: string, flavour: string = 'tally') {
+    if (!ctx.tenantId) throw new Error('Tenant required');
+    const tenant = await this.dataSource.query(`SELECT features FROM tenants WHERE id = $1`, [ctx.tenantId]);
+    const features = tenant?.[0]?.features;
+    const list = Array.isArray(features) ? features : [];
+    if (!ctx.isSuperAdmin && !list.includes('accounting_export')) {
+      throw new ForbiddenException('Accounting export is not enabled for this shop.');
+    }
+    const start = from || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    const end = to || new Date().toISOString().slice(0, 10);
+    const sales = (await this.dataSource.query(
+      `SELECT number, invoice_date::text AS date, COALESCE(c.name, v.name, 'Cash') AS party,
+              subtotal::text, tax_amount::text, total::text, 'Sales' AS vch
+       FROM sales_invoices i
+       LEFT JOIN customers c ON c.id = i.customer_id
+       LEFT JOIN vendors v ON v.id = i.vendor_id
+       WHERE i.tenant_id = $1 AND i.status <> 'deleted' AND i.invoice_date BETWEEN $2 AND $3
+       ORDER BY i.invoice_date, i.number`,
+      [ctx.tenantId, start, end],
+    )) as Array<Record<string, string>>;
+    let purchases: Array<Record<string, string>> = [];
+    try {
+      purchases = (await this.dataSource.query(
+        `SELECT number, bill_date::text AS date, COALESCE(v.name, '') AS party,
+                taxable_amount::text AS subtotal, (cgst_amount+sgst_amount+igst_amount)::text AS tax_amount,
+                total::text, 'Purchase' AS vch
+         FROM purchase_invoices i
+         LEFT JOIN vendors v ON v.id = i.vendor_id
+         WHERE i.tenant_id = $1 AND i.bill_date BETWEEN $2 AND $3
+         ORDER BY i.bill_date, i.number`,
+        [ctx.tenantId, start, end],
+      )) as Array<Record<string, string>>;
+    } catch {
+      purchases = [];
+    }
+    const header = 'VoucherType,Date,VoucherNo,Party,Taxable,Tax,Total';
+    const line = (r: Record<string, string>) =>
+      `${r.vch},${String(r.date).slice(0, 10)},${r.number},${String(r.party || '').replace(/,/g, ' ')},${r.subtotal},${r.tax_amount},${r.total}`;
+    const csv = [header, ...sales.map(line), ...purchases.map(line)].join('\n');
+    const tag = ['tally', 'busy', 'marg'].includes(flavour) ? flavour : 'tally';
+    return { csv, filename: `${tag}-daybook-${start}-to-${end}.csv`, flavour: tag, rows: sales.length + purchases.length };
   }
 }

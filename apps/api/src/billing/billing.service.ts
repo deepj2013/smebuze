@@ -28,6 +28,7 @@ import {
   YEARLY_DISCOUNT_PERCENT,
 } from '../common/plans';
 import { TenantSubscriptionPayment } from './entities/tenant-subscription-payment.entity';
+import { TenantBillingMandate } from './entities/tenant-billing-mandate.entity';
 import { BillingPayDto } from './dto/billing-pay.dto';
 import { CustomPlanEnquiryDto } from './dto/custom-plan-enquiry.dto';
 import {
@@ -38,6 +39,7 @@ import {
 import { MailService } from '../mail/mail.service';
 import { licenceRenewalHtml } from '../mail/templates';
 import { PartnersService } from '../partners/partners.service';
+import { MarketplacePaymentsService } from '../marketplace/marketplace-payments.service';
 
 const SUPPORT_EMAIL = 'support@smebuze.com';
 
@@ -64,11 +66,15 @@ export class BillingService {
     private readonly tenantRepo: Repository<Tenant>,
     @InjectRepository(TenantSubscriptionPayment)
     private readonly paymentRepo: Repository<TenantSubscriptionPayment>,
+    @InjectRepository(TenantBillingMandate)
+    private readonly mandateRepo: Repository<TenantBillingMandate>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly mail: MailService,
     @Inject(forwardRef(() => PartnersService))
     private readonly partnersService: PartnersService,
+    @Inject(forwardRef(() => MarketplacePaymentsService))
+    private readonly marketplacePayments: MarketplacePaymentsService,
   ) {}
 
   private tenantId(ctx: TenantContext): string {
@@ -192,6 +198,26 @@ export class BillingService {
         razorpay: rzp.enabled,
         phonepe: phonepe.enabled,
       },
+      ecs: await this.ecsStatus(tenant.id),
+      ecs_note:
+        'ECS / eMandate auto-debits your SMEBUZE plan each cycle via Razorpay Subscriptions. Separate from shop customer payments.',
+    };
+  }
+
+  private async ecsStatus(tenantId: string) {
+    const m = await this.mandateRepo.findOne({
+      where: { tenant_id: tenantId },
+      order: { created_at: 'DESC' },
+    });
+    if (!m) return { enabled: false, status: null as string | null, subscription_id: null as string | null };
+    return {
+      enabled: ['authenticated', 'active'].includes(m.status),
+      status: m.status,
+      subscription_id: m.gateway_subscription_id,
+      plan: m.plan,
+      interval: m.interval,
+      amount_paise: m.amount_paise,
+      next_charge_at: m.next_charge_at?.toISOString() ?? null,
     };
   }
 
@@ -203,6 +229,127 @@ export class BillingService {
     settings.billing = { ...billing, auto_renew: autoRenew };
     tenant.settings = settings;
     await this.tenantRepo.save(tenant);
+    return this.status(ctx);
+  }
+
+  /**
+   * Start Razorpay Subscription (ECS / eMandate) for SaaS plan auto-debit.
+   * Customer opens short_url once to authorise; later cycles charge automatically.
+   */
+  async setupEcs(ctx: TenantContext, dto: BillingPayDto) {
+    const rzp = this.platformRazorpay();
+    if (!rzp.enabled) {
+      throw new BadRequestException(
+        'Platform Razorpay is not configured. Set RAZORPAY_KEY_ID / SECRET, then retry ECS setup.',
+      );
+    }
+    const tenant = await this.tenantRepo.findOne({ where: { id: this.tenantId(ctx) } });
+    if (!tenant) throw new NotFoundException('Workspace not found');
+    const chosen = this.resolvePlanInterval(tenant, dto);
+    if (!chosen.amountPaise || chosen.amountPaise < 100) {
+      throw new BadRequestException('This plan cannot use ECS. Contact support@smebuze.com.');
+    }
+
+    const open = await this.mandateRepo
+      .createQueryBuilder('m')
+      .where('m.tenant_id = :tid', { tid: tenant.id })
+      .andWhere('m.status IN (:...st)', { st: ['created', 'authenticated', 'active'] })
+      .getOne();
+    if (open?.gateway_subscription_id && open.status === 'active') {
+      return {
+        already_active: true,
+        subscription_id: open.gateway_subscription_id,
+        status: open.status,
+      };
+    }
+
+    const period = chosen.interval === 'yearly' ? 12 : chosen.interval === 'monthly' ? 1 : 3;
+    const plan = await razorpayRequest<{ id: string }>(rzp.key_id, rzp.key_secret, 'POST', '/plans', {
+      period: 'monthly',
+      interval: period,
+      item: {
+        name: `SMEBUZE ${PLAN_LABELS[chosen.plan] || chosen.plan} (${chosen.interval})`,
+        amount: chosen.amountPaise,
+        currency: 'INR',
+        description: `SaaS licence · ${tenant.slug}`,
+      },
+      notes: { smebuze: 'saas_ecs_plan', tenant_id: tenant.id, plan: chosen.plan, interval: chosen.interval },
+    });
+
+    const sub = await razorpayRequest<{ id: string; short_url?: string; status?: string }>(
+      rzp.key_id,
+      rzp.key_secret,
+      'POST',
+      '/subscriptions',
+      {
+        plan_id: plan.id,
+        total_count: chosen.interval === 'yearly' ? 10 : 40,
+        customer_notify: 1,
+        notes: {
+          smebuze: 'saas_ecs',
+          tenant_id: tenant.id,
+          plan: chosen.plan,
+          interval: chosen.interval,
+        },
+      },
+    );
+
+    const mandate = await this.mandateRepo.save(
+      this.mandateRepo.create({
+        tenant_id: tenant.id,
+        gateway: 'razorpay',
+        status: sub.status || 'created',
+        plan: chosen.plan,
+        interval: chosen.interval,
+        amount_paise: chosen.amountPaise,
+        gateway_plan_id: plan.id,
+        gateway_subscription_id: sub.id,
+        meta: { short_url: sub.short_url || null },
+      }),
+    );
+
+    const settings = { ...(tenant.settings || {}) };
+    const billing = this.billingSettings(settings);
+    settings.billing = { ...billing, auto_renew: true, ecs: true };
+    tenant.settings = settings;
+    await this.tenantRepo.save(tenant);
+
+    return {
+      mandate_id: mandate.id,
+      subscription_id: sub.id,
+      short_url: sub.short_url || null,
+      status: mandate.status,
+      amount_paise: chosen.amountPaise,
+      message:
+        'Open the link once to authorise auto-debit (UPI Autopay / eMandate). SMEBUZE will renew your plan each cycle.',
+    };
+  }
+
+  async cancelEcs(ctx: TenantContext) {
+    const rzp = this.platformRazorpay();
+    const tenantId = this.tenantId(ctx);
+    const m = await this.mandateRepo
+      .createQueryBuilder('m')
+      .where('m.tenant_id = :tid', { tid: tenantId })
+      .andWhere('m.status IN (:...st)', { st: ['created', 'authenticated', 'active'] })
+      .orderBy('m.created_at', 'DESC')
+      .getOne();
+    if (!m) throw new NotFoundException('No active ECS mandate');
+    if (rzp.enabled && m.gateway_subscription_id) {
+      try {
+        await razorpayRequest(
+          rzp.key_id,
+          rzp.key_secret,
+          'POST',
+          `/subscriptions/${m.gateway_subscription_id}/cancel`,
+          { cancel_at_cycle_end: 0 },
+        );
+      } catch (err) {
+        this.logger.warn(`ECS cancel API: ${(err as Error).message}`);
+      }
+    }
+    m.status = 'cancelled';
+    await this.mandateRepo.save(m);
     return this.status(ctx);
   }
 
@@ -415,24 +562,106 @@ export class BillingService {
     } catch {
       return { ok: false };
     }
-    const paymentEntity = parsed.payload?.payment?.entity;
-    const orderId = String(paymentEntity?.order_id || '');
-    const notes = (paymentEntity?.notes || {}) as { smebuze?: string; payment_id?: string };
-    if (notes.smebuze !== 'subscription' && !orderId) return { ok: true };
+    const paymentEntity = (parsed.payload?.payment?.entity || {}) as Record<string, unknown>;
+    const orderId = String(paymentEntity.order_id || '');
+    const notes = (paymentEntity.notes || {}) as Record<string, unknown>;
+    const kind = String(notes.smebuze || '');
+
+    // Mall checkout + commerce add-ons (platform collect) — do not extend SaaS subscription.
+    if (kind === 'mall_order' || kind === 'commerce_addon') {
+      if (parsed.event === 'payment.captured' || parsed.event === 'order.paid') {
+        await this.marketplacePayments.handlePlatformWebhookNotes(notes, paymentEntity);
+      }
+      return { ok: true };
+    }
+
+    // SaaS ECS / Razorpay Subscriptions
+    if (kind === 'saas_ecs' || String(parsed.event || '').startsWith('subscription.')) {
+      await this.handleEcsWebhook(parsed.event || '', notes, paymentEntity, parsed.payload as Record<string, unknown>);
+      return { ok: true };
+    }
+
+    if (kind !== 'subscription' && !orderId) return { ok: true };
     const payment = orderId
       ? await this.paymentRepo.findOne({ where: { gateway_order_id: orderId, gateway: 'razorpay' } })
       : notes.payment_id
-        ? await this.paymentRepo.findOne({ where: { id: notes.payment_id, gateway: 'razorpay' } })
+        ? await this.paymentRepo.findOne({ where: { id: String(notes.payment_id), gateway: 'razorpay' } })
         : null;
     if (!payment) return { ok: true };
+    // Safety: addon_* plans must not renew the main plan via this path
+    if (String(payment.plan || '').startsWith('addon_')) {
+      if (parsed.event === 'payment.captured' || parsed.event === 'order.paid') {
+        await this.marketplacePayments.markAddonPaymentPaid(
+          payment,
+          String(paymentEntity.id || ''),
+        );
+      }
+      return { ok: true };
+    }
     if (parsed.event === 'payment.captured' || parsed.event === 'order.paid') {
-      payment.gateway_payment_id = String(paymentEntity?.id || payment.gateway_payment_id || '');
+      payment.gateway_payment_id = String(paymentEntity.id || payment.gateway_payment_id || '');
       await this.markPaid(payment);
     } else if (parsed.event === 'payment.failed') {
       payment.status = 'failed';
       await this.paymentRepo.save(payment);
     }
     return { ok: true };
+  }
+
+  private async handleEcsWebhook(
+    event: string,
+    notes: Record<string, unknown>,
+    paymentEntity: Record<string, unknown>,
+    payload: Record<string, unknown> | undefined,
+  ) {
+    const subEntity = ((payload?.subscription as { entity?: Record<string, unknown> })?.entity ||
+      {}) as Record<string, unknown>;
+    const subId = String(subEntity.id || notes.subscription_id || '');
+    const subNotes = (subEntity.notes || {}) as Record<string, unknown>;
+    const tenantId = String(notes.tenant_id || subNotes.tenant_id || '');
+    let mandate = subId
+      ? await this.mandateRepo.findOne({ where: { gateway_subscription_id: subId } })
+      : null;
+    if (!mandate && tenantId) {
+      mandate = await this.mandateRepo
+        .createQueryBuilder('m')
+        .where('m.tenant_id = :tid', { tid: tenantId })
+        .orderBy('m.created_at', 'DESC')
+        .getOne();
+    }
+    if (!mandate) return;
+
+    if (event === 'subscription.authenticated' || event === 'subscription.activated') {
+      mandate.status = event === 'subscription.activated' ? 'active' : 'authenticated';
+      await this.mandateRepo.save(mandate);
+      return;
+    }
+    if (event === 'subscription.charged' || event === 'payment.captured') {
+      mandate.status = 'active';
+      mandate.last_charged_at = new Date();
+      await this.mandateRepo.save(mandate);
+      const tenant = await this.tenantRepo.findOne({ where: { id: mandate.tenant_id } });
+      if (!tenant) return;
+      const payment = await this.paymentRepo.save(
+        this.paymentRepo.create({
+          tenant_id: tenant.id,
+          gateway: 'razorpay',
+          plan: mandate.plan,
+          interval: mandate.interval,
+          amount_paise: mandate.amount_paise,
+          status: 'paid',
+          gateway_payment_id: String(paymentEntity.id || ''),
+          gateway_order_id: String(paymentEntity.order_id || subId),
+          meta: { smebuze: 'saas_ecs', subscription_id: subId },
+        }),
+      );
+      await this.markPaid(payment);
+      return;
+    }
+    if (event === 'subscription.halted' || event === 'subscription.cancelled' || event === 'subscription.completed') {
+      mandate.status = event === 'subscription.cancelled' ? 'cancelled' : 'halted';
+      await this.mandateRepo.save(mandate);
+    }
   }
 
   private async fetchPhonePeStatus(merchantTransactionId: string): Promise<{

@@ -50,6 +50,17 @@ export class SalesController {
     return this.salesService.partyLedger(ctx);
   }
 
+  /** Counter home-delivery / pickup bills (notes start with Home delivery or Pickup). */
+  @Get('invoices/fulfilments')
+  @RequirePermissions('sales.invoice.view')
+  async listFulfilments(
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
+    @CurrentTenant() ctx: TenantContext,
+  ) {
+    return this.salesService.listCounterFulfilments(ctx, from, to);
+  }
+
   @Get('document-series')
   @RequirePermissions('sales.invoice.view')
   async documentSeries(@Query('date') date: string | undefined, @CurrentTenant() ctx: TenantContext) {
@@ -145,6 +156,25 @@ export class SalesController {
     const html = await this.salesService.getInvoicePrintHtml(id, ctx);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
+  }
+
+  @Get('invoices/:id/e-invoice')
+  @RequirePermissions('sales.invoice.view')
+  async eInvoice(@Param('id') id: string, @Query('format') format: string | undefined, @Res({ passthrough: true }) res: Response, @CurrentTenant() ctx: TenantContext) {
+    const payload = await this.salesService.eInvoiceFile(id, ctx);
+    if (format === 'file' && res) {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename=einvoice-${id.slice(0, 8)}.json`);
+      res.send(JSON.stringify(payload, null, 2));
+      return;
+    }
+    return payload;
+  }
+
+  @Get('invoices/:id/e-way')
+  @RequirePermissions('sales.invoice.view')
+  eWay(@Param('id') id: string, @CurrentTenant() ctx: TenantContext) {
+    return this.salesService.eWayStub(id, ctx);
   }
 
   @Get('invoices/:id/payment-link')
