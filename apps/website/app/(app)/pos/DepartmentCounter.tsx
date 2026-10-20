@@ -682,14 +682,14 @@ export default function DepartmentCounter() {
           <button
             type="button"
             onClick={pickWalkInCash}
-            className={`h-8 rounded-lg border text-[11px] font-semibold ${!accountIsCredit && payMode !== 'credit' ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-700'}`}
+            className={`h-8 rounded-lg border text-[11px] font-semibold ${!accountIsCredit ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-700'}`}
           >
             Walk-in cash
           </button>
           <button
             type="button"
             onClick={pickMonthlyCredit}
-            className={`h-8 rounded-lg border text-[11px] font-semibold ${accountIsCredit || payMode === 'credit' ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-700'}`}
+            className={`h-8 rounded-lg border text-[11px] font-semibold ${accountIsCredit ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-700'}`}
           >
             Monthly credit
           </button>

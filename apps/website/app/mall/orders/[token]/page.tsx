@@ -30,12 +30,12 @@ export default function MallTrackPage({ params }: { params: { token: string } })
           <div className="flex justify-between"><dt className="text-slate-500">Payment</dt><dd>{String(data.payment_status)}</dd></div>
           <div className="flex justify-between"><dt className="text-slate-500">Amount</dt><dd>₹{Number(data.gross_amount).toFixed(2)}</dd></div>
           <div className="flex justify-between"><dt className="text-slate-500">Delivery</dt><dd>{String(data.delivery_mode)}</dd></div>
-          {data.delivery_job && typeof data.delivery_job === 'object' && (
+          {typeof data.delivery_job === 'object' && data.delivery_job !== null ? (
             <div className="pt-2 border-t text-slate-600">
               Rider: {String((data.delivery_job as { rider_name?: string }).rider_name || '—')} ·{' '}
               {String((data.delivery_job as { status?: string }).status)}
             </div>
-          )}
+          ) : null}
         </dl>
       )}
     </div>
