@@ -16,6 +16,7 @@ export default function MallLayout({ children }: { children: React.ReactNode }) 
           </Link>
           <nav className="flex gap-4 text-sm text-slate-600">
             <Link href="/mall" className="hover:text-slate-900">Browse</Link>
+            <Link href="/mall/my-orders" className="hover:text-slate-900">My orders</Link>
             <Link href="/shops" className="hover:text-slate-900">All shops</Link>
           </nav>
         </div>
