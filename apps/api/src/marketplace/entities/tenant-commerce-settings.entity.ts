@@ -53,6 +53,16 @@ export class TenantCommerceSettings {
   @Column({ type: 'jsonb', default: {} })
   addons_meta: Record<string, unknown>;
 
+  @Column({ type: 'varchar', length: 6, nullable: true })
+  mall_origin_pincode: string | null;
+
+  /** local | city | pincode_list | pan_india */
+  @Column({ type: 'varchar', length: 20, default: 'local' })
+  mall_coverage: string;
+
+  @Column({ type: 'jsonb', default: [] })
+  mall_extra_pincodes: string[];
+
   @UpdateDateColumn()
   updated_at: Date;
 }

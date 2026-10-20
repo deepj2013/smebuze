@@ -13,8 +13,8 @@ export class PublicMallController {
   ) {}
 
   @Get('categories')
-  categories() {
-    return this.mall.publicCategories();
+  categories(@Query('pincode') pincode?: string) {
+    return this.mall.publicCategories(pincode);
   }
 
   @Get('items')
@@ -22,6 +22,7 @@ export class PublicMallController {
     @Query('category') category?: string,
     @Query('q') q?: string,
     @Query('seller') seller?: string,
+    @Query('pincode') pincode?: string,
     @Query('page') page?: string,
     @Query('page_size') page_size?: string,
   ) {
@@ -29,6 +30,7 @@ export class PublicMallController {
       category,
       q,
       seller,
+      pincode,
       page: page ? parseInt(page, 10) : 1,
       page_size: page_size ? parseInt(page_size, 10) : 24,
     });

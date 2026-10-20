@@ -27,10 +27,20 @@ type MallItem = {
   delivery_mode: string;
 };
 
-type Page = { page: number; page_size: number; total: number; items: MallItem[] };
+type MallMeta = {
+  buyer_pincode?: string | null;
+  pincode_required?: boolean;
+  sellers_in_area?: number;
+  hint?: string;
+};
+
+type Page = { page: number; page_size: number; total: number; items: MallItem[]; mall?: MallMeta };
+
+const PIN_STORAGE = 'smebuze_mall_pin';
 
 export default function MallHomePage() {
   const [data, setData] = useState<Page | null>(null);
+  const [pincode, setPincode] = useState('');
   const [categories, setCategories] = useState<Array<{ category: string; count: number }>>([]);
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
@@ -43,11 +53,23 @@ export default function MallHomePage() {
   const [sending, setSending] = useState(false);
   const [scriptReady, setScriptReady] = useState(false);
 
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PIN_STORAGE);
+      if (saved) setPincode(saved);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   async function load() {
     setError('');
     const params = new URLSearchParams();
     if (q.trim()) params.set('q', q.trim());
     if (category) params.set('category', category);
+    const pin = pincode.replace(/\D/g, '').slice(0, 6);
+    if (pin.length === 6) params.set('pincode', pin);
+    const catQs = pin.length === 6 ? `?pincode=${encodeURIComponent(pin)}` : '';
     if (sellerLock) params.set('seller', ''); // filter by tenant via client after load if no slug filter
     try {
       const [itemsRes, catRes] = await Promise.all([
@@ -56,7 +78,7 @@ export default function MallHomePage() {
           if (!r.ok) throw new Error(j.message || 'Failed to load');
           return j as Page;
         }),
-        fetch(`${API}/api/v1/public/mall/categories`).then((r) => r.json()),
+        fetch(`${API}/api/v1/public/mall/categories${catQs}`).then((r) => r.json()),
       ]);
       let page = itemsRes;
       if (sellerLock) {
@@ -75,7 +97,22 @@ export default function MallHomePage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, sellerLock?.id]);
+  }, [category, sellerLock?.id, pincode]);
+
+  function applyPincode() {
+    const pin = pincode.replace(/\D/g, '').slice(0, 6);
+    if (pin.length !== 6) {
+      setError('Enter a valid 6-digit pincode');
+      return;
+    }
+    try {
+      localStorage.setItem(PIN_STORAGE, pin);
+    } catch {
+      /* ignore */
+    }
+    setPincode(pin);
+    setError('');
+  }
 
   const cart = useMemo(() => {
     if (!data) return [];
@@ -208,10 +245,29 @@ export default function MallHomePage() {
     <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
       <Script src="https://checkout.razorpay.com/v1/checkout.js" onLoad={() => setScriptReady(true)} />
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight mb-1">Local shops, one cart at a time</h1>
-        <p className="text-sm text-slate-600 mb-4">
-          Browse many sellers. Checkout locks to one shop so delivery and payment stay simple.
+        <h1 className="text-2xl font-semibold tracking-tight mb-1">Local shops near you</h1>
+        <p className="text-sm text-slate-600 mb-3">
+          Enter your delivery pincode — we only show shops that serve your area. One shop per checkout.
         </p>
+        <div className="flex flex-wrap gap-2 mb-3 items-end">
+          <label className="text-sm flex-1 min-w-[160px]">
+            <span className="font-medium text-slate-700">Delivery pincode</span>
+            <input
+              value={pincode}
+              onChange={(e) => setPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onKeyDown={(e) => e.key === 'Enter' && applyPincode()}
+              placeholder="6 digits e.g. 411001"
+              inputMode="numeric"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"
+            />
+          </label>
+          <button type="button" onClick={applyPincode} className="rounded-lg bg-brand-600 text-white px-4 py-2.5 text-sm font-medium min-h-[44px]">
+            Show nearby
+          </button>
+        </div>
+        {data?.mall?.hint && (
+          <p className="mb-3 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">{data.mall.hint}</p>
+        )}
         <div className="flex flex-wrap gap-2 mb-4">
           <input
             value={q}
@@ -288,7 +344,7 @@ export default function MallHomePage() {
             <p className="font-medium text-sm">Subtotal ₹{total.toFixed(2)}</p>
             <input required value={buyer.name} onChange={(e) => setBuyer({ ...buyer, name: e.target.value })} placeholder="Your name" className="w-full rounded-lg border px-3 py-2 text-sm" />
             <input required value={buyer.phone} onChange={(e) => setBuyer({ ...buyer, phone: e.target.value })} placeholder="10-digit mobile" className="w-full rounded-lg border px-3 py-2 text-sm" />
-            <textarea value={buyer.address} onChange={(e) => setBuyer({ ...buyer, address: e.target.value })} placeholder="Delivery address" className="w-full rounded-lg border px-3 py-2 text-sm" rows={2} />
+            <textarea value={buyer.address} onChange={(e) => setBuyer({ ...buyer, address: e.target.value })} placeholder="Flat, street, city — include 6-digit pincode (411001)" className="w-full rounded-lg border px-3 py-2 text-sm" rows={2} />
             <select value={deliveryMode} onChange={(e) => setDeliveryMode(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm">
               <option value="own">Shop delivery / pickup</option>
               <option value="platform">SMEBUZE delivery</option>

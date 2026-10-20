@@ -74,7 +74,7 @@ Restaurant/cafe floor demos also create waiter/kitchen users (see seed log on VP
 
 | What | URL pattern |
 |------|-------------|
-| **SMEBUZE Mall** (multi-shop marketplace) | `/mall` |
+| **SMEBUZE Mall** (multi-shop marketplace) | `/mall` — enter **delivery pincode** to see nearby shops only |
 | **Mall order tracking** | `/mall/orders/{token}` |
 | **Tenant public website** | `/site/{slug}` |
 | **Tenant online shop** | `/shop/{slug}` |

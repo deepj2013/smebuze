@@ -33,6 +33,11 @@ export class TenantCommerceController {
       restock_hub_enabled: boolean;
       delivery_mode: string;
       payment_mode: string;
+      pass_fee_to_customer: boolean;
+      upi_qr_image_url: string | null;
+      mall_origin_pincode: string | null;
+      mall_coverage: string;
+      mall_extra_pincodes: string[];
     }>,
     @CurrentTenant() ctx: TenantContext,
   ) {

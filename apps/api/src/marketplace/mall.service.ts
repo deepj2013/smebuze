@@ -25,6 +25,13 @@ import { TenantCommerceSettings } from './entities/tenant-commerce-settings.enti
 import { CommerceService } from './commerce.service';
 import { MarketplacePaymentsService } from './marketplace-payments.service';
 import { COMPLIANCE_CHECKLIST } from './payment-modes';
+import {
+  mallCoverage,
+  normalizePincode,
+  parseExtraPincodes,
+  pincodeFromAddress,
+  sellerDeliversToPin,
+} from './mall-pincode';
 
 function money(n: number): string {
   return (Math.round((Number(n) || 0) * 100) / 100).toFixed(2);
@@ -71,33 +78,74 @@ export class MallService {
     if (!ok) throw new ForbiddenException('Platform admin only');
   }
 
+  private mallLiveSql = `cs.mall_enabled = true AND (
+    cs.mall_paid_until > NOW()
+    OR COALESCE((cs.addons_meta->>'admin_gifted_mall')::boolean, false) = true
+  )`;
+
+  private async originPinForTenant(tenantId: string, cs: TenantCommerceSettings): Promise<string | null> {
+    const fromSettings = normalizePincode(cs.mall_origin_pincode);
+    if (fromSettings) return fromSettings;
+    const company = await this.companyRepo.findOne({
+      where: { tenant_id: tenantId, is_default: true },
+    });
+    const addr = company?.address ?? (await this.companyRepo.findOne({ where: { tenant_id: tenantId }, order: { created_at: 'ASC' } }))?.address;
+    return pincodeFromAddress(addr);
+  }
+
+  /** Which seller tenants may appear for this buyer pincode (empty if none / invalid pin). */
+  private async tenantIdsVisibleForPin(buyerPinRaw?: string): Promise<{ pin: string | null; tenantIds: string[] }> {
+    const pin = buyerPinRaw?.trim() ? normalizePincode(buyerPinRaw) : null;
+    const rows = await this.commerceSettingsRepo
+      .createQueryBuilder('cs')
+      .where(this.mallLiveSql)
+      .getMany();
+    const tenantIds: string[] = [];
+    for (const cs of rows) {
+      const origin = await this.originPinForTenant(cs.tenant_id, cs);
+      const coverage = mallCoverage(cs.mall_coverage);
+      const extras = parseExtraPincodes(cs.mall_extra_pincodes);
+      if (!pin) {
+        if (coverage === 'pan_india') tenantIds.push(cs.tenant_id);
+        continue;
+      }
+      if (sellerDeliversToPin(pin, origin, coverage, extras)) tenantIds.push(cs.tenant_id);
+    }
+    return { pin, tenantIds };
+  }
+
+  private applyTenantPinFilter(qb: ReturnType<Repository<MallListing>['createQueryBuilder']>, tenantIds: string[]) {
+    if (!tenantIds.length) {
+      qb.andWhere('1 = 0');
+      return;
+    }
+    qb.andWhere('l.tenant_id IN (:...mallTenantIds)', { mallTenantIds: tenantIds });
+  }
+
   // ── Public mall browse (cached ~90s) ───────────────────────────────────────
 
-  async publicCategories() {
-    if (this.cache.categories && Date.now() - this.cache.at < 90_000) {
+  async publicCategories(buyerPin?: string) {
+    const catKey = `cat:${buyerPin ?? ''}`;
+    if (this.cache.categories && this.cache.itemsKey === catKey && Date.now() - this.cache.at < 90_000) {
       return this.cache.categories;
     }
-    const rows = await this.listingRepo
+    const { tenantIds } = await this.tenantIdsVisibleForPin(buyerPin);
+    const qb = this.listingRepo
       .createQueryBuilder('l')
       .innerJoin('l.item', 'i')
-      .innerJoin(
-        'tenant_commerce_settings',
-        'cs',
-        `cs.tenant_id = l.tenant_id AND cs.mall_enabled = true AND (
-          cs.mall_paid_until > NOW()
-          OR COALESCE((cs.addons_meta->>'admin_gifted_mall')::boolean, false) = true
-        )`,
-      )
+      .innerJoin('tenant_commerce_settings', 'cs', `cs.tenant_id = l.tenant_id AND ${this.mallLiveSql}`)
       .where('l.active = true')
       .andWhere('i.is_active = true')
-      .andWhere('i.for_sale = true')
+      .andWhere('i.for_sale = true');
+    this.applyTenantPinFilter(qb, tenantIds);
+    const raw = await qb
       .select("COALESCE(i.category, 'Uncategorised')", 'category')
       .addSelect('COUNT(*)', 'count')
       .groupBy("COALESCE(i.category, 'Uncategorised')")
       .orderBy('category', 'ASC')
       .getRawMany();
-    const result = rows.map((r) => ({ category: r.category, count: parseInt(r.count, 10) || 0 }));
-    this.cache = { ...this.cache, at: Date.now(), categories: result };
+    const result = raw.map((r) => ({ category: r.category, count: parseInt(r.count, 10) || 0 }));
+    this.cache = { ...this.cache, at: Date.now(), itemsKey: catKey, categories: result };
     return result;
   }
 
@@ -105,6 +153,7 @@ export class MallService {
     category?: string;
     q?: string;
     seller?: string;
+    pincode?: string;
     page?: number;
     page_size?: number;
   }) {
@@ -115,21 +164,17 @@ export class MallService {
       return this.cache.items;
     }
 
+    const { pin, tenantIds: visibleTenantIds } = await this.tenantIdsVisibleForPin(query.pincode);
+
     const qb = this.listingRepo
       .createQueryBuilder('l')
       .innerJoinAndSelect('l.item', 'i')
       .innerJoinAndSelect('l.tenant', 't')
-      .innerJoin(
-        'tenant_commerce_settings',
-        'cs',
-        `cs.tenant_id = l.tenant_id AND cs.mall_enabled = true AND (
-          cs.mall_paid_until > NOW()
-          OR COALESCE((cs.addons_meta->>'admin_gifted_mall')::boolean, false) = true
-        )`,
-      )
+      .innerJoin('tenant_commerce_settings', 'cs', `cs.tenant_id = l.tenant_id AND ${this.mallLiveSql}`)
       .where('l.active = true')
       .andWhere('i.is_active = true')
       .andWhere('i.for_sale = true');
+    this.applyTenantPinFilter(qb, visibleTenantIds);
 
     if (query.category?.trim()) {
       qb.andWhere('i.category ILIKE :cat', { cat: query.category.trim() });
@@ -176,10 +221,29 @@ export class MallService {
         seller_name: l.tenant.name,
         seller_tenant_id: l.tenant_id,
         delivery_mode: cs?.delivery_mode ?? 'own',
+        seller_pincode: cs?.mall_origin_pincode ?? null,
       };
     });
 
-    const result = { page, page_size: pageSize, total, items };
+    const result = {
+      page,
+      page_size: pageSize,
+      total,
+      items,
+      mall: {
+        buyer_pincode: pin,
+        pincode_filter_active: Boolean(query.pincode?.trim()),
+        pincode_required: !query.pincode?.trim(),
+        sellers_in_area: visibleTenantIds.length,
+        hint: !query.pincode?.trim()
+          ? 'Enter your 6-digit delivery pincode to see nearby shops only.'
+          : !pin
+            ? 'Enter a valid 6-digit pincode.'
+            : visibleTenantIds.length
+              ? `Showing shops that deliver to ${pin}.`
+              : `No mall shops deliver to ${pin} yet — try a nearby pincode or ask your local store to join.`,
+      },
+    };
     this.cache = { at: Date.now(), itemsKey: cacheKey, items: result, categories: this.cache.categories };
     return result;
   }
@@ -227,6 +291,20 @@ export class MallService {
     const cs = await this.commerce.getOrCreate(sellerId);
     if (!this.commerce.mallIsLive(cs)) {
       throw new BadRequestException('This shop is not listed on the mall (add-on inactive or unpaid)');
+    }
+
+    const buyerPin =
+      typeof body.buyer?.address === 'string'
+        ? normalizePincode(body.buyer.address.match(/\b(\d{6})\b/)?.[1])
+        : pincodeFromAddress(body.buyer?.address);
+    if (!buyerPin) {
+      throw new BadRequestException('Add your 6-digit delivery pincode in the address (e.g. Pune 411001)');
+    }
+    const origin = await this.originPinForTenant(sellerId, cs);
+    const coverage = mallCoverage(cs.mall_coverage);
+    const extras = parseExtraPincodes(cs.mall_extra_pincodes);
+    if (!sellerDeliversToPin(buyerPin, origin, coverage, extras)) {
+      throw new BadRequestException(`This shop does not deliver to pincode ${buyerPin}. Choose another seller near you.`);
     }
 
     const name = String(body.buyer?.name || '').trim();

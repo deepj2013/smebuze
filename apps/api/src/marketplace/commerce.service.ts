@@ -2,7 +2,14 @@ import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/com
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TenantContext } from '../common/tenant-context';
+import { Company } from '../tenant/entities/company.entity';
 import { TenantCommerceSettings } from './entities/tenant-commerce-settings.entity';
+import {
+  MALL_COVERAGE_LABELS,
+  mallCoverage,
+  normalizePincode,
+  parseExtraPincodes,
+} from './mall-pincode';
 import { listAddonCatalog, addonPriceRupees } from './commerce-addons';
 import {
   COMPLIANCE_CHECKLIST,
@@ -21,6 +28,8 @@ export class CommerceService {
   constructor(
     @InjectRepository(TenantCommerceSettings)
     private readonly settingsRepo: Repository<TenantCommerceSettings>,
+    @InjectRepository(Company)
+    private readonly companyRepo: Repository<Company>,
   ) {}
 
   async getOrCreate(tenantId: string): Promise<TenantCommerceSettings> {
@@ -94,7 +103,26 @@ export class CommerceService {
         shop_nets: example.netToShop,
       },
       updated_at: row.updated_at,
+      mall_origin_pincode: row.mall_origin_pincode ?? null,
+      mall_coverage: mallCoverage(row.mall_coverage),
+      mall_coverage_label: MALL_COVERAGE_LABELS[mallCoverage(row.mall_coverage)],
+      mall_extra_pincodes: parseExtraPincodes(row.mall_extra_pincodes),
     };
+  }
+
+  private async defaultCompanyPincode(tenantId: string): Promise<string | null> {
+    const company = await this.companyRepo.findOne({
+      where: { tenant_id: tenantId, is_default: true },
+    });
+    if (!company?.address || typeof company.address !== 'object') {
+      const any = await this.companyRepo.findOne({
+        where: { tenant_id: tenantId },
+        order: { created_at: 'ASC' },
+      });
+      if (!any?.address || typeof any.address !== 'object') return null;
+      return normalizePincode((any.address as Record<string, unknown>).pincode);
+    }
+    return normalizePincode((company.address as Record<string, unknown>).pincode);
   }
 
   async getSettings(ctx: TenantContext) {
@@ -112,6 +140,9 @@ export class CommerceService {
       payment_mode: string;
       pass_fee_to_customer: boolean;
       upi_qr_image_url: string | null;
+      mall_origin_pincode: string | null;
+      mall_coverage: string;
+      mall_extra_pincodes: string[];
     }>,
   ) {
     if (!ctx.tenantId) throw new ForbiddenException('Tenant required');
@@ -165,6 +196,24 @@ export class CommerceService {
     }
     if (row.mall_enabled && row.payment_mode !== 'platform_collect') {
       row.payment_mode = 'platform_collect';
+    }
+    if (body.mall_origin_pincode !== undefined) {
+      const p = body.mall_origin_pincode == null ? null : normalizePincode(body.mall_origin_pincode);
+      if (body.mall_origin_pincode && !p) {
+        throw new BadRequestException('Mall shop pincode must be 6 digits');
+      }
+      row.mall_origin_pincode = p;
+    }
+    if (body.mall_coverage != null) {
+      const c = mallCoverage(body.mall_coverage);
+      row.mall_coverage = c;
+    }
+    if (body.mall_extra_pincodes != null) {
+      row.mall_extra_pincodes = parseExtraPincodes(body.mall_extra_pincodes);
+    }
+    if (row.mall_enabled && !row.mall_origin_pincode) {
+      const fromCo = await this.defaultCompanyPincode(ctx.tenantId!);
+      if (fromCo) row.mall_origin_pincode = fromCo;
     }
     await this.settingsRepo.save(row);
     return this.serialize(row);

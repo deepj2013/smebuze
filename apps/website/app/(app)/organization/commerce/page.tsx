@@ -23,6 +23,10 @@ type Settings = {
   mall_paid_until?: string | null;
   storefront_active?: boolean;
   mall_active?: boolean;
+  mall_origin_pincode?: string | null;
+  mall_coverage?: string;
+  mall_coverage_label?: string;
+  mall_extra_pincodes?: string[];
   addons?: Addon[];
   fee_example?: { bill: number; customer_pays: number; platform_fee: number; shop_nets: number };
 };
@@ -143,6 +147,11 @@ export default function CommerceSettingsPage() {
 
   const listedIds = new Set(listings.filter((l) => l.active).map((l) => l.item_id));
   const addons = s?.addons ?? [];
+  const [extraPins, setExtraPins] = useState('');
+
+  useEffect(() => {
+    if (s?.mall_extra_pincodes?.length) setExtraPins(s.mall_extra_pincodes.join(', '));
+  }, [s?.mall_extra_pincodes]);
 
   return (
     <div>
@@ -274,6 +283,61 @@ export default function CommerceSettingsPage() {
               </div>
             )}
           </section>
+
+          {s.mall_enabled && (
+            <section className="rounded-xl border bg-white p-4 space-y-3">
+              <h2 className="font-medium text-slate-900">Mall delivery area</h2>
+              <p className="text-sm text-slate-600">
+                Buyers enter their pincode on <Link href="/mall" className="text-brand-600 underline" target="_blank">/mall</Link>.
+                Only shops that serve that area appear.
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-sm block">
+                  Shop pincode
+                  <input
+                    className="mt-1 w-full rounded-lg border px-3 py-2"
+                    value={s.mall_origin_pincode ?? ''}
+                    onChange={(e) => setS({ ...s, mall_origin_pincode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                    onBlur={() => save({ mall_origin_pincode: s.mall_origin_pincode || null })}
+                    placeholder="Uses company pincode if blank"
+                    inputMode="numeric"
+                  />
+                </label>
+                <label className="text-sm block">
+                  Coverage
+                  <select
+                    className="mt-1 w-full rounded-lg border px-3 py-2"
+                    value={s.mall_coverage ?? 'local'}
+                    onChange={(e) => save({ mall_coverage: e.target.value })}
+                  >
+                    <option value="local">Nearby (same 3 pincode digits)</option>
+                    <option value="city">Wider city (same 2 digits)</option>
+                    <option value="pincode_list">Listed pincodes only</option>
+                    <option value="pan_india">All India</option>
+                  </select>
+                </label>
+              </div>
+              {(s.mall_coverage ?? 'local') === 'pincode_list' && (
+                <label className="text-sm block">
+                  Extra pincodes
+                  <input
+                    className="mt-1 w-full rounded-lg border px-3 py-2"
+                    value={extraPins}
+                    onChange={(e) => setExtraPins(e.target.value)}
+                    onBlur={() =>
+                      save({
+                        mall_extra_pincodes: extraPins
+                          .split(/[,;\s]+/)
+                          .map((x) => x.replace(/\D/g, ''))
+                          .filter((x) => x.length === 6),
+                      })
+                    }
+                    placeholder="411001, 411002"
+                  />
+                </label>
+              )}
+            </section>
+          )}
 
           {s.mall_active && (
             <section className="rounded-xl border bg-white p-4">
