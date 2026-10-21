@@ -34,6 +34,27 @@ die() {
   exit 1
 }
 
+# GitHub deploy runs as user smebuze. Manual `pm2` / `npm run build` as root leaves dist/.next root-owned → EACCES on next deploy.
+ensure_build_dirs_writable() {
+  local user group d
+  user="$(id -un)"
+  group="$(id -gn)"
+  for d in apps/api/dist apps/website/.next; do
+    [[ -e "${APP_DIR}/${d}" ]] || continue
+    if [[ -w "${APP_DIR}/${d}" ]]; then
+      continue
+    fi
+    log "WARN ${d} not writable by ${user} (often root-owned) — fixing"
+    if sudo -n chown -R "${user}:${group}" "${APP_DIR}/${d}" 2>/dev/null; then
+      log "chown ${d} → ${user}:${group}"
+    elif sudo -n rm -rf "${APP_DIR}/${d}" 2>/dev/null; then
+      log "removed root-owned ${d}"
+    else
+      die "${d} is not writable. SSH as root once: chown -R ${user}:${group} ${APP_DIR}/apps/api/dist ${APP_DIR}/apps/website/.next"
+    fi
+  done
+}
+
 cd "${APP_DIR}"
 
 [[ -d .git ]] || die "${APP_DIR} is not a git clone."
@@ -169,6 +190,10 @@ fi
 
 RESTART_API=0
 RESTART_WEB=0
+
+if [[ "${NEED_API}" == "1" || "${NEED_WEB}" == "1" ]]; then
+  ensure_build_dirs_writable
+fi
 
 if [[ "${NEED_API}" == "1" ]]; then
   log "RUN api:build"

@@ -129,6 +129,25 @@ Rebuild everything without a code change: Actions → **Deploy production** → 
 | `missing .env` | `.env` was deleted on the server |
 | `nginx -t` failed | nginx skipped after fail — fix the conf, do not reload |
 | Health not `connected` | `DB_*` in `/var/www/smebuze/.env`, then `pm2 logs smebuze-api` |
+| `EACCES` on `apps/api/dist` during deploy | Builds were run as **root**; deploy runs as **smebuze**. Fix ownership (below). |
+| `pm2 list` empty as root but site worked before | PM2 for production runs as **smebuze**, not root — use `sudo -u smebuze pm2 list`. |
+| `smebuze-web` **errored**, ↺ 30+ | Usually **no website build** (deploy failed) or missing `.next`. Re-run deploy after fixing permissions. |
+
+### PM2: use user `smebuze` (not root)
+
+GitHub Actions runs `deploy.sh` as **`smebuze`**. That user’s PM2 owns the live apps.
+
+```bash
+# As root — one-time fix after manual root pm2/build:
+chown -R smebuze:smebuze /var/www/smebuze/apps/api/dist /var/www/smebuze/apps/website/.next
+pm2 kill   # stops root’s empty/crash-loop PM2 only
+
+sudo -u smebuze -H bash -lc 'cd /var/www/smebuze && pm2 list'
+sudo -u smebuze -H bash -lc 'cd /var/www/smebuze && FORCE_FULL=1 bash scripts/deploy.sh'
+sudo -u smebuze -H pm2 save
+```
+
+Optional boot hook (as root): `sudo -u smebuze pm2 startup` and follow the printed command.
 
 ---
 
