@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, getStaticUrl } from '@/lib/api';
 
 type Contact = { id: string; email: string; name?: string | null };
 type PaymentRow = {
@@ -30,6 +30,21 @@ type LicenceRow = {
   bucket: 'expired' | 'expiring_soon' | 'active' | 'no_end';
   contacts: Contact[];
   recent_payments: PaymentRow[];
+};
+
+type PendingProof = {
+  payment_id: string;
+  tenant_id: string;
+  tenant_name: string;
+  tenant_slug: string;
+  plan: string;
+  interval: string;
+  amount_rupees: number;
+  method: string;
+  reference?: string | null;
+  proof_url?: string | null;
+  note?: string | null;
+  submitted_at?: string | null;
 };
 
 type LicencesResponse = {
@@ -64,6 +79,8 @@ export default function AdminLicencesPage() {
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [payFor, setPayFor] = useState<LicenceRow | null>(null);
+  const [pendingProofs, setPendingProofs] = useState<PendingProof[]>([]);
+
   const [payForm, setPayForm] = useState({
     method: 'upi',
     plan: 'basic',
@@ -75,12 +92,16 @@ export default function AdminLicencesPage() {
 
   const load = async () => {
     setLoading(true);
-    const { data: res, error: err } = await apiGet<LicencesResponse>('billing/admin/licences');
-    if (err) setError(err);
-    else if (res) {
-      setData(res);
+    const [lic, proofs] = await Promise.all([
+      apiGet<LicencesResponse>('billing/admin/licences'),
+      apiGet<{ proofs: PendingProof[] }>('billing/admin/pending-proofs'),
+    ]);
+    if (lic.error) setError(lic.error);
+    else if (lic.data) {
+      setData(lic.data);
       setError(null);
     }
+    if (proofs.data?.proofs) setPendingProofs(proofs.data.proofs);
     setLoading(false);
   };
 
@@ -192,6 +213,74 @@ export default function AdminLicencesPage() {
       </p>
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
       {notice && <p className="mb-3 text-sm text-emerald-700">{notice}</p>}
+
+      {pendingProofs.length > 0 && (
+        <section className="mb-6 rounded-xl border border-amber-200 bg-amber-50/80 p-4">
+          <h2 className="text-sm font-semibold text-amber-950">Payment screenshots to approve ({pendingProofs.length})</h2>
+          <p className="text-xs text-amber-900 mt-1">Tenants paid by UPI/bank and uploaded proof. Approve to extend their licence.</p>
+          <ul className="mt-3 space-y-3">
+            {pendingProofs.map((p) => (
+              <li key={p.payment_id} className="rounded-lg border bg-white p-3 flex flex-wrap gap-4 items-start">
+                {p.proof_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <a href={getStaticUrl(String(p.proof_url))} target="_blank" rel="noreferrer">
+                    <img
+                      src={getStaticUrl(String(p.proof_url))}
+                      alt="Payment proof"
+                      className="h-24 w-24 object-cover rounded border"
+                    />
+                  </a>
+                )}
+                <div className="flex-1 min-w-[180px] text-sm">
+                  <p className="font-medium">{p.tenant_name} <span className="text-slate-500 font-normal">({p.tenant_slug})</span></p>
+                  <p className="text-slate-600 mt-1">
+                    ₹{p.amount_rupees} · {p.plan} · {p.interval}
+                    {p.reference ? ` · ref ${p.reference}` : ''}
+                  </p>
+                  {p.note && <p className="text-xs text-slate-500 mt-1">{p.note}</p>}
+                  {p.submitted_at && (
+                    <p className="text-xs text-slate-400 mt-1">{p.submitted_at.slice(0, 16).replace('T', ' ')}</p>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={busy === p.payment_id}
+                    className="rounded-lg bg-emerald-600 text-white px-3 py-2 text-xs font-medium disabled:opacity-50"
+                    onClick={async () => {
+                      setBusy(p.payment_id);
+                      const { error: err } = await apiPost('billing/admin/approve-proof', { payment_id: p.payment_id });
+                      setBusy(null);
+                      if (err) setError(err);
+                      else {
+                        setNotice(`Approved payment for ${p.tenant_name}.`);
+                        load();
+                      }
+                    }}
+                  >
+                    Approve & activate
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy === p.payment_id}
+                    className="rounded-lg border px-3 py-2 text-xs disabled:opacity-50"
+                    onClick={async () => {
+                      if (!window.confirm('Reject this payment proof?')) return;
+                      setBusy(p.payment_id);
+                      const { error: err } = await apiPost('billing/admin/reject-proof', { payment_id: p.payment_id });
+                      setBusy(null);
+                      if (err) setError(err);
+                      else load();
+                    }}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {data && (
         <div className="mb-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">

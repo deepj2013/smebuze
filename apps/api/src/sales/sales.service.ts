@@ -2275,8 +2275,9 @@ ${view.debit ? `<tr><td>Debit notes</td><td class="right">₹${view.debit.toFixe
 <tr><td>Paid</td><td class="right">₹${paid.toFixed(2)}</td></tr>
 <tr><td>Amount Due</td><td class="right">₹${due.toFixed(2)}</td></tr></table>
 </div>
-${this.invoiceUpiQrHtml(branding, true)}
+${this.invoiceUpiQrHtml(branding, true, 'inline')}
 ${this.invoicePayBlockHtml(pay, true)}
+${this.invoiceUpiQrHtml(branding, true, 'corner')}
 <p class="footer">Thank you | SMEBUZE</p>
 </body></html>`;
   }
@@ -2414,9 +2415,10 @@ ${bankName || bankAccount || branding?.invoice_qr_url ? `<div class="star-ice-ba
   ${bankAccount ? `<p><strong>Bank Account No.:</strong> ${escapeHtml(bankAccount)}</p>` : ''}
   ${bankIfsc ? `<p><strong>Bank Branch IFSC:</strong> ${escapeHtml(bankIfsc)}</p>` : ''}
   </div>
-  ${this.invoiceUpiQrHtml(branding)}
+  ${this.invoiceUpiQrHtml(branding, false, 'inline')}
 </div>` : ''}
 ${this.invoicePayBlockHtml(pay)}
+${this.invoiceUpiQrHtml(branding, false, 'corner')}
 
 <div class="star-ice-cert">
   <p>Certified that the particulars given above are true and correct</p>
@@ -2801,7 +2803,7 @@ table.grid th{background:#eee;font-size:12px}
           ${str(bank.ifsc) ? `<p><strong>IFSC code:</strong> ${escapeHtml(str(bank.ifsc))}</p>` : ''}
           ${str(bank.account_name) ? `<p><strong>Account holder's name:</strong> ${escapeHtml(str(bank.account_name))}</p>` : ''}
         </div>
-        ${this.invoiceUpiQrHtml(branding)}
+        ${this.invoiceUpiQrHtml(branding, false, 'inline')}
       </div>
     </div>
     <div class="foot-terms">
@@ -2816,6 +2818,7 @@ table.grid th{background:#eee;font-size:12px}
   </div>
 </div>
 ${this.invoicePayBlockHtml(pay)}
+${this.invoiceUpiQrHtml(branding, false, 'corner')}
 </body></html>`;
   }
 
@@ -2905,11 +2908,26 @@ ${account ? `<p>A/C No.: ${escapeHtml(account)}</p>` : ''}
 ${ifsc ? `<p>IFSC: ${escapeHtml(ifsc)}</p>` : ''}</div>`;
   }
 
-  private invoiceUpiQrHtml(branding?: TenantBranding, compact = false): string {
+  private invoiceUpiQrHtml(
+    branding?: TenantBranding,
+    compact = false,
+    mode: 'inline' | 'corner' = 'inline',
+  ): string {
     const src = this.resolveLogoUrl(branding?.invoice_qr_url);
-    if (!src) return '';
-    const size = compact ? 88 : 108;
-    return `<div class="invoice-qr"${compact ? ' style="text-align:center;margin-top:8px"' : ''}><img src="${escapeHtml(src)}" alt="Pay QR" style="width:${size}px;height:${size}px;object-fit:contain;background:#fff;border:1px solid #ccc"/><p>Scan to pay</p></div>`;
+    if (!src || !branding) return '';
+    const pos = branding.invoice_qr_position || 'with_bank';
+    if (mode === 'inline' && pos !== 'with_bank') return '';
+    if (mode === 'corner' && pos === 'with_bank') return '';
+    const size = compact ? 88 : pos === 'with_bank' ? 108 : 96;
+    const caption = escapeHtml(branding.invoice_qr_caption || 'Scan to pay');
+    const upi = branding.invoice_upi_id ? `<p style="font-size:${compact ? 9 : 10}px;margin:2px 0 0">UPI: ${escapeHtml(branding.invoice_upi_id)}</p>` : '';
+    if (mode === 'corner') {
+      const side = pos === 'bottom_left' ? 'left:10px' : 'right:10px';
+      return `<div class="invoice-qr-corner" style="position:fixed;bottom:10px;${side};max-width:120px;text-align:center;font-size:10px;z-index:5;background:#fff;padding:4px;border:1px solid #ccc;border-radius:6px">
+<img src="${escapeHtml(src)}" alt="Pay QR" style="width:${size}px;height:${size}px;object-fit:contain"/>
+<p style="margin:4px 0 0;font-weight:600">${caption}</p>${upi}</div>`;
+    }
+    return `<div class="invoice-qr"${compact ? ' style="text-align:center;margin-top:8px"' : ''}><img src="${escapeHtml(src)}" alt="Pay QR" style="width:${size}px;height:${size}px;object-fit:contain;background:#fff;border:1px solid #ccc"/><p>${caption}</p>${upi}</div>`;
   }
 
   private invoicePayBlockHtml(pay?: InvoicePaySlip, compact = false): string {

@@ -504,6 +504,9 @@ export class OrganizationService {
       invoice_print_size: 's' | 'm' | 'l' | 'xl';
       invoice_template: 'auto' | 'gst' | 'tally' | 'busy' | 'marg' | 'thermal';
       invoice_qr_url: string | null;
+      invoice_qr_position: 'with_bank' | 'bottom_left' | 'bottom_right';
+      invoice_qr_caption: string | null;
+      invoice_upi_id: string | null;
     }>,
   ): Promise<TenantBranding> {
     const tenantId = this.assertTenantId(ctx);
@@ -534,6 +537,22 @@ export class OrganizationService {
           ? current.invoice_qr_url
           : dto.invoice_qr_url && String(dto.invoice_qr_url).trim()
             ? String(dto.invoice_qr_url).trim()
+            : null,
+      invoice_qr_position:
+        dto.invoice_qr_position !== undefined
+          ? dto.invoice_qr_position
+          : current.invoice_qr_position,
+      invoice_qr_caption:
+        dto.invoice_qr_caption === undefined
+          ? current.invoice_qr_caption
+          : dto.invoice_qr_caption && String(dto.invoice_qr_caption).trim()
+            ? String(dto.invoice_qr_caption).trim()
+            : null,
+      invoice_upi_id:
+        dto.invoice_upi_id === undefined
+          ? current.invoice_upi_id
+          : dto.invoice_upi_id && String(dto.invoice_upi_id).trim()
+            ? String(dto.invoice_upi_id).trim()
             : null,
       updated_at: new Date().toISOString(),
     };

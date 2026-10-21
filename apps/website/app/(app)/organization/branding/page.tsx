@@ -68,6 +68,9 @@ export default function BrandingPage() {
       display_name: branding.display_name ?? '',
       invoice_print_size: branding.invoice_print_size,
       invoice_template: branding.invoice_template,
+      invoice_qr_position: branding.invoice_qr_position,
+      invoice_qr_caption: branding.invoice_qr_caption ?? '',
+      invoice_upi_id: branding.invoice_upi_id ?? '',
     });
     setSaving(false);
     if (err) setError(err);
@@ -113,8 +116,45 @@ export default function BrandingPage() {
       <section className="rounded-xl border bg-white p-5 space-y-3">
         <h2 className="font-semibold">Invoice payment QR</h2>
         <p className="text-xs text-slate-500">
-          Upload your UPI / bank QR, crop it square, and it prints next to bank details on every invoice.
+          Upload your UPI / bank QR. Choose where it prints and add UPI ID or a short line for customers.
         </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="text-sm block">
+            <span className="font-medium text-slate-700">QR on invoice</span>
+            <select
+              className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+              value={branding.invoice_qr_position}
+              onChange={(e) =>
+                setBranding((b) => ({
+                  ...b,
+                  invoice_qr_position: e.target.value as TenantBranding['invoice_qr_position'],
+                }))
+              }
+            >
+              <option value="with_bank">Next to bank details</option>
+              <option value="bottom_left">Bottom left corner</option>
+              <option value="bottom_right">Bottom right corner</option>
+            </select>
+          </label>
+          <label className="text-sm block">
+            <span className="font-medium text-slate-700">UPI ID (optional)</span>
+            <input
+              className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+              placeholder="shop@paytm"
+              value={branding.invoice_upi_id ?? ''}
+              onChange={(e) => setBranding((b) => ({ ...b, invoice_upi_id: e.target.value }))}
+            />
+          </label>
+        </div>
+        <label className="text-sm block">
+          <span className="font-medium text-slate-700">Text under QR</span>
+          <input
+            className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+            placeholder="Scan & pay via PhonePe / GPay"
+            value={branding.invoice_qr_caption ?? ''}
+            onChange={(e) => setBranding((b) => ({ ...b, invoice_qr_caption: e.target.value }))}
+          />
+        </label>
         <div className="flex items-center gap-4">
           {qrPreview ? (
             // eslint-disable-next-line @next/next/no-img-element

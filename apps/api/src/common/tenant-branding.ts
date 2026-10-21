@@ -8,6 +8,7 @@ import {
   parseInvoiceTemplate,
   type InvoiceTemplate,
 } from './invoice-template';
+import { parseInvoiceQrPosition, type InvoiceQrPosition } from './invoice-qr-placement';
 import { themeForBusinessType } from './variant-theme';
 
 export type TenantBranding = {
@@ -19,8 +20,14 @@ export type TenantBranding = {
   invoice_print_size: InvoicePrintSize;
   /** Tally / Busy / Marg / GST / thermal. `auto` = existing POS vs A4 behaviour. */
   invoice_template: InvoiceTemplate;
-  /** Uploaded UPI / payment QR printed next to bank details. */
+  /** Uploaded UPI / payment QR printed on invoices. */
   invoice_qr_url: string | null;
+  /** with_bank = beside bank block; bottom_* = fixed corner on print. */
+  invoice_qr_position: InvoiceQrPosition;
+  /** Shown under QR on print (e.g. "Scan & pay via PhonePe"). */
+  invoice_qr_caption: string | null;
+  /** UPI ID text on invoice (e.g. shop@paytm). */
+  invoice_upi_id: string | null;
   updated_at: string | null;
 };
 
@@ -32,6 +39,9 @@ export const DEFAULT_BRANDING: TenantBranding = {
   invoice_print_size: DEFAULT_INVOICE_PRINT_SIZE,
   invoice_template: DEFAULT_INVOICE_TEMPLATE,
   invoice_qr_url: null,
+  invoice_qr_position: 'with_bank',
+  invoice_qr_caption: null,
+  invoice_upi_id: null,
   updated_at: null,
 };
 
@@ -59,6 +69,17 @@ export function parseTenantBranding(settings: Record<string, unknown> | null | u
       typeof (raw as { invoice_qr_url?: unknown }).invoice_qr_url === 'string' &&
       String((raw as { invoice_qr_url?: unknown }).invoice_qr_url).trim()
         ? String((raw as { invoice_qr_url?: unknown }).invoice_qr_url).trim()
+        : null,
+    invoice_qr_position: parseInvoiceQrPosition((raw as { invoice_qr_position?: unknown }).invoice_qr_position),
+    invoice_qr_caption:
+      typeof (raw as { invoice_qr_caption?: unknown }).invoice_qr_caption === 'string' &&
+      String((raw as { invoice_qr_caption?: unknown }).invoice_qr_caption).trim()
+        ? String((raw as { invoice_qr_caption?: unknown }).invoice_qr_caption).trim()
+        : null,
+    invoice_upi_id:
+      typeof (raw as { invoice_upi_id?: unknown }).invoice_upi_id === 'string' &&
+      String((raw as { invoice_upi_id?: unknown }).invoice_upi_id).trim()
+        ? String((raw as { invoice_upi_id?: unknown }).invoice_upi_id).trim()
         : null,
     updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : null,
   };

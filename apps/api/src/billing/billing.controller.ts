@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  Req,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { Public } from '../common/decorators/public';
@@ -15,6 +27,11 @@ import {
   AdminLicenceRemindDto,
   AdminOfflinePaymentDto,
 } from './dto/admin-licence.dto';
+import {
+  AdminApprovePaymentProofDto,
+  AdminRejectPaymentProofDto,
+  SubmitManualPaymentDto,
+} from './dto/manual-payment.dto';
 
 @Controller('billing')
 @SkipSubscription()
@@ -39,6 +56,39 @@ export class BillingController {
   @RequirePermissions('admin.tenant.create')
   adminOfflinePayment(@CurrentTenant() ctx: TenantContext, @Body() dto: AdminOfflinePaymentDto) {
     return this.billing.recordOfflinePayment(ctx, dto);
+  }
+
+  @Get('admin/pending-proofs')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @RequirePermissions('admin.tenant.view')
+  adminPendingProofs(@CurrentTenant() ctx: TenantContext) {
+    return this.billing.listPendingPaymentProofs(ctx);
+  }
+
+  @Post('admin/approve-proof')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @RequirePermissions('admin.tenant.create')
+  adminApproveProof(@CurrentTenant() ctx: TenantContext, @Body() dto: AdminApprovePaymentProofDto) {
+    return this.billing.approvePaymentProof(ctx, dto.payment_id, dto.activate !== false);
+  }
+
+  @Post('admin/reject-proof')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @RequirePermissions('admin.tenant.create')
+  adminRejectProof(@CurrentTenant() ctx: TenantContext, @Body() dto: AdminRejectPaymentProofDto) {
+    return this.billing.rejectPaymentProof(ctx, dto.payment_id, dto.reason);
+  }
+
+  @Post('manual-payment/submit')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseInterceptors(FileInterceptor('proof', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  submitManualProof(
+    @CurrentTenant() ctx: TenantContext,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: SubmitManualPaymentDto,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('Upload payment screenshot as proof');
+    return this.billing.submitManualPaymentProof(ctx, body, file);
   }
 
   @Post('admin/remind')

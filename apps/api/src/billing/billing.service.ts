@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, timingSafeEqual } from 'crypto';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Tenant } from '../tenant/entities/tenant.entity';
 import { User } from '../auth/entities/user.entity';
 import { TenantContext } from '../common/tenant-context';
@@ -40,6 +40,10 @@ import { MailService } from '../mail/mail.service';
 import { licenceRenewalHtml } from '../mail/templates';
 import { PartnersService } from '../partners/partners.service';
 import { MarketplacePaymentsService } from '../marketplace/marketplace-payments.service';
+import { platformManualPayInstructions } from '../common/platform-billing-pay';
+import { SubmitManualPaymentDto } from './dto/manual-payment.dto';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const SUPPORT_EMAIL = 'support@smebuze.com';
 
@@ -201,7 +205,162 @@ export class BillingService {
       ecs: await this.ecsStatus(tenant.id),
       ecs_note:
         'ECS / eMandate auto-debits your SMEBUZE plan each cycle via Razorpay Subscriptions. Separate from shop customer payments.',
+      manual_pay: platformManualPayInstructions(),
+      pending_proof: await this.pendingProofForTenant(tenant.id),
     };
+  }
+
+  private async pendingProofForTenant(tenantId: string) {
+    const row = await this.paymentRepo.findOne({
+      where: { tenant_id: tenantId, status: 'pending_review' },
+      order: { created_at: 'DESC' },
+    });
+    if (!row) return null;
+    const meta = (row.meta || {}) as Record<string, unknown>;
+    return {
+      payment_id: row.id,
+      plan: row.plan,
+      interval: row.interval,
+      amount_rupees: Math.round(row.amount_paise / 100),
+      method: row.gateway,
+      reference: meta.reference ?? null,
+      proof_url: meta.proof_url ?? null,
+      submitted_at: row.created_at?.toISOString() ?? null,
+    };
+  }
+
+  /** Tenant uploads UPI/bank payment proof when platform Razorpay is not live. */
+  async submitManualPaymentProof(
+    ctx: TenantContext,
+    dto: SubmitManualPaymentDto,
+    file: { buffer: Buffer; originalname?: string },
+  ) {
+    const tenantId = this.tenantId(ctx);
+    const manual = platformManualPayInstructions();
+    if (!manual.enabled) {
+      throw new BadRequestException('Manual payment is not configured on this server. Contact support.');
+    }
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Workspace not found');
+    const existing = await this.paymentRepo.findOne({
+      where: { tenant_id: tenantId, status: 'pending_review' },
+    });
+    if (existing) {
+      throw new BadRequestException('A payment is already waiting for SMEBUZE approval. We will email you when it is verified.');
+    }
+    const chosen = this.resolvePlanInterval(tenant, { plan: dto.plan, interval: dto.interval });
+    if (!chosen.amountPaise || chosen.amountPaise < 100) {
+      throw new BadRequestException('Choose a valid plan and billing period.');
+    }
+    if (!file?.buffer?.length) throw new BadRequestException('Upload a screenshot of the payment (PNG or JPG).');
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+    if (!['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
+      throw new BadRequestException('Screenshot must be PNG, JPG or WEBP');
+    }
+    const dir = path.join(process.cwd(), 'uploads', 'billing-proofs');
+    fs.mkdirSync(dir, { recursive: true });
+    const filename = `${tenantId}-${Date.now()}${ext === '.jpeg' ? '.jpg' : ext}`;
+    fs.writeFileSync(path.join(dir, filename), file.buffer);
+    const proofUrl = `/uploads/billing-proofs/${filename}`;
+    const method = dto.method && ['upi', 'bank', 'cash', 'cheque'].includes(dto.method) ? dto.method : 'upi';
+    const payment = await this.paymentRepo.save(
+      this.paymentRepo.create({
+        tenant_id: tenantId,
+        gateway: method,
+        plan: chosen.plan,
+        interval: chosen.interval,
+        amount_paise: chosen.amountPaise,
+        status: 'pending_review',
+        gateway_order_id: dto.reference?.trim() || null,
+        gateway_payment_id: null,
+        meta: {
+          manual_proof: true,
+          proof_url: proofUrl,
+          reference: dto.reference?.trim() || null,
+          note: dto.note?.trim() || null,
+          submitted_by: ctx.userId,
+          tenant_slug: tenant.slug,
+        },
+      }),
+    );
+    this.logger.log(`Manual payment proof ${payment.id} from ${tenant.slug}`);
+    return {
+      ok: true,
+      payment_id: payment.id,
+      message: 'Screenshot received. SMEBUZE will verify and activate your workspace — usually within one business day.',
+      pending_proof: await this.pendingProofForTenant(tenantId),
+    };
+  }
+
+  async listPendingPaymentProofs(ctx: TenantContext) {
+    this.assertSuperAdmin(ctx);
+    const rows = await this.paymentRepo.find({
+      where: { status: 'pending_review' },
+      order: { created_at: 'ASC' },
+      take: 100,
+    });
+    const tenantIds = [...new Set(rows.map((r) => r.tenant_id))];
+    const tenants = tenantIds.length ? await this.tenantRepo.find({ where: { id: In(tenantIds) } }) : [];
+    const byId = new Map(tenants.map((t) => [t.id, t]));
+    return {
+      proofs: rows.map((p) => {
+        const t = byId.get(p.tenant_id);
+        const meta = (p.meta || {}) as Record<string, unknown>;
+        return {
+          payment_id: p.id,
+          tenant_id: p.tenant_id,
+          tenant_name: t?.name ?? '—',
+          tenant_slug: t?.slug ?? '—',
+          plan: p.plan,
+          interval: p.interval,
+          amount_rupees: Math.round(p.amount_paise / 100),
+          method: p.gateway,
+          reference: meta.reference ?? p.gateway_order_id ?? null,
+          proof_url: meta.proof_url ?? null,
+          note: meta.note ?? null,
+          submitted_at: p.created_at?.toISOString() ?? null,
+        };
+      }),
+    };
+  }
+
+  async approvePaymentProof(ctx: TenantContext, paymentId: string, activate = true) {
+    this.assertSuperAdmin(ctx);
+    const payment = await this.paymentRepo.findOne({ where: { id: paymentId } });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status !== 'pending_review') {
+      throw new BadRequestException('This payment is not waiting for approval.');
+    }
+    const result = await this.markPaid(payment);
+    if (activate !== false) {
+      const t = await this.tenantRepo.findOne({ where: { id: payment.tenant_id } });
+      if (t && t.is_active === false) {
+        t.is_active = true;
+        await this.tenantRepo.save(t);
+      }
+    }
+    const meta = { ...(payment.meta || {}), approved_by: ctx.userId, approved_at: new Date().toISOString() };
+    payment.meta = meta;
+    await this.paymentRepo.save(payment);
+    return { ...result, payment_id: payment.id };
+  }
+
+  async rejectPaymentProof(ctx: TenantContext, paymentId: string, reason?: string) {
+    this.assertSuperAdmin(ctx);
+    const payment = await this.paymentRepo.findOne({ where: { id: paymentId } });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status !== 'pending_review') {
+      throw new BadRequestException('This payment is not waiting for approval.');
+    }
+    payment.status = 'rejected';
+    payment.meta = {
+      ...(payment.meta || {}),
+      rejected_by: ctx.userId,
+      rejected_at: new Date().toISOString(),
+      reject_reason: reason?.trim() || null,
+    };
+    await this.paymentRepo.save(payment);
+    return { ok: true, payment_id: payment.id };
   }
 
   private async ecsStatus(tenantId: string) {

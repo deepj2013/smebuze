@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Script from 'next/script';
 import { useRouter } from 'next/navigation';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, apiUploadFile } from '@/lib/api';
 import { quotePlan, YEARLY_DISCOUNT_PERCENT } from '@/lib/plans';
 import CustomPlanEnquiry from '@/app/components/CustomPlanEnquiry';
 
@@ -29,6 +29,27 @@ type BillingStatus = {
   payment_status?: string;
   ecs?: { enabled: boolean; status: string | null; short_url?: string | null; next_charge_at?: string | null };
   ecs_note?: string;
+  manual_pay?: {
+    enabled: boolean;
+    payee_name: string;
+    upi_id: string | null;
+    bank_name: string | null;
+    branch: string | null;
+    account_no: string | null;
+    ifsc: string | null;
+    qr_url: string | null;
+    note: string;
+  };
+  pending_proof?: {
+    payment_id: string;
+    plan: string;
+    interval: string;
+    amount_rupees: number;
+    method: string;
+    reference?: string | null;
+    proof_url?: string | null;
+    submitted_at?: string | null;
+  } | null;
 };
 
 type RazorpayCheckout = { open: () => void };
@@ -64,6 +85,9 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState<'razorpay' | 'phonepe' | ''>('');
   const [scriptReady, setScriptReady] = useState(false);
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofRef, setProofRef] = useState('');
+  const [submittingProof, setSubmittingProof] = useState(false);
 
   const quote = useMemo(() => quotePlan(plan, interval), [plan, interval]);
   const yearlyOff = status?.yearly_discount_percent ?? YEARLY_DISCOUNT_PERCENT;
@@ -326,25 +350,119 @@ export default function BillingPage() {
                   </p>
                 )}
               </div>
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  disabled={paying !== '' || !status.gateways.razorpay || !scriptReady}
-                  onClick={() => void payRazorpay()}
-                  className="w-full rounded-lg bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 min-touch"
-                >
-                  {paying === 'razorpay' ? 'Opening Razorpay…' : status.gateways.razorpay ? 'Pay with Razorpay' : 'Razorpay not configured'}
-                </button>
-                <button
-                  type="button"
-                  disabled={paying !== '' || !status.gateways.phonepe}
-                  onClick={() => void payPhonePe()}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50 min-touch"
-                >
-                  {paying === 'phonepe' ? 'Redirecting to PhonePe…' : status.gateways.phonepe ? 'Pay with PhonePe' : 'PhonePe not configured'}
-                </button>
-              </div>
-              {!status.gateways.razorpay && !status.gateways.phonepe && (
+              {status.pending_proof && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                  <p className="font-medium">Payment screenshot submitted</p>
+                  <p className="mt-1 text-xs">
+                    ₹{status.pending_proof.amount_rupees} · {status.pending_proof.plan} · waiting for SMEBUZE approval.
+                  </p>
+                </div>
+              )}
+
+              {status.manual_pay?.enabled && !status.pending_proof && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
+                  <p className="text-sm font-semibold text-slate-900">Pay by UPI or bank transfer</p>
+                  <p className="text-xs text-slate-600">{status.manual_pay.note}</p>
+                  <div className="flex flex-wrap gap-4 items-start">
+                    {status.manual_pay.qr_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={status.manual_pay.qr_url}
+                        alt="SMEBUZE payment QR"
+                        className="h-28 w-28 rounded-lg border bg-white object-contain p-1"
+                      />
+                    )}
+                    <dl className="text-sm space-y-1 min-w-[200px]">
+                      <div><dt className="text-slate-500 inline">Payee: </dt><dd className="inline font-medium">{status.manual_pay.payee_name}</dd></div>
+                      {status.manual_pay.upi_id && (
+                        <div><dt className="text-slate-500 inline">UPI: </dt><dd className="inline font-mono">{status.manual_pay.upi_id}</dd></div>
+                      )}
+                      {status.manual_pay.bank_name && (
+                        <div><dt className="text-slate-500 inline">Bank: </dt><dd className="inline">{status.manual_pay.bank_name}{status.manual_pay.branch ? `, ${status.manual_pay.branch}` : ''}</dd></div>
+                      )}
+                      {status.manual_pay.account_no && (
+                        <div><dt className="text-slate-500 inline">A/C: </dt><dd className="inline font-mono">{status.manual_pay.account_no}</dd></div>
+                      )}
+                      {status.manual_pay.ifsc && (
+                        <div><dt className="text-slate-500 inline">IFSC: </dt><dd className="inline font-mono">{status.manual_pay.ifsc}</dd></div>
+                      )}
+                      {quote && (
+                        <div className="pt-2 font-semibold text-slate-900">Amount: {inr(quote.amount_rupees)}</div>
+                      )}
+                    </dl>
+                  </div>
+                  <label className="block text-xs text-slate-600">
+                    UTR / transaction reference (optional)
+                    <input
+                      value={proofRef}
+                      onChange={(e) => setProofRef(e.target.value)}
+                      className="mt-1 w-full rounded-lg border px-3 py-2 text-sm bg-white"
+                      placeholder="e.g. 123456789012"
+                    />
+                  </label>
+                  <label className="block text-xs text-slate-600">
+                    Payment screenshot *
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="mt-1 block w-full text-sm"
+                      onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={submittingProof || !proofFile || !quote}
+                    className="w-full rounded-lg bg-slate-900 text-white py-2.5 text-sm font-semibold disabled:opacity-50"
+                    onClick={async () => {
+                      if (!proofFile) return;
+                      setSubmittingProof(true);
+                      setError('');
+                      const res = await apiUploadFile<{ message?: string }>(
+                        'billing/manual-payment/submit',
+                        proofFile,
+                        'proof',
+                        {
+                          plan,
+                          interval,
+                          reference: proofRef,
+                          method: 'upi',
+                        },
+                      );
+                      setSubmittingProof(false);
+                      if (res.error) setError(res.error);
+                      else {
+                        setOk(res.data?.message || 'Screenshot submitted for approval.');
+                        setProofFile(null);
+                        await load();
+                      }
+                    }}
+                  >
+                    {submittingProof ? 'Uploading…' : 'Submit screenshot for approval'}
+                  </button>
+                </div>
+              )}
+
+              {(status.gateways.razorpay || status.gateways.phonepe) && (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled={paying !== '' || !status.gateways.razorpay || !scriptReady}
+                    onClick={() => void payRazorpay()}
+                    className="w-full rounded-lg bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 min-touch"
+                  >
+                    {paying === 'razorpay' ? 'Opening Razorpay…' : 'Pay with Razorpay'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={paying !== '' || !status.gateways.phonepe}
+                    onClick={() => void payPhonePe()}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50 min-touch"
+                  >
+                    {paying === 'phonepe' ? 'Redirecting to PhonePe…' : 'Pay with PhonePe'}
+                  </button>
+                </div>
+              )}
+              {!status.gateways.razorpay && !status.gateways.phonepe && !status.manual_pay?.enabled && (
                 <p className="text-sm text-amber-800 bg-amber-50 rounded-lg p-3">
                   Online pay is not live on this server yet. Write to{' '}
                   <a className="underline" href={`mailto:${status.support_email}`}>{status.support_email}</a>.

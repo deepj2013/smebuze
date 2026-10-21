@@ -10,6 +10,8 @@ import {
 } from './invoice-template';
 import { themeForBusinessType } from './variant-theme';
 
+export type InvoiceQrPosition = 'with_bank' | 'bottom_left' | 'bottom_right';
+
 export type TenantBranding = {
   logo_url: string | null;
   primary_color: string;
@@ -19,6 +21,9 @@ export type TenantBranding = {
   invoice_print_size: InvoicePrintSize;
   invoice_template: InvoiceTemplate;
   invoice_qr_url: string | null;
+  invoice_qr_position: InvoiceQrPosition;
+  invoice_qr_caption: string | null;
+  invoice_upi_id: string | null;
   updated_at: string | null;
 };
 
@@ -30,6 +35,9 @@ export const DEFAULT_BRANDING: TenantBranding = {
   invoice_print_size: DEFAULT_INVOICE_PRINT_SIZE,
   invoice_template: DEFAULT_INVOICE_TEMPLATE,
   invoice_qr_url: null,
+  invoice_qr_position: 'with_bank',
+  invoice_qr_caption: null,
+  invoice_upi_id: null,
   updated_at: null,
 };
 
@@ -54,6 +62,21 @@ export function parseTenantBranding(settings: Record<string, unknown> | null | u
       typeof (raw as { invoice_qr_url?: unknown }).invoice_qr_url === 'string' &&
       String((raw as { invoice_qr_url?: unknown }).invoice_qr_url).trim()
         ? String((raw as { invoice_qr_url?: unknown }).invoice_qr_url).trim()
+        : null,
+    invoice_qr_position:
+      (raw as { invoice_qr_position?: unknown }).invoice_qr_position === 'bottom_left' ||
+      (raw as { invoice_qr_position?: unknown }).invoice_qr_position === 'bottom_right'
+        ? ((raw as { invoice_qr_position: InvoiceQrPosition }).invoice_qr_position)
+        : 'with_bank',
+    invoice_qr_caption:
+      typeof (raw as { invoice_qr_caption?: unknown }).invoice_qr_caption === 'string' &&
+      String((raw as { invoice_qr_caption?: unknown }).invoice_qr_caption).trim()
+        ? String((raw as { invoice_qr_caption?: unknown }).invoice_qr_caption).trim()
+        : null,
+    invoice_upi_id:
+      typeof (raw as { invoice_upi_id?: unknown }).invoice_upi_id === 'string' &&
+      String((raw as { invoice_upi_id?: unknown }).invoice_upi_id).trim()
+        ? String((raw as { invoice_upi_id?: unknown }).invoice_upi_id).trim()
         : null,
     updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : null,
   };

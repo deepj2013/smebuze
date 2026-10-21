@@ -29,4 +29,16 @@ export class SaveBrandingDto {
   @IsOptional()
   @IsString()
   invoice_qr_url?: string | null;
+
+  @IsOptional()
+  @IsIn(['with_bank', 'bottom_left', 'bottom_right'])
+  invoice_qr_position?: 'with_bank' | 'bottom_left' | 'bottom_right';
+
+  @IsOptional()
+  @IsString()
+  invoice_qr_caption?: string | null;
+
+  @IsOptional()
+  @IsString()
+  invoice_upi_id?: string | null;
 }
