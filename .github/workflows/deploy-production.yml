@@ -82,6 +82,11 @@ jobs:
             exit 1
           fi
           if [ "\$(id -un)" = "root" ] && id smebuze >/dev/null 2>&1; then
+            echo "[github] fix ownership (root pm2/build leaves dist/.next root-owned)"
+            chown -R smebuze:smebuze /var/www/smebuze/apps/api/dist /var/www/smebuze/apps/website/.next 2>/dev/null || true
+            if [ -d /var/www/smebuze/uploads ]; then
+              chown -R smebuze:smebuze /var/www/smebuze/uploads 2>/dev/null || true
+            fi
             echo "[github] running deploy as user smebuze"
             sudo -u smebuze -H env APP_DIR=/var/www/smebuze DEPLOY_BRANCH=production FORCE_FULL=\$FORCE_FULL \
               bash /var/www/smebuze/scripts/deploy.sh

@@ -118,6 +118,8 @@ Then:
 
 Rebuild everything without a code change: Actions → **Deploy production** → **Run workflow** → tick **force_full**.
 
+If deploy failed on **EACCES** / root-owned `dist`, the workflow now runs **`chown` as root** before `deploy.sh`. After the first green deploy, `.deploy-revision` updates — only **new** commits rebuild; code already on disk (e.g. mall) gets built when `website=1` in that run.
+
 ---
 
 ## If Actions fails
