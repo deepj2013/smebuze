@@ -34,9 +34,8 @@ import {
   frontendPayUrl,
   InvoicePaySlip,
   makeInvoicePayToken,
-  parseTenantRazorpay,
-  razorpayReady,
-} from '../common/tenant-razorpay';
+} from '../common/invoice-pay';
+import { parseTenantPayu, payuReady } from '../common/payu';
 import { TenantContext } from '../common/tenant-context';
 import { assertBooksOpen, lockedThroughYmd, toYmd } from '../common/period-lock';
 import { CreateInvoiceDto, CreateInvoiceLineDto } from './dto/create-invoice.dto';
@@ -1171,9 +1170,9 @@ export class SalesService {
   async createPaymentLink(invoiceId: string, ctx: TenantContext): Promise<{ enabled: boolean; url?: string }> {
     const invoice = await this.findOneInvoice(invoiceId, ctx);
     const tenant = ctx.tenantId ? await this.tenantRepo.findOne({ where: { id: ctx.tenantId } }) : null;
-    const cfg = parseTenantRazorpay(tenant?.settings as Record<string, unknown>);
+    const cfg = parseTenantPayu(tenant?.settings as Record<string, unknown>);
     const view = this.standingOf(invoice);
-    if (!razorpayReady(cfg) || view.balance < 1) return { enabled: false };
+    if (!payuReady(cfg) || view.balance < 1) return { enabled: false };
     return { enabled: true, url: frontendPayUrl(makeInvoicePayToken(invoice.id, invoice.tenant_id)) };
   }
 
@@ -1210,7 +1209,7 @@ export class SalesService {
         invoice_id: invoiceId,
         amount: applied.toFixed(2),
         payment_date: new Date(),
-        mode: 'razorpay',
+        mode: 'payu',
         reference: reference ?? null,
       }),
     );
@@ -2201,7 +2200,7 @@ export class SalesService {
     const tenant = ctx.tenantId ? await this.tenantRepo.findOne({ where: { id: ctx.tenantId } }) : null;
     const branding = parseTenantBranding(tenant?.settings as Record<string, unknown>);
     const terms = tenant?.settings?.terms as string | undefined;
-    const pay = await buildInvoicePaySlip(parseTenantRazorpay(tenant?.settings as Record<string, unknown>), inv);
+    const pay = await buildInvoicePaySlip(parseTenantPayu(tenant?.settings as Record<string, unknown>), inv);
     const template = branding.invoice_template;
     if (tenant?.slug === 'star-ice' && template === 'auto') {
       return this.buildStarIceInvoiceHtml(inv, branding, pay);

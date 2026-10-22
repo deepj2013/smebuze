@@ -225,7 +225,7 @@ export default function InvoicesPage() {
                 );
                 setPaymentLinkLoading(null);
                 if (link?.enabled && link?.url) window.open(link.url, '_blank');
-                else setError(linkErr || 'Scan to pay is off. An admin can connect Razorpay under Organization → Scan to pay.');
+                else setError(linkErr || 'Scan to pay is off. An admin can connect PayU under Organization → Scan to pay.');
               }}
             >
               {paymentLinkLoading === inv.id ? '…' : 'Pay online'}

@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import Script from 'next/script';
 import { apiGet, apiPatch, apiPost, apiUploadFile, getStaticUrl } from '@/lib/api';
+import PayuCheckoutForm, { type PayuCheckoutPayload } from '@/components/PayuCheckoutForm';
 import { PageHeader } from '../../components/PageHeader';
 
 type Addon = { id: string; label: string; description: string; monthly_rupees: number };
@@ -34,13 +34,6 @@ type Settings = {
 type Listing = { id: string; item_id: string; active: boolean; name?: string; sale_price?: string; category?: string | null };
 type CatalogItem = { id: string; name: string; portal_listed?: boolean; sale_price?: string | null };
 
-type RazorpayCheckout = { open: () => void };
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => RazorpayCheckout;
-  }
-}
-
 export default function CommerceSettingsPage() {
   const [s, setS] = useState<Settings | null>(null);
   const [listings, setListings] = useState<Listing[]>([]);
@@ -50,7 +43,7 @@ export default function CommerceSettingsPage() {
   const [ok, setOk] = useState('');
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState('');
-  const [scriptReady, setScriptReady] = useState(false);
+  const [checkout, setCheckout] = useState<PayuCheckoutPayload | null>(null);
 
   async function load() {
     setLoading(true);
@@ -69,6 +62,15 @@ export default function CommerceSettingsPage() {
   }
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('payu') === 'success') {
+      setOk('Payment successful — add-on active for 30 days');
+      window.history.replaceState({}, '', '/organization/commerce');
+      load();
+    }
+  }, []);
 
   async function save(patch: Partial<Settings>) {
     setError('');
@@ -95,13 +97,7 @@ export default function CommerceSettingsPage() {
     const { data, error: err } = await apiPost<{
       free?: boolean;
       activated?: boolean;
-      key_id?: string;
-      order_id?: string;
-      amount?: number;
-      currency?: string;
-      name?: string;
-      description?: string;
-      prefill?: Record<string, string>;
+      checkout?: PayuCheckoutPayload;
     }>('tenant/commerce/addons/pay', { addon });
     if (err) {
       setError(Array.isArray(err) ? err.join(' ') : err);
@@ -114,35 +110,11 @@ export default function CommerceSettingsPage() {
       load();
       return;
     }
-    if (!scriptReady || !window.Razorpay) {
-      setError('Razorpay script still loading — try again in a second');
+    if (data?.checkout) setCheckout(data.checkout);
+    else {
+      setError('PayU checkout could not start');
       setPaying('');
-      return;
     }
-    const rzp = new window.Razorpay({
-      key: data?.key_id,
-      amount: data?.amount,
-      currency: data?.currency || 'INR',
-      name: data?.name || 'SMEBUZE',
-      description: data?.description,
-      order_id: data?.order_id,
-      prefill: data?.prefill,
-      handler: async (response: {
-        razorpay_order_id: string;
-        razorpay_payment_id: string;
-        razorpay_signature: string;
-      }) => {
-        const conf = await apiPost('tenant/commerce/addons/confirm', response);
-        setPaying('');
-        if (conf.error) setError(Array.isArray(conf.error) ? conf.error.join(' ') : conf.error);
-        else {
-          setOk('Payment successful — add-on active for 30 days');
-          load();
-        }
-      },
-      modal: { ondismiss: () => setPaying('') },
-    });
-    rzp.open();
   }
 
   const listedIds = new Set(listings.filter((l) => l.active).map((l) => l.item_id));
@@ -155,7 +127,7 @@ export default function CommerceSettingsPage() {
 
   return (
     <div>
-      <Script src="https://checkout.razorpay.com/v1/checkout.js" onLoad={() => setScriptReady(true)} />
+      <PayuCheckoutForm checkout={checkout} />
       <PageHeader
         title="Online commerce"
         description="Pay monthly add-ons for Online shop and Mall. Restock Hub is included. POS is unchanged."
@@ -169,7 +141,7 @@ export default function CommerceSettingsPage() {
       {s && (
         <div className="space-y-6">
           <section className="rounded-xl border bg-white p-4 space-y-3">
-            <h2 className="font-medium text-slate-900">Pay add-ons (platform Razorpay)</h2>
+            <h2 className="font-medium text-slate-900">Pay add-ons (platform PayU)</h2>
             <p className="text-sm text-slate-600">
               Money for add-ons and mall orders goes to SMEBUZE. We settle mall sales to your shop minus commission.
             </p>

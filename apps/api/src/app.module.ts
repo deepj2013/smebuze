@@ -32,6 +32,7 @@ import { PartnersModule } from './partners/partners.module';
 import { SupportModule } from './support/support.module';
 import { AdminBackupModule } from './admin-backup/admin-backup.module';
 import { MarketplaceModule } from './marketplace/marketplace.module';
+import { PayuModule } from './payu/payu.module';
 import { SubscriptionGuard } from './common/guards/subscription.guard';
 import { SchemaMigrateService } from './common/schema-migrate.service';
 
@@ -84,6 +85,7 @@ import { SchemaMigrateService } from './common/schema-migrate.service';
     AdminBackupModule,
     // After BillingModule so forwardRef(Marketplace) from billing resolves cleanly
     MarketplaceModule,
+    PayuModule,
   ],
   providers: [
     SchemaMigrateService,

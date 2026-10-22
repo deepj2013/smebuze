@@ -115,7 +115,7 @@ export default function ChannelsPage() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
         <h2 className="font-semibold text-slate-900">Payment gateways</h2>
-        <p className="text-sm text-slate-500">Razorpay is live. Other gateways store keys so we can switch them on without another rebuild. You can also use <Link href="/organization/payments" className="text-brand-600 hover:underline">Scan to pay</Link>.</p>
+        <p className="text-sm text-slate-500">PayU is live for scan-to-pay. Other gateways store keys for future use. You can also use <Link href="/organization/payments" className="text-brand-600 hover:underline">Scan to pay</Link>.</p>
         {providers.map((p) => (
           <div key={p.id} className="border-t border-slate-100 pt-4">
             <div className="flex items-center justify-between gap-2">

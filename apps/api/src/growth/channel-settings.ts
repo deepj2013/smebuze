@@ -1,4 +1,4 @@
-import { decryptSecret, encryptSecret } from '../common/tenant-razorpay';
+import { decryptSecret, encryptSecret } from '../common/payu';
 
 export type ChannelMode = 'shared' | 'private';
 
@@ -11,7 +11,7 @@ export type ChannelSettings = {
 const empty: ChannelSettings = {
   whatsapp: { mode: 'shared', private: {} },
   campaign: { mode: 'shared', private: {} },
-  payments: { mode: 'private', default_provider: 'razorpay' },
+  payments: { mode: 'private', default_provider: 'payu' },
 };
 
 function asObj(v: unknown): Record<string, unknown> {
@@ -45,7 +45,7 @@ export function parseChannelSettings(settings: Record<string, unknown> | null | 
     },
     payments: {
       mode: pay.mode === 'shared' ? 'shared' : 'private',
-      default_provider: typeof pay.default_provider === 'string' && pay.default_provider ? pay.default_provider : 'razorpay',
+      default_provider: typeof pay.default_provider === 'string' && pay.default_provider ? pay.default_provider : 'payu',
     },
   };
 }

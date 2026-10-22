@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import Script from 'next/script';
+import PayuCheckoutForm, { type PayuCheckoutPayload } from '@/components/PayuCheckoutForm';
 import {
   readMallPin,
   readMallPhone,
@@ -12,13 +12,6 @@ import {
 } from '@/lib/mall-local';
 
 const API = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000').replace(/\/$/, '');
-
-type RazorpayCheckout = { open: () => void };
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => RazorpayCheckout;
-  }
-}
 
 type MallItem = {
   listing_id: string;
@@ -53,16 +46,6 @@ type BookedOrder = {
   payment_note?: string;
 };
 
-type RazorpayPayload = {
-  key_id?: string;
-  order_id?: string;
-  amount?: number;
-  currency?: string;
-  name?: string;
-  description?: string;
-  prefill?: Record<string, string>;
-};
-
 export default function MallHomePage() {
   const [data, setData] = useState<Page | null>(null);
   const [pincode, setPincode] = useState('');
@@ -81,7 +64,7 @@ export default function MallHomePage() {
   const [booked, setBooked] = useState<BookedOrder | null>(null);
   const [sending, setSending] = useState(false);
   const [paying, setPaying] = useState(false);
-  const [scriptReady, setScriptReady] = useState(false);
+  const [payuCheckout, setPayuCheckout] = useState<PayuCheckoutPayload | null>(null);
 
   useEffect(() => {
     const savedPin = readMallPin();
@@ -217,45 +200,6 @@ export default function MallHomePage() {
     setBooked(null);
   }
 
-  async function openRazorpay(rz: RazorpayPayload, onPaid: () => void, onDismiss: () => void) {
-    if (!rz.order_id || !rz.key_id || !scriptReady || !window.Razorpay) {
-      onDismiss();
-      return;
-    }
-    await new Promise<void>((resolve, reject) => {
-      const checkout = new window.Razorpay!({
-        key: rz.key_id,
-        amount: rz.amount,
-        currency: rz.currency || 'INR',
-        name: rz.name || 'SMEBUZE Mall',
-        description: rz.description,
-        order_id: rz.order_id,
-        prefill: rz.prefill || { name: buyer.name, contact: buyer.phone },
-        handler: async (response: {
-          razorpay_order_id: string;
-          razorpay_payment_id: string;
-          razorpay_signature: string;
-        }) => {
-          try {
-            const conf = await fetch(`${API}/api/v1/public/mall/payments/confirm`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(response),
-            });
-            const confJson = await conf.json();
-            if (!conf.ok) throw new Error(confJson.message || 'Payment confirm failed');
-            onPaid();
-            resolve();
-          } catch (err) {
-            reject(err);
-          }
-        },
-        modal: { ondismiss: () => { onDismiss(); resolve(); } },
-      });
-      checkout.open();
-    });
-  }
-
   async function bookOrder(e: FormEvent) {
     e.preventDefault();
     if (!sellerLock || !cart.length) return;
@@ -327,25 +271,11 @@ export default function MallHomePage() {
         setBooked(null);
         return;
       }
-      const rz: RazorpayPayload = {
-        key_id: json.key_id,
-        order_id: json.order_id,
-        amount: json.amount,
-        currency: json.currency,
-        name: json.name,
-        description: json.description,
-        prefill: json.prefill,
-      };
-      await openRazorpay(
-        rz,
-        () => {
-          setDone({ ...booked, paid: true, number: booked.number });
-          setBooked(null);
-        },
-        () => {
-          setError('Payment window closed — you can pay anytime from My orders or track page.');
-        },
-      );
+      if (json.checkout) {
+        setPayuCheckout(json.checkout as PayuCheckoutPayload);
+      } else {
+        setError('PayU checkout could not start. Try again from My orders.');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed');
     } finally {
@@ -380,7 +310,7 @@ export default function MallHomePage() {
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
-      <Script src="https://checkout.razorpay.com/v1/checkout.js" onLoad={() => setScriptReady(true)} />
+      <PayuCheckoutForm checkout={payuCheckout} />
       <div>
         <h1 className="text-2xl font-semibold tracking-tight mb-1">Local shops near you</h1>
         <p className="text-sm text-slate-600 mb-3">

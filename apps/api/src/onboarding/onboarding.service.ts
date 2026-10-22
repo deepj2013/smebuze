@@ -114,8 +114,10 @@ export class OnboardingService {
     const isIceCrestTenant = tenantSlug === 'ice-crest' || settings?.business_type === 'ice_crest';
     const isInvoiceLite = isInvoicingLiteBusinessType(businessType);
     const isPosTenant = isPosBusinessType(businessType);
-    const razorpay = (settings?.razorpay ?? {}) as { enabled?: boolean; key_id?: string; key_secret?: string };
-    const paymentsReady = razorpay.enabled === true && typeof razorpay.key_id === 'string' && razorpay.key_id.startsWith('rzp_') && Boolean(razorpay.key_secret);
+    const payu = (settings?.payu ?? settings?.razorpay ?? {}) as { enabled?: boolean; key?: string; key_id?: string; salt?: string; key_secret?: string };
+    const payuKey = typeof payu.key === 'string' ? payu.key : typeof payu.key_id === 'string' ? payu.key_id : '';
+    const payuSalt = payu.salt || payu.key_secret;
+    const paymentsReady = payu.enabled === true && Boolean(payuKey) && Boolean(payuSalt);
 
     if (isIceCrestTenant) {
       const steps: ChecklistStep[] = [
@@ -124,7 +126,7 @@ export class OnboardingService {
         { id: 'ic_customer', label: 'Add a customer or capture a lead', done: customerCount > 0, href: '/crm/leads' },
         { id: 'ic_company', label: 'Confirm company GSTIN, bank & logo', done: companyCount > 0, href: '/organization/companies' },
         { id: 'ic_printer', label: 'Connect a printer (USB, Wi-Fi or Bluetooth)', done: false, href: '/organization/printers' },
-        { id: 'ic_payments', label: 'Connect Razorpay for scan-to-pay on invoices', done: paymentsReady, href: '/organization/payments' },
+        { id: 'ic_payments', label: 'Connect PayU for scan-to-pay on invoices', done: paymentsReady, href: '/organization/payments' },
       ];
       return {
         steps,

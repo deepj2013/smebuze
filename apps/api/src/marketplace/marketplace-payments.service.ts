@@ -8,7 +8,12 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TenantContext } from '../common/tenant-context';
-import { razorpayRequest, verifyRazorpaySignature } from '../common/tenant-razorpay';
+import {
+  buildHostedCheckoutForm,
+  makePayuTxnId,
+  platformPayu,
+  payuReturnUrl,
+} from '../common/payu';
 import { TenantSubscriptionPayment } from '../billing/entities/tenant-subscription-payment.entity';
 import { MarketplaceOrder } from './entities/marketplace-order.entity';
 import { TenantCommerceSettings } from './entities/tenant-commerce-settings.entity';
@@ -35,36 +40,29 @@ export class MarketplacePaymentsService {
     private readonly commerce: CommerceService,
   ) {}
 
-  private platformRazorpay() {
-    const key_id = (process.env.RAZORPAY_KEY_ID || '').trim();
-    const key_secret = (process.env.RAZORPAY_KEY_SECRET || '').trim();
-    const webhook_secret = (process.env.RAZORPAY_WEBHOOK_SECRET || '').trim();
-    return {
-      key_id,
-      key_secret,
-      webhook_secret,
-      enabled: key_id.startsWith('rzp_') && key_secret.length > 8,
-    };
+  private platformPayu() {
+    const cfg = platformPayu();
+    return { ...cfg, enabled: cfg.enabled };
   }
 
   platformReady() {
-    return this.platformRazorpay().enabled;
+    return this.platformPayu().enabled;
   }
 
   addonCatalog() {
     return {
       addons: listAddonCatalog(),
-      razorpay_ready: this.platformReady(),
-      webhook_url: `${(process.env.API_PUBLIC_URL || 'http://localhost:3000').replace(/\/$/, '')}/api/v1/billing/razorpay/webhook`,
+      payu_ready: this.platformReady(),
+      return_url: payuReturnUrl(),
     };
   }
 
-  /** Create Razorpay order for a mall checkout (money → SMEBUZE). */
-  async createMallRazorpayOrder(mpOrderId: string) {
-    const rzp = this.platformRazorpay();
-    if (!rzp.enabled) {
+  /** Create PayU hosted checkout for a mall order (money → SMEBUZE). */
+  async createMallPayuCheckout(mpOrderId: string) {
+    const payu = this.platformPayu();
+    if (!payu.enabled) {
       throw new BadRequestException(
-        'Platform Razorpay is not configured. Set RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET on the API server.',
+        'Platform PayU is not configured. Set PAYU_MERCHANT_KEY / PAYU_MERCHANT_SALT on the API server.',
       );
     }
     const mp = await this.mpOrderRepo.findOne({ where: { id: mpOrderId } });
@@ -78,59 +76,36 @@ export class MarketplacePaymentsService {
     const delivery = Number(mp.delivery_fee) || 0;
     const fee = Number(mp.commission_amount) || 0;
     const chargeRupees = passFee ? gross + fee + delivery : gross + delivery;
-    const amountPaise = Math.round(chargeRupees * 100);
-    if (amountPaise < 100) throw new BadRequestException('Order amount too small for online pay');
+    if (chargeRupees < 1) throw new BadRequestException('Order amount too small for online pay');
 
-    if (mp.gateway_order_id) {
-      return {
-        key_id: rzp.key_id,
-        order_id: mp.gateway_order_id,
-        amount: amountPaise,
-        currency: 'INR',
-        marketplace_order_id: mp.id,
-        tracking_token: mp.tracking_token,
-        name: 'SMEBUZE Mall',
-        description: `Order ${mp.tracking_token.slice(0, 8)}`,
-        prefill: { name: mp.buyer_name, contact: mp.buyer_phone },
-        bill_amount: gross,
-        platform_fee: passFee ? fee : 0,
-        delivery_fee: delivery,
-        customer_charge: chargeRupees,
-        pass_fee_to_customer: passFee,
-      };
+    let txnid = mp.gateway_order_id;
+    if (!txnid) {
+      txnid = makePayuTxnId('mall');
+      mp.gateway_order_id = txnid;
+      await this.mpOrderRepo.save(mp);
     }
 
-    const order = await razorpayRequest<{ id: string; amount: number; currency: string }>(
-      rzp.key_id,
-      rzp.key_secret,
-      'POST',
-      '/orders',
-      {
-        amount: amountPaise,
-        currency: 'INR',
-        receipt: `mall_${mp.id.replace(/-/g, '').slice(0, 32)}`,
-        notes: {
-          smebuze: 'mall_order',
-          marketplace_order_id: mp.id,
-          tracking_token: mp.tracking_token,
-          seller_tenant_id: mp.seller_tenant_id,
-          platform_fee: String(fee),
-          pass_fee_to_customer: passFee ? '1' : '0',
-        },
-      },
-    );
-    mp.gateway_order_id = order.id;
-    await this.mpOrderRepo.save(mp);
+    const checkout = buildHostedCheckoutForm(payu, {
+      txnid,
+      amountRupees: chargeRupees,
+      productinfo: `Mall order ${mp.tracking_token.slice(0, 8)}`,
+      firstname: (mp.buyer_name || 'Buyer').slice(0, 60),
+      email: 'mall@smebuze.local',
+      phone: mp.buyer_phone || '',
+      udf1: 'mall_order',
+      udf2: mp.id,
+      udf3: mp.tracking_token,
+    });
+
     return {
-      key_id: rzp.key_id,
-      order_id: order.id,
-      amount: order.amount,
-      currency: order.currency || 'INR',
+      checkout,
+      txnid,
+      amount_rupees: chargeRupees,
+      currency: 'INR',
       marketplace_order_id: mp.id,
       tracking_token: mp.tracking_token,
       name: 'SMEBUZE Mall',
       description: passFee && fee > 0 ? `Mall order (incl. ${fee.toFixed(2)} platform fee)` : 'Mall order',
-      prefill: { name: mp.buyer_name, contact: mp.buyer_phone },
       bill_amount: gross,
       platform_fee: passFee ? fee : 0,
       delivery_fee: delivery,
@@ -139,26 +114,9 @@ export class MarketplacePaymentsService {
     };
   }
 
-  async confirmMallPayment(body: {
-    razorpay_order_id: string;
-    razorpay_payment_id: string;
-    razorpay_signature: string;
-  }) {
-    const rzp = this.platformRazorpay();
-    if (!rzp.enabled) throw new BadRequestException('Razorpay is not configured');
-    const signed = `${body.razorpay_order_id}|${body.razorpay_payment_id}`;
-    if (!verifyRazorpaySignature(signed, body.razorpay_signature, rzp.key_secret)) {
-      throw new BadRequestException('Payment signature did not match');
-    }
-    const mp = await this.mpOrderRepo.findOne({ where: { gateway_order_id: body.razorpay_order_id } });
-    if (!mp) throw new NotFoundException('Mall order not found');
-    await this.markMallPaid(mp, body.razorpay_payment_id);
-    return {
-      paid: true,
-      tracking_token: mp.tracking_token,
-      track_path: `/mall/orders/${mp.tracking_token}`,
-      payment_status: 'paid',
-    };
+  /** @deprecated PayU completes via surl/furl — kept for API compatibility. */
+  async confirmMallPayment(_body: Record<string, string>) {
+    throw new BadRequestException('Mall payments complete on PayU return. Refresh your order page.');
   }
 
   async markMallPaid(mp: MarketplaceOrder, paymentRef?: string) {
@@ -181,15 +139,14 @@ export class MarketplacePaymentsService {
   async createAddonOrder(ctx: TenantContext, addon: CommerceAddonId) {
     if (!ctx.tenantId) throw new ForbiddenException('Tenant required');
     if (!COMMERCE_ADDONS[addon]) throw new BadRequestException('Unknown add-on');
-    const rzp = this.platformRazorpay();
-    if (!rzp.enabled) {
+    const payu = this.platformPayu();
+    if (!payu.enabled) {
       throw new BadRequestException(
-        'Platform Razorpay is not configured. Ask SMEBUZE to set RAZORPAY_KEY_ID / KEY_SECRET, or pay offline via support.',
+        'Platform PayU is not configured. Ask SMEBUZE to set PAYU_MERCHANT_KEY / SALT, or pay offline via support.',
       );
     }
     const amountPaise = addonPricePaise(addon);
     if (amountPaise <= 0) {
-      // Free add-on — activate immediately
       await this.activateAddon(ctx.tenantId, addon);
       return { free: true, activated: true, addon };
     }
@@ -197,7 +154,7 @@ export class MarketplacePaymentsService {
     const payment = await this.paymentRepo.save(
       this.paymentRepo.create({
         tenant_id: ctx.tenantId,
-        gateway: 'razorpay',
+        gateway: 'payu',
         plan: `addon_${addon}`,
         interval: 'monthly',
         amount_paise: amountPaise,
@@ -207,35 +164,30 @@ export class MarketplacePaymentsService {
     );
 
     try {
-      const order = await razorpayRequest<{ id: string; amount: number; currency: string }>(
-        rzp.key_id,
-        rzp.key_secret,
-        'POST',
-        '/orders',
-        {
-          amount: amountPaise,
-          currency: 'INR',
-          receipt: `addon_${payment.id.replace(/-/g, '').slice(0, 32)}`,
-          notes: {
-            smebuze: 'commerce_addon',
-            addon,
-            tenant_id: ctx.tenantId,
-            payment_id: payment.id,
-          },
-        },
-      );
-      payment.gateway_order_id = order.id;
+      const txnid = makePayuTxnId('addon');
+      payment.gateway_order_id = txnid;
       await this.paymentRepo.save(payment);
+      const amountRupees = amountPaise / 100;
+      const checkout = buildHostedCheckoutForm(payu, {
+        txnid,
+        amountRupees,
+        productinfo: `${COMMERCE_ADDONS[addon].label} subscription`,
+        firstname: (ctx.name || 'Tenant').slice(0, 60),
+        email: ctx.email || 'billing@smebuze.local',
+        udf1: 'commerce_addon',
+        udf2: payment.id,
+        udf3: ctx.tenantId,
+      });
       return {
-        key_id: rzp.key_id,
-        order_id: order.id,
-        amount: order.amount,
-        currency: order.currency || 'INR',
+        checkout,
+        txnid,
+        amount: amountPaise,
+        amount_rupees: amountRupees,
+        currency: 'INR',
         payment_id: payment.id,
         addon,
         name: 'SMEBUZE',
         description: `${COMMERCE_ADDONS[addon].label} · ₹${addonPriceRupees(addon)}/mo`,
-        prefill: { email: ctx.email, name: ctx.name },
       };
     } catch (err) {
       payment.status = 'failed';
@@ -245,25 +197,8 @@ export class MarketplacePaymentsService {
     }
   }
 
-  async confirmAddonPayment(
-    ctx: TenantContext,
-    body: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string },
-  ) {
-    const rzp = this.platformRazorpay();
-    if (!rzp.enabled) throw new BadRequestException('Razorpay is not configured');
-    const signed = `${body.razorpay_order_id}|${body.razorpay_payment_id}`;
-    if (!verifyRazorpaySignature(signed, body.razorpay_signature, rzp.key_secret)) {
-      throw new BadRequestException('Payment signature did not match');
-    }
-    const payment = await this.paymentRepo.findOne({
-      where: {
-        gateway_order_id: body.razorpay_order_id,
-        tenant_id: ctx.tenantId!,
-        gateway: 'razorpay',
-      },
-    });
-    if (!payment) throw new NotFoundException('Payment not found');
-    return this.markAddonPaymentPaid(payment, body.razorpay_payment_id);
+  async confirmAddonPayment(_ctx: TenantContext, _body: Record<string, string>) {
+    throw new BadRequestException('Add-on payments complete on PayU return. Refresh commerce settings.');
   }
 
   async markAddonPaymentPaid(payment: TenantSubscriptionPayment, paymentId?: string) {
@@ -308,37 +243,4 @@ export class MarketplacePaymentsService {
     await this.settingsRepo.save(row);
     return row;
   }
-
-  /**
-   * Called from BillingService Razorpay webhook when notes.smebuze is mall_order or commerce_addon.
-   */
-  async handlePlatformWebhookNotes(notes: Record<string, unknown>, paymentEntity: Record<string, unknown>) {
-    const kind = String(notes.smebuze || '');
-    const paymentId = String(paymentEntity.id || '');
-    const orderId = String(paymentEntity.order_id || '');
-
-    if (kind === 'mall_order') {
-      const mpId = String(notes.marketplace_order_id || '');
-      let mp = mpId
-        ? await this.mpOrderRepo.findOne({ where: { id: mpId } })
-        : orderId
-          ? await this.mpOrderRepo.findOne({ where: { gateway_order_id: orderId } })
-          : null;
-      if (mp) await this.markMallPaid(mp, paymentId);
-      return { handled: true, kind };
-    }
-
-    if (kind === 'commerce_addon') {
-      const payment = orderId
-        ? await this.paymentRepo.findOne({ where: { gateway_order_id: orderId, gateway: 'razorpay' } })
-        : notes.payment_id
-          ? await this.paymentRepo.findOne({ where: { id: String(notes.payment_id), gateway: 'razorpay' } })
-          : null;
-      if (payment) await this.markAddonPaymentPaid(payment, paymentId);
-      return { handled: true, kind };
-    }
-
-    return { handled: false };
-  }
-
 }

@@ -3,7 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import * as fs from 'fs';
 import * as path from 'path';
 import { SaveBrandingDto } from './dto/save-branding.dto';
-import { SaveRazorpayDto } from './dto/save-razorpay.dto';
+import { SavePayuDto } from './dto/save-payu.dto';
 import { OrganizationService } from './organization.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentTenant } from '../common/tenant-context';
@@ -276,13 +276,13 @@ export class OrganizationController {
   @Get('payments')
   @RequirePermissions('org.company.view')
   async getPayments(@CurrentTenant() ctx: TenantContext) {
-    return this.orgService.getRazorpay(ctx);
+    return this.orgService.getPayu(ctx);
   }
 
   @Patch('payments')
   @RequirePermissions('org.company.update')
-  async savePayments(@Body() body: SaveRazorpayDto, @CurrentTenant() ctx: TenantContext) {
-    return this.orgService.saveRazorpay(ctx, body);
+  async savePayments(@Body() body: SavePayuDto, @CurrentTenant() ctx: TenantContext) {
+    return this.orgService.savePayu(ctx, body);
   }
 
   @Get('invites')

@@ -462,10 +462,10 @@ export class MallService {
 
     this.cache = { at: 0 };
 
-    let razorpay: Record<string, unknown> | null = null;
+    let payu: Record<string, unknown> | null = null;
     let paymentNote = 'Pay to SMEBUZE (platform collect). Settlement to shop after capture.';
     try {
-      razorpay = (await this.payments.createMallRazorpayOrder(mp.id)) as Record<string, unknown>;
+      payu = (await this.payments.createMallPayuCheckout(mp.id)) as Record<string, unknown>;
     } catch (err) {
       paymentNote =
         err instanceof Error
@@ -485,13 +485,13 @@ export class MallService {
       total: gross + deliveryFee,
       track_path: `/mall/orders/${token}`,
       payment_note: paymentNote,
-      razorpay,
-      payment: razorpay
+      payu,
+      payment: payu
         ? {
-            amount_paise: razorpay.amount,
+            amount_rupees: payu.amount_rupees,
             currency: 'INR',
-            order_id: razorpay.order_id,
-            key_id: razorpay.key_id,
+            txnid: payu.txnid,
+            checkout: payu.checkout,
           }
         : {
             amount_paise: Math.round((gross + deliveryFee) * 100),

@@ -142,7 +142,7 @@ export default function PendingReceivablesPage() {
                           const { data: link, error: linkErr } = await apiGet<{ enabled: boolean; url?: string }>(`sales/invoices/${row.id}/payment-link`);
                           setPayLinkLoading(null);
                           if (link?.enabled && link?.url) window.open(link.url, '_blank');
-                          else setError(linkErr || 'Scan to pay is off. Connect Razorpay under Organization → Scan to pay.');
+                          else setError(linkErr || 'Scan to pay is off. Connect PayU under Organization → Scan to pay.');
                         }}
                       >
                         {payLinkLoading === row.id ? '…' : 'Pay online'}

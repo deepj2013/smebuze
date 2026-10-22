@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Script from 'next/script';
+import { useSearchParams } from 'next/navigation';
 import { getApiUrl } from '@/lib/api';
 import { limitDecimalPlaces } from '@/lib/money';
+import PayuCheckoutForm, { type PayuCheckoutPayload } from '@/components/PayuCheckoutForm';
 
 type PayInvoice = {
   invoice_id: string;
@@ -19,16 +20,6 @@ type PayInvoice = {
   status: string;
 };
 
-type RazorpayCheckout = {
-  open: () => void;
-};
-
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => RazorpayCheckout;
-  }
-}
-
 function apiMessage(json: { message?: string | string[] }): string {
   if (Array.isArray(json.message)) return json.message.join(' ');
   return json.message || 'Request failed';
@@ -36,13 +27,14 @@ function apiMessage(json: { message?: string | string[] }): string {
 
 export default function PayInvoicePage({ params }: { params: { token: string } }) {
   const token = params.token;
+  const search = useSearchParams();
   const [invoice, setInvoice] = useState<PayInvoice | null>(null);
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
-  const [scriptReady, setScriptReady] = useState(false);
+  const [checkout, setCheckout] = useState<PayuCheckoutPayload | null>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -64,6 +56,13 @@ export default function PayInvoicePage({ params }: { params: { token: string } }
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (search.get('paid') === '1') {
+      setOk('Payment received. Thank you.');
+      void load();
+    }
+  }, [search, load]);
+
   async function pay() {
     if (!invoice) return;
     setPaying(true);
@@ -81,51 +80,14 @@ export default function PayInvoicePage({ params }: { params: { token: string } }
       setPaying(false);
       return;
     }
-    if (!window.Razorpay) {
-      setError('Payment window failed to load. Refresh and try again.');
-      setPaying(false);
-      return;
-    }
-    const checkout = new window.Razorpay({
-      key: order.key_id,
-      amount: order.amount,
-      currency: order.currency,
-      name: order.name,
-      description: order.description,
-      order_id: order.order_id,
-      prefill: order.prefill,
-      theme: { color: '#0284c7' },
-      handler: async (response: {
-        razorpay_order_id: string;
-        razorpay_payment_id: string;
-        razorpay_signature: string;
-      }) => {
-        const confirmRes = await fetch(getApiUrl(`pay/${token}/confirm`), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(response),
-        });
-        const confirm = await confirmRes.json().catch(() => ({}));
-        if (!confirmRes.ok) {
-          setError(apiMessage(confirm) || 'Paid, but we could not update the invoice yet. Please keep the receipt.');
-        } else {
-          setOk('Payment received. Thank you.');
-          await load();
-        }
-        setPaying(false);
-      },
-      modal: {
-        ondismiss: () => setPaying(false),
-      },
-    });
-    checkout.open();
+    setCheckout(order.checkout as PayuCheckoutPayload);
   }
 
   const paidOff = invoice != null && invoice.outstanding < 1;
 
   return (
     <main className="min-h-dvh bg-slate-50 px-4 py-10">
-      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" onReady={() => setScriptReady(true)} />
+      <PayuCheckoutForm checkout={checkout} />
       <div className="mx-auto max-w-md rounded-2xl border bg-white p-6 shadow-sm">
         <p className="text-xs uppercase tracking-wide text-slate-500">Pay invoice</p>
         {loading && <p className="mt-4 text-sm text-slate-600">Loading…</p>}
@@ -171,10 +133,10 @@ export default function PayInvoicePage({ params }: { params: { token: string } }
                 )}
                 <button
                   type="submit"
-                  disabled={paying || !scriptReady}
+                  disabled={paying}
                   className="w-full rounded-lg bg-brand-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50 min-h-[44px]"
                 >
-                  {paying ? 'Opening Razorpay…' : scriptReady ? 'Pay with Razorpay' : 'Loading payment…'}
+                  {paying ? 'Redirecting to PayU…' : 'Pay with PayU'}
                 </button>
               </form>
             )}

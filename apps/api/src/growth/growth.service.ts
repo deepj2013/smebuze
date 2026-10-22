@@ -14,7 +14,7 @@ import { StorefrontSite } from './entities/storefront-site.entity';
 import { LeadIngestEvent } from './entities/lead-ingest-event.entity';
 import { PaymentGatewayAccount } from './entities/payment-gateway-account.entity';
 import { TenantContext } from '../common/tenant-context';
-import { encryptSecret } from '../common/tenant-razorpay';
+import { encryptSecret } from '../common/payu';
 import { CLIENT_PACKS, getClientPack } from './client-packs';
 import { mergeChannelSettings, parseChannelSettings, publicChannelSettings } from './channel-settings';
 import { LEAD_SOURCES, normalizeLeadSource } from './lead-sources';
@@ -358,7 +358,7 @@ export class GrowthService {
         tenant_id: tenantId,
         provider: def.id,
         enabled: false,
-        is_default: def.id === 'razorpay',
+        is_default: def.id === 'payu',
         credentials: {},
       });
     }
@@ -378,16 +378,17 @@ export class GrowthService {
       acc.credentials = next;
     }
     await this.gatewayRepo.save(acc);
-    if (def.id === 'razorpay' && body.credentials) {
+    if (def.id === 'payu' && body.credentials) {
       const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
       if (tenant) {
-        const rzp = { ...((tenant.settings?.razorpay as Record<string, unknown>) ?? {}) };
+        const row = { ...((tenant.settings?.payu as Record<string, unknown>) ?? {}) };
         const c = body.credentials;
-        if (c.key_id) rzp.key_id = c.key_id;
-        if (c.key_secret) rzp.key_secret = encryptSecret(c.key_secret);
-        if (c.webhook_secret) rzp.webhook_secret = encryptSecret(c.webhook_secret);
-        if (body.enabled !== undefined) rzp.enabled = body.enabled;
-        tenant.settings = { ...(tenant.settings ?? {}), razorpay: rzp };
+        if (c.key) row.key = c.key;
+        if (c.salt) row.salt = encryptSecret(c.salt);
+        if (body.enabled !== undefined) row.enabled = body.enabled;
+        const settings = { ...(tenant.settings ?? {}), payu: row };
+        delete (settings as Record<string, unknown>).razorpay;
+        tenant.settings = settings;
         await this.tenantRepo.save(tenant);
       }
     }
@@ -504,7 +505,7 @@ export class GrowthService {
     tenant.settings = mergeChannelSettings(tenant.settings, {
       whatsapp: { mode: 'shared' },
       campaign: { mode: 'shared' },
-      payments: { mode: 'private', default_provider: 'razorpay' },
+      payments: { mode: 'private', default_provider: 'payu' },
     });
     await this.tenantRepo.save(tenant);
 

@@ -80,19 +80,6 @@ export class PublicMallController {
   @Post('payments/order')
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   paymentOrder(@Body() body: { marketplace_order_id: string }) {
-    return this.payments.createMallRazorpayOrder(body.marketplace_order_id);
-  }
-
-  @Post('payments/confirm')
-  @Throttle({ default: { limit: 12, ttl: 60000 } })
-  paymentConfirm(
-    @Body()
-    body: {
-      razorpay_order_id: string;
-      razorpay_payment_id: string;
-      razorpay_signature: string;
-    },
-  ) {
-    return this.payments.confirmMallPayment(body);
+    return this.payments.createMallPayuCheckout(body.marketplace_order_id);
   }
 }

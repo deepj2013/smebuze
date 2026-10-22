@@ -23,12 +23,12 @@ import { parseInvoiceTemplate } from '../common/invoice-template';
 import {
   decryptSecret,
   encryptSecret,
-  parseTenantRazorpay,
-  publicRazorpaySettings,
-  razorpayRequest,
-  razorpayWebhookUrl,
-  RazorpayPublicSettings,
-} from '../common/tenant-razorpay';
+  parseTenantPayu,
+  payuReturnUrl,
+  payuReady,
+  publicPayuSettings,
+  type PayuPublicSettings,
+} from '../common/payu';
 import {
   HardwareDeviceConfig,
   parseTenantHardware,
@@ -569,57 +569,54 @@ export class OrganizationService {
     return next;
   }
 
-  async getRazorpay(ctx: TenantContext): Promise<RazorpayPublicSettings> {
+  async getPayu(ctx: TenantContext): Promise<PayuPublicSettings> {
     const tenantId = this.assertTenantId(ctx);
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
     if (!tenant) throw new NotFoundException('Workspace not found');
-    return publicRazorpaySettings(parseTenantRazorpay(tenant.settings as Record<string, unknown>), razorpayWebhookUrl());
+    return publicPayuSettings(parseTenantPayu(tenant.settings as Record<string, unknown>), payuReturnUrl());
   }
 
-  async saveRazorpay(
+  async savePayu(
     ctx: TenantContext,
     dto: Partial<{
       enabled: boolean;
-      key_id: string;
-      key_secret: string;
-      webhook_secret: string;
+      key: string;
+      salt: string;
+      env: 'test' | 'prod';
       accept_partial: boolean;
       min_partial_rupees: number;
     }>,
-  ): Promise<RazorpayPublicSettings> {
+  ): Promise<PayuPublicSettings> {
     const tenantId = this.assertTenantId(ctx);
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
     if (!tenant) throw new NotFoundException('Workspace not found');
-    const current = parseTenantRazorpay(tenant.settings as Record<string, unknown>);
+    const current = parseTenantPayu(tenant.settings as Record<string, unknown>);
     const next = {
       ...current,
       enabled: dto.enabled ?? current.enabled,
-      key_id: dto.key_id !== undefined ? String(dto.key_id).trim() : current.key_id,
-      key_secret:
-        dto.key_secret !== undefined && String(dto.key_secret).trim()
-          ? encryptSecret(String(dto.key_secret).trim())
-          : current.key_secret,
-      webhook_secret:
-        dto.webhook_secret !== undefined && String(dto.webhook_secret).trim()
-          ? encryptSecret(String(dto.webhook_secret).trim())
-          : current.webhook_secret,
+      key: dto.key !== undefined ? String(dto.key).trim() : current.key,
+      salt:
+        dto.salt !== undefined && String(dto.salt).trim()
+          ? encryptSecret(String(dto.salt).trim())
+          : current.salt,
+      env: dto.env === 'prod' ? ('prod' as const) : dto.env === 'test' ? ('test' as const) : current.env,
       accept_partial: dto.accept_partial ?? current.accept_partial,
       min_partial_rupees:
         dto.min_partial_rupees != null ? Math.max(1, Number(dto.min_partial_rupees)) : current.min_partial_rupees,
     };
     if (next.enabled) {
-      if (!next.key_id.startsWith('rzp_')) throw new BadRequestException('Key ID should start with rzp_test_ or rzp_live_');
-      const secret = decryptSecret(next.key_secret);
-      if (!secret) throw new BadRequestException('Key secret is required to enable scan-to-pay');
-      try {
-        await razorpayRequest(next.key_id, secret, 'GET', '/payments?count=1');
-      } catch (e) {
-        throw new BadRequestException((e as Error).message || 'Razorpay keys were rejected. Check Key ID and Secret.');
+      if (!next.key) throw new BadRequestException('PayU merchant key is required');
+      const salt = decryptSecret(next.salt);
+      if (!salt) throw new BadRequestException('PayU salt is required to enable online pay');
+      if (!payuReady({ ...next, salt: next.salt })) {
+        throw new BadRequestException('PayU key and salt look incomplete.');
       }
     }
-    tenant.settings = { ...(tenant.settings ?? {}), razorpay: next };
+    const settings = { ...(tenant.settings ?? {}), payu: next };
+    delete (settings as Record<string, unknown>).razorpay;
+    tenant.settings = settings;
     await this.tenantRepo.save(tenant);
-    await this.auditService.log(ctx, 'razorpay.update', 'tenant', tenantId, { enabled: next.enabled }).catch(() => {});
-    return publicRazorpaySettings(next, razorpayWebhookUrl());
+    await this.auditService.log(ctx, 'payu.update', 'tenant', tenantId, { enabled: next.enabled }).catch(() => {});
+    return publicPayuSettings(next, payuReturnUrl());
   }
 }

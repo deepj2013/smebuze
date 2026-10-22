@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import { apiGet, apiPost, apiUploadFile } from '@/lib/api';
+import PayuCheckoutForm, { type PayuCheckoutPayload } from '@/components/PayuCheckoutForm';
 import { quotePlan, YEARLY_DISCOUNT_PERCENT } from '@/lib/plans';
 import CustomPlanEnquiry from '@/app/components/CustomPlanEnquiry';
 
@@ -25,7 +25,7 @@ type BillingStatus = {
   yearly_discount_percent?: number;
   auto_renew?: boolean;
   package_note?: string;
-  gateways: { razorpay: boolean; phonepe: boolean };
+  gateways: { payu: boolean };
   payment_status?: string;
   ecs?: { enabled: boolean; status: string | null; short_url?: string | null; next_charge_at?: string | null };
   ecs_note?: string;
@@ -52,14 +52,6 @@ type BillingStatus = {
   } | null;
 };
 
-type RazorpayCheckout = { open: () => void };
-
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => RazorpayCheckout;
-  }
-}
-
 const INTERVAL_HINT: Record<string, string> = {
   monthly: '1 month',
   quarterly: '3 months',
@@ -83,8 +75,8 @@ export default function BillingPage() {
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [loading, setLoading] = useState(true);
-  const [paying, setPaying] = useState<'razorpay' | 'phonepe' | ''>('');
-  const [scriptReady, setScriptReady] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const [checkout, setCheckout] = useState<PayuCheckoutPayload | null>(null);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofRef, setProofRef] = useState('');
   const [submittingProof, setSubmittingProof] = useState(false);
@@ -115,94 +107,23 @@ export default function BillingPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const q = new URLSearchParams(window.location.search);
-    const txn = q.get('txn');
-    if (q.get('phonepe') !== '1' || !txn) return;
-    setPaying('phonepe');
-    setError('');
-    void (async () => {
-      const r = await apiGet<BillingStatus>(`billing/phonepe/status?txn=${encodeURIComponent(txn)}`);
-      setPaying('');
-      if (r.error) {
-        setError(apiMessage(r.error, 'PhonePe payment is still pending. You can try again.'));
-        return;
-      }
-      if (r.data?.expired === false) {
-        setOk('Payment received. Your workspace is active again.');
-        setStatus(r.data);
-        window.history.replaceState({}, '', '/billing');
-        setTimeout(() => router.replace('/dashboard'), 1200);
-      } else if (r.data) {
-        setStatus(r.data);
-        setError('PhonePe has not confirmed this payment yet. Wait a moment and refresh.');
-      }
-    })();
-  }, [router]);
+    if (q.get('payu') !== 'success') return;
+    setOk('Payment received. Your workspace is active again.');
+    window.history.replaceState({}, '', '/billing');
+    void load().then(() => setTimeout(() => router.replace('/dashboard'), 1200));
+  }, [router, load]);
 
-  async function payRazorpay() {
-    setPaying('razorpay');
+  async function payPayu() {
+    setPaying(true);
     setError('');
     setOk('');
-    const orderRes = await apiPost<{
-      key_id: string;
-      order_id: string;
-      amount: number;
-      currency: string;
-      name: string;
-      description: string;
-      prefill?: Record<string, string>;
-    }>('billing/razorpay/order', { plan, interval });
-    if (orderRes.error || !orderRes.data) {
-      setError(apiMessage(orderRes.error, 'Could not start Razorpay'));
-      setPaying('');
+    const orderRes = await apiPost<{ checkout?: PayuCheckoutPayload }>('billing/payu/checkout', { plan, interval });
+    if (orderRes.error || !orderRes.data?.checkout) {
+      setError(apiMessage(orderRes.error, 'Could not start PayU'));
+      setPaying(false);
       return;
     }
-    if (!window.Razorpay) {
-      setError('Payment window failed to load. Refresh and try again.');
-      setPaying('');
-      return;
-    }
-    const order = orderRes.data;
-    const checkout = new window.Razorpay({
-      key: order.key_id,
-      amount: order.amount,
-      currency: order.currency,
-      name: order.name,
-      description: order.description,
-      order_id: order.order_id,
-      prefill: order.prefill,
-      theme: { color: '#0284c7' },
-      handler: async (response: {
-        razorpay_order_id: string;
-        razorpay_payment_id: string;
-        razorpay_signature: string;
-      }) => {
-        const confirm = await apiPost<{ paid?: boolean; subscription_ends_at?: string }>('billing/razorpay/confirm', response);
-        if (confirm.error) {
-          setError(apiMessage(confirm.error, 'Paid, but we could not unlock the workspace yet. Keep the receipt and write to support.'));
-          setPaying('');
-          return;
-        }
-        setOk('Payment received. Your workspace is active again.');
-        await load();
-        setPaying('');
-        setTimeout(() => router.replace('/dashboard'), 1200);
-      },
-      modal: { ondismiss: () => setPaying('') },
-    });
-    checkout.open();
-  }
-
-  async function payPhonePe() {
-    setPaying('phonepe');
-    setError('');
-    setOk('');
-    const r = await apiPost<{ redirectUrl: string }>('billing/phonepe/start', { plan, interval });
-    if (r.error || !r.data?.redirectUrl) {
-      setError(apiMessage(r.error, 'Could not start PhonePe'));
-      setPaying('');
-      return;
-    }
-    window.location.href = r.data.redirectUrl;
+    setCheckout(orderRes.data.checkout);
   }
 
   const endsLabel = status?.ends_at
@@ -211,14 +132,14 @@ export default function BillingPage() {
 
   return (
     <main className="mx-auto max-w-lg">
-      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" onReady={() => setScriptReady(true)} />
+      <PayuCheckoutForm checkout={checkout} />
       <p className="text-xs uppercase tracking-wide text-slate-500">SMEBUZE plan</p>
       <h1 className="mt-1 text-2xl font-bold text-slate-900">
         {status?.expired ? 'Your trial has ended' : 'Pay for your workspace'}
       </h1>
       <p className="mt-2 text-sm text-slate-600">
         {status?.expired
-          ? 'Pay SMEBUZE with Razorpay to keep invoices, stock and accounts running. Customer invoice payments still go to your own Razorpay account.'
+          ? 'Pay SMEBUZE with PayU to keep invoices, stock and accounts running. Customer invoice payments still go to your own PayU account.'
           : 'Renew or change the plan. This payment is for SMEBUZE — not customer invoices.'}
       </p>
       {status?.package_note && (
@@ -296,46 +217,15 @@ export default function BillingPage() {
                   }}
                 />
                 <span>
-                  <strong className="text-slate-900">Auto-renew with Razorpay</strong>
+                  <strong className="text-slate-900">Remember my plan</strong>
                   <span className="block text-slate-500 text-xs mt-0.5">
-                    Remembers your package so the next renewal is one-click Razorpay checkout when the licence ends.
+                    Keeps your package choice for the next PayU renewal when the licence ends.
                   </span>
                 </span>
               </label>
-              <div className="rounded-lg border border-slate-200 p-3 space-y-2">
-                <p className="text-sm font-medium text-slate-900">ECS / eMandate auto-debit</p>
-                <p className="text-xs text-slate-500">{status.ecs_note || 'Authorise once; SMEBUZE plan renews automatically. Separate from shop customer payments.'}</p>
-                {status.ecs?.status && <p className="text-xs">Status: {status.ecs.status}{status.ecs.next_charge_at ? ` · next ${status.ecs.next_charge_at.slice(0, 10)}` : ''}</p>}
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={paying !== '' || !status.gateways.razorpay}
-                    onClick={async () => {
-                      setError('');
-                      const r = await apiPost<{ short_url?: string | null; already_active?: boolean; message?: string }>('billing/ecs/setup', { plan, interval });
-                      if (r.error) setError(Array.isArray(r.error) ? r.error.join(' ') : r.error);
-                      else if (r.data?.short_url) window.open(r.data.short_url, '_blank');
-                      else setOk(r.data?.message || 'ECS started');
-                      load();
-                    }}
-                    className="rounded-lg bg-slate-900 text-white px-3 py-2 text-xs"
-                  >
-                    {status.ecs?.enabled ? 'ECS active' : 'Set up auto-debit'}
-                  </button>
-                  {status.ecs?.enabled && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await apiPost('billing/ecs/cancel', {});
-                        load();
-                      }}
-                      className="rounded-lg border px-3 py-2 text-xs"
-                    >
-                      Cancel ECS
-                    </button>
-                  )}
-                </div>
-              </div>
+              {status.ecs_note && (
+                <p className="text-xs text-slate-500 rounded-lg border border-slate-200 p-3">{status.ecs_note}</p>
+              )}
               <div>
                 <p className="text-3xl font-bold text-slate-900">
                   {quote ? inr(quote.amount_rupees) : '—'}
@@ -442,27 +332,17 @@ export default function BillingPage() {
                 </div>
               )}
 
-              {(status.gateways.razorpay || status.gateways.phonepe) && (
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    disabled={paying !== '' || !status.gateways.razorpay || !scriptReady}
-                    onClick={() => void payRazorpay()}
-                    className="w-full rounded-lg bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 min-touch"
-                  >
-                    {paying === 'razorpay' ? 'Opening Razorpay…' : 'Pay with Razorpay'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={paying !== '' || !status.gateways.phonepe}
-                    onClick={() => void payPhonePe()}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50 min-touch"
-                  >
-                    {paying === 'phonepe' ? 'Redirecting to PhonePe…' : 'Pay with PhonePe'}
-                  </button>
-                </div>
+              {status.gateways.payu && (
+                <button
+                  type="button"
+                  disabled={paying || !status.gateways.payu}
+                  onClick={() => void payPayu()}
+                  className="w-full rounded-lg bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 min-touch"
+                >
+                  {paying ? 'Redirecting to PayU…' : 'Pay with PayU'}
+                </button>
               )}
-              {!status.gateways.razorpay && !status.gateways.phonepe && !status.manual_pay?.enabled && (
+              {!status.gateways.payu && !status.manual_pay?.enabled && (
                 <p className="text-sm text-amber-800 bg-amber-50 rounded-lg p-3">
                   Online pay is not live on this server yet. Write to{' '}
                   <a className="underline" href={`mailto:${status.support_email}`}>{status.support_email}</a>.

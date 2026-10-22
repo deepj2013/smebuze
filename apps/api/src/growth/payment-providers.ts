@@ -1,4 +1,4 @@
-export type PaymentProviderId = 'razorpay' | 'stripe' | 'payu' | 'cashfree' | 'phonepe';
+export type PaymentProviderId = 'payu' | 'stripe' | 'cashfree';
 
 export type PaymentProviderField = { key: string; label: string; secret?: boolean };
 
@@ -11,13 +11,12 @@ export type PaymentProviderDef = {
 
 export const PAYMENT_PROVIDERS: PaymentProviderDef[] = [
   {
-    id: 'razorpay',
-    label: 'Razorpay',
+    id: 'payu',
+    label: 'PayU',
     live: true,
     fields: [
-      { key: 'key_id', label: 'Key ID' },
-      { key: 'key_secret', label: 'Key secret', secret: true },
-      { key: 'webhook_secret', label: 'Webhook secret', secret: true },
+      { key: 'key', label: 'Merchant key' },
+      { key: 'salt', label: 'Merchant salt', secret: true },
     ],
   },
   {
@@ -30,30 +29,12 @@ export const PAYMENT_PROVIDERS: PaymentProviderDef[] = [
     ],
   },
   {
-    id: 'payu',
-    label: 'PayU',
-    live: false,
-    fields: [
-      { key: 'merchant_key', label: 'Merchant key' },
-      { key: 'merchant_salt', label: 'Merchant salt', secret: true },
-    ],
-  },
-  {
     id: 'cashfree',
     label: 'Cashfree',
     live: false,
     fields: [
       { key: 'app_id', label: 'App ID' },
       { key: 'secret_key', label: 'Secret key', secret: true },
-    ],
-  },
-  {
-    id: 'phonepe',
-    label: 'PhonePe',
-    live: false,
-    fields: [
-      { key: 'merchant_id', label: 'Merchant ID' },
-      { key: 'salt_key', label: 'Salt key', secret: true },
     ],
   },
 ];
