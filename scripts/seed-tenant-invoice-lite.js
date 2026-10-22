@@ -92,12 +92,12 @@ async function run() {
     if (!t.rows.length) {
       t = await db.query(
         `INSERT INTO tenants (platform_org_id, name, slug, plan, features, settings, subscription_ends_at, is_active)
-         VALUES ($1, $2, $3, 'basic', $4::jsonb, $5::jsonb, NOW() + INTERVAL '1 year', true) RETURNING id`,
+         VALUES ($1, $2, $3, 'invoice_lite', $4::jsonb, $5::jsonb, NOW() + INTERVAL '1 year', true) RETURNING id`,
         [PLATFORM_ORG_ID, 'Invoice Lite Demo', TENANT_SLUG, JSON.stringify(FEATURES), settings],
       );
     } else {
       await db.query(
-        `UPDATE tenants SET name = $2, features = $3::jsonb, settings = COALESCE(settings, '{}'::jsonb) || $4::jsonb,
+        `UPDATE tenants SET name = $2, plan = 'invoice_lite', features = $3::jsonb, settings = COALESCE(settings, '{}'::jsonb) || $4::jsonb,
            subscription_ends_at = COALESCE(subscription_ends_at, NOW() + INTERVAL '1 year'), is_active = true WHERE id = $1`,
         [t.rows[0].id, 'Invoice Lite Demo', JSON.stringify(FEATURES), settings],
       );

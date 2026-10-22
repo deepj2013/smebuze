@@ -2,30 +2,39 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { INVOICING_LITE_TYPE } from '@/lib/business-types';
 import { SIGNUP_BUSINESS_TYPES, SIGNUP_GROUPS, type SignupBusinessTypeId } from '@/lib/business-types';
 import { quotePlan, formatInr, monthlyOffer } from '@/lib/plans';
 import { postLoginPath } from '@/lib/workspace-setup';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-const PLANS = [
+const ERP_PLANS = [
   { id: 'basic', name: 'Starter' },
   { id: 'advanced', name: 'Growth' },
   { id: 'enterprise', name: 'Business' },
-  { id: 'ai_pro', name: 'Custom', custom: true },
 ];
 
-const INTERVALS = [
+const LITE_PLANS = [{ id: 'invoice_lite', name: 'Invoice Lite' }];
+
+const ERP_INTERVALS = [
   { id: 'quarterly', name: 'Quarterly · minimum' },
   { id: 'yearly', name: 'Yearly · 15% off' },
+];
+
+const LITE_INTERVALS = [
+  { id: 'monthly', name: 'Monthly' },
+  { id: 'yearly', name: 'Yearly · ₹1,800' },
 ];
 
 function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const planFromUrl = searchParams.get('plan') || 'basic';
+  const businessFromUrl = searchParams.get('business') || '';
   const refFromUrl = (searchParams.get('ref') || searchParams.get('coupon') || '').trim().toUpperCase();
+  const isLiteSignup = businessFromUrl === INVOICING_LITE_TYPE || planFromUrl === 'invoice_lite';
 
   const [step, setStep] = useState(1);
   const [orgName, setOrgName] = useState('');
@@ -35,13 +44,30 @@ function SignupForm() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [plan, setPlan] = useState(planFromUrl);
-  const [interval, setInterval] = useState('quarterly');
+  const [plan, setPlan] = useState(isLiteSignup ? 'invoice_lite' : planFromUrl);
+  const [interval, setInterval] = useState(isLiteSignup ? 'monthly' : 'quarterly');
   const [referralCode, setReferralCode] = useState(refFromUrl);
-  const [businessType, setBusinessType] = useState<SignupBusinessTypeId | ''>('');
+  const [businessType, setBusinessType] = useState<SignupBusinessTypeId | ''>(
+    businessFromUrl === INVOICING_LITE_TYPE ? INVOICING_LITE_TYPE : '',
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const plans = useMemo(
+    () => (businessType === INVOICING_LITE_TYPE || isLiteSignup ? LITE_PLANS : ERP_PLANS),
+    [businessType, isLiteSignup],
+  );
+  const intervals = businessType === INVOICING_LITE_TYPE ? LITE_INTERVALS : ERP_INTERVALS;
   const yearlyQuote = interval === 'yearly' ? quotePlan(plan, 'yearly') : null;
+
+  useEffect(() => {
+    if (businessType === INVOICING_LITE_TYPE) {
+      setPlan('invoice_lite');
+      setInterval('monthly');
+    } else if (plan === 'invoice_lite') {
+      setPlan('basic');
+      setInterval('quarterly');
+    }
+  }, [businessType, plan]);
 
   const deriveSlug = (value: string) =>
     value
@@ -94,10 +120,6 @@ function SignupForm() {
 
   const handleSubmitStep3 = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (plan === 'ai_pro') {
-      router.push('/custom-plan');
-      return;
-    }
     setError(null);
     setLoading(true);
     try {
@@ -299,7 +321,7 @@ function SignupForm() {
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Plan</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {PLANS.map((p) => (
+                  {plans.map((p) => (
                     <label
                       key={p.id}
                       className={`flex items-center justify-between rounded-lg border-2 p-3 cursor-pointer ${
@@ -309,16 +331,16 @@ function SignupForm() {
                       <input type="radio" name="plan" value={p.id} checked={plan === p.id} onChange={() => setPlan(p.id)} className="sr-only" />
                       <span className="font-medium text-slate-900">{p.name}</span>
                       <span className="text-xs text-slate-500 text-right">
-                        {'custom' in p && p.custom
-                          ? 'Let’s talk'
-                          : monthlyOffer(p.id)
-                            ? (
-                              <>
-                                <span className="line-through text-slate-400 mr-1">{formatInr(monthlyOffer(p.id)!.list)}</span>
-                                {formatInr(monthlyOffer(p.id)!.sale)}/mo
-                              </>
-                            )
-                            : ''}
+                        {monthlyOffer(p.id) ? (
+                          <>
+                            {p.id !== 'invoice_lite' && (
+                              <span className="line-through text-slate-400 mr-1">{formatInr(monthlyOffer(p.id)!.list)}</span>
+                            )}
+                            {formatInr(monthlyOffer(p.id)!.sale)}/mo
+                          </>
+                        ) : (
+                          ''
+                        )}
                       </span>
                     </label>
                   ))}
@@ -326,12 +348,9 @@ function SignupForm() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Billing interval</label>
-                {plan === 'ai_pro' ? (
-                  <p className="text-sm text-slate-500">Quoted after we hear what you need.</p>
-                ) : (
                 <>
-                <div className="flex gap-2">
-                  {INTERVALS.map((i) => (
+                <div className="flex flex-wrap gap-2">
+                  {intervals.map((i) => (
                     <label
                       key={i.id}
                       className={`flex-1 rounded-lg border-2 py-2 text-center text-sm cursor-pointer ${
@@ -345,13 +364,18 @@ function SignupForm() {
                 </div>
                 {yearlyQuote && (
                   <p className="mt-2 text-sm text-emerald-700">
-                    15% off yearly. After the trial you pay ₹{yearlyQuote.amount_rupees.toLocaleString('en-IN')} for 12 months
-                    (save ₹{yearlyQuote.savings_rupees.toLocaleString('en-IN')}).
+                    After the trial you pay ₹{yearlyQuote.amount_rupees.toLocaleString('en-IN')} for 12 months
+                    {yearlyQuote.savings_rupees > 0 ? ` (save ₹${yearlyQuote.savings_rupees.toLocaleString('en-IN')}).` : '.'}
                   </p>
                 )}
                 </>
-                )}
               </div>
+              <p className="text-sm text-slate-600">
+                Need a custom pack?{' '}
+                <Link href="/custom-plan" className="text-brand-700 font-semibold hover:underline">
+                  Tell us your process
+                </Link>
+              </p>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Referral / coupon code (optional)</label>
                 <input
@@ -365,16 +389,10 @@ function SignupForm() {
                   <p className="mt-1 text-xs text-emerald-700">Partner code applied from your link.</p>
                 )}
               </div>
-              {plan === 'ai_pro' ? (
-                <p className="text-sm text-slate-600 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  Custom packs are quoted by us. Next you will send a short message to the SMEBUZE team.
-                </p>
-              ) : (
               <div className="rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm text-slate-700">
                 <strong className="text-slate-900">7-day free trial included</strong>
-                <span className="block text-slate-600 mt-0.5">No payment today. Full access to the plan you pick for your business type (including B2B portal when you choose B2B). After 7 days, continue on that plan or write to us.</span>
+                <span className="block text-slate-600 mt-0.5">No payment today. After 7 days, renew with PayU or contact support. Invoice Lite workspaces only see Lite billing.</span>
               </div>
-              )}
               {error && (
                 <div className="p-3 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>
               )}
@@ -383,7 +401,7 @@ function SignupForm() {
                   Back
                 </button>
                 <button type="submit" disabled={loading} className="flex-1 rounded-lg bg-brand-600 text-white py-3 sm:py-2.5 font-semibold hover:bg-brand-700 disabled:opacity-50 min-h-[48px]">
-                  {loading ? 'Creating…' : plan === 'ai_pro' ? 'Send a message' : 'Start 7-day free trial'}
+                  {loading ? 'Creating…' : 'Start 7-day free trial'}
                 </button>
               </div>
             </form>

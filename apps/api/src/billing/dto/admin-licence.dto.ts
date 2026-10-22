@@ -8,7 +8,7 @@ export class AdminOfflinePaymentDto {
   @IsIn(['cash', 'cheque', 'upi'])
   method: 'cash' | 'cheque' | 'upi';
 
-  @IsIn(['basic', 'advanced', 'enterprise'])
+  @IsIn(['basic', 'advanced', 'enterprise', 'invoice_lite'])
   plan: string;
 
   @IsIn(['monthly', 'quarterly', 'yearly'])
@@ -52,7 +52,7 @@ export class AdminLicenceActivateDto {
   tenant_id: string;
 
   @IsOptional()
-  @IsIn(['basic', 'advanced', 'enterprise', 'ai_pro'])
+  @IsIn(['basic', 'advanced', 'enterprise', 'ai_pro', 'invoice_lite'])
   plan?: string;
 
   @IsOptional()

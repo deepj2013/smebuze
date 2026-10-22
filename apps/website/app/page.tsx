@@ -94,13 +94,11 @@ const jsonLd = {
       operatingSystem: 'Web',
       url: SITE_URL,
       description: SITE_DESCRIPTION,
-      offers: {
-        '@type': 'Offer',
-        price: '0',
-        priceCurrency: 'INR',
-        description: '7-day free trial, no card required',
-        url: `${SITE_URL}/signup`,
-      },
+      offers: [
+        { '@type': 'Offer', name: 'Invoice Lite', price: '200', priceCurrency: 'INR', billingDuration: 'P1M', url: `${SITE_URL}/signup?plan=invoice_lite` },
+        { '@type': 'Offer', name: 'Starter', price: '1599', priceCurrency: 'INR', billingDuration: 'P1M', url: `${SITE_URL}/signup?plan=basic` },
+        { '@type': 'Offer', name: '7-day free trial', price: '0', priceCurrency: 'INR', description: 'No card required', url: `${SITE_URL}/signup` },
+      ],
       featureList: [
         'GST invoices with HSN/SAC',
         'Restaurant floor, waiter and kitchen',
@@ -138,10 +136,10 @@ export default function Home() {
               {SITE_NAME}
             </p>
             <h1 className="mt-4 max-w-3xl font-display text-3xl sm:text-5xl lg:text-[3.25rem] font-bold text-white tracking-tight leading-[1.12] text-balance">
-              GST billing software built around how Indian shops actually work.
+              GST billing that fits your shop — from ₹200/month for simple invoices to full ERP.
             </h1>
             <p className="mt-5 max-w-2xl text-base sm:text-lg text-sky-100/95 leading-relaxed">
-              {SITE_TAGLINE}. Start free for seven days. Print on the USB, Wi-Fi or Bluetooth printer you already own.
+              {SITE_TAGLINE}. Try everything free for 7 days. Pay with PayU when you renew. Print on the USB, Wi-Fi or Bluetooth printer you already own.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-3">
               <Link
@@ -428,16 +426,31 @@ export default function Home() {
               Start free. Upgrade when the shop is ready.
             </h2>
             <p className="mt-3 text-slate-600 text-center max-w-2xl mx-auto text-sm sm:text-base">
-              Every workspace begins with a full 7-day trial — no card. Pay yearly and save another 15%. Need a custom
-              pack? Write to us.
+              Four clear plans after your 7-day trial — pay online with PayU (UPI, card, netbanking). Invoice Lite for
+              contractors; Starter, Growth and Business for shops that need stock, purchase and teams. ERP plans save 15% on yearly billing.
             </p>
             <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 {
+                  id: 'invoice_lite',
+                  name: 'Invoice Lite',
+                  badge: 'Contractors',
+                  desc: 'Customers, items, GST bills & print — no POS clutter.',
+                  features: [
+                    'Estimates & follow-ups',
+                    'GST invoice + QR pay link',
+                    'Tally/Busy-style print',
+                    '₹1,800/year option',
+                  ],
+                  cta: 'Start Lite trial',
+                  highlight: false,
+                  yearlyNote: '₹1,800/year',
+                },
+                {
                   id: 'basic',
                   name: 'Starter',
-                  badge: 'For you',
-                  desc: 'One user. One company. The desk to run sales and stock.',
+                  badge: 'Single desk',
+                  desc: 'One user. One company. Sales, stock and GST.',
                   features: [
                     '1 company, 1 user',
                     'CRM, GST invoices, stock',
@@ -451,44 +464,29 @@ export default function Home() {
                   id: 'advanced',
                   name: 'Growth',
                   badge: 'Most chosen',
-                  desc: 'When the team joins and the pipeline gets busy.',
+                  desc: 'Small team, more companies, faster pipeline.',
                   features: [
                     'Up to 3 companies, 5 users',
                     'Everything in Starter',
-                    'Campaigns & challans',
-                    'Bulk upload & priority support',
+                    'Bulk upload & catalog',
+                    'Priority support',
                   ],
-                  cta: 'Upgrade to Growth',
+                  cta: 'Start Growth trial',
                   highlight: true,
                 },
                 {
                   id: 'enterprise',
                   name: 'Business',
                   badge: 'Scale',
-                  desc: 'More companies, books and roles that match the floor.',
+                  desc: 'Books, roles and audit for growing firms.',
                   features: [
                     'Up to 10 companies, 25 users',
                     'P&L, balance sheet, bank rec',
                     'Custom roles & audit',
                     'Dedicated onboarding',
                   ],
-                  cta: 'Go Business',
+                  cta: 'Start Business trial',
                   highlight: false,
-                },
-                {
-                  id: 'custom',
-                  name: 'Custom',
-                  badge: 'Your shape',
-                  desc: 'Industry pack, seats and modules around your process.',
-                  features: [
-                    'Users & companies you need',
-                    'Modules on or off',
-                    'WhatsApp & AI options',
-                    'We set it up with you',
-                  ],
-                  cta: 'Customise with us',
-                  highlight: false,
-                  custom: true,
                 },
               ].map((plan) => (
                 <div
@@ -507,21 +505,23 @@ export default function Home() {
                   <h3 className="mt-3 text-xl font-bold text-slate-900 font-display">{plan.name}</h3>
                   <p className="mt-1 text-slate-600 text-sm min-h-[2.5rem]">{plan.desc}</p>
                   <p className="mt-4 font-display font-bold text-slate-900">
-                    {plan.custom ? (
-                      <span className="text-2xl">Let’s talk</span>
-                    ) : (
-                      <>
-                        <span className="text-3xl">{formatInr(monthlyOffer(plan.id)!.sale)}</span>
-                        <span className="text-base font-normal text-slate-500">/month</span>
-                      </>
-                    )}
+                    <>
+                      <span className="text-3xl">{formatInr(monthlyOffer(plan.id)!.sale)}</span>
+                      <span className="text-base font-normal text-slate-500">/month</span>
+                    </>
                   </p>
-                  {!plan.custom && monthlyOffer(plan.id) && (
+                  {monthlyOffer(plan.id) && (
                     <p className="mt-1 text-sm">
-                      <span className="line-through text-slate-400">{formatInr(monthlyOffer(plan.id)!.list)}</span>
-                      <span className="ml-2 font-semibold text-emerald-700">
-                        {monthlyOffer(plan.id)!.discount_percent}% off
-                      </span>
+                      {'yearlyNote' in plan && plan.yearlyNote ? (
+                        <span className="font-semibold text-emerald-700">or {plan.yearlyNote}</span>
+                      ) : (
+                        <>
+                          <span className="line-through text-slate-400">{formatInr(monthlyOffer(plan.id)!.list)}</span>
+                          <span className="ml-2 font-semibold text-emerald-700">
+                            {monthlyOffer(plan.id)!.discount_percent}% off list
+                          </span>
+                        </>
+                      )}
                     </p>
                   )}
                   <ul className="mt-5 space-y-2 text-sm text-slate-600 flex-1">
@@ -533,13 +533,15 @@ export default function Home() {
                     ))}
                   </ul>
                   <Link
-                    href={plan.custom ? '/custom-plan' : `/signup?plan=${plan.id}`}
+                    href={
+                      plan.id === 'invoice_lite'
+                        ? '/signup?plan=invoice_lite&business=invoicing_lite'
+                        : `/signup?plan=${plan.id}`
+                    }
                     className={`mt-6 block w-full rounded-lg py-3 text-center font-semibold min-h-[48px] flex items-center justify-center ${
                       plan.highlight
                         ? 'bg-brand-700 text-white hover:bg-brand-800'
-                        : plan.custom
-                          ? 'bg-slate-900 text-white hover:bg-slate-800'
-                          : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
+                        : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
                     }`}
                   >
                     {plan.cta}

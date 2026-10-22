@@ -57,6 +57,7 @@ function permissionsForPlatformRole(role: string | null | undefined): string[] {
 }
 
 const PLAN_FEATURES: Record<string, string[]> = {
+  invoice_lite: ['crm', 'sales', 'inventory', 'reports'],
   basic: ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports'],
   advanced: ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'bulk_upload'],
   enterprise: ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'bulk_upload', 'audit'],
@@ -380,7 +381,8 @@ export class AuthService {
 
     const businessType = dto.businessType || 'trading';
     const pack = getClientPack(businessType);
-    const planFeatures = PLAN_FEATURES[dto.plan] ?? PLAN_FEATURES.basic;
+    const defaultPlan = businessType === 'invoicing_lite' ? 'invoice_lite' : dto.plan || 'basic';
+    const planFeatures = PLAN_FEATURES[defaultPlan] ?? PLAN_FEATURES.basic;
     const features = Array.from(new Set([...planFeatures, ...(pack?.features ?? [])]));
     const enabledModules = pack?.modules?.length
       ? pack.modules
@@ -390,7 +392,7 @@ export class AuthService {
       platform_org_id: PLATFORM_ORG_ID as unknown as string,
       name: dto.orgName,
       slug,
-      plan: dto.plan,
+      plan: defaultPlan,
       features,
       settings: {
         business_type: businessType,
@@ -399,7 +401,7 @@ export class AuthService {
         account_kind: 'demo',
         branding: brandingForBusinessType(businessType),
         billing: {
-          interval: dto.interval || 'quarterly',
+          interval: businessType === 'invoicing_lite' ? 'monthly' : dto.interval || 'quarterly',
           trial: true,
           auto_renew: true,
         },

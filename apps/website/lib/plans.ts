@@ -1,15 +1,22 @@
 /** Keep in sync with apps/api/src/common/plans.ts */
 
 export const PLAN_LIST_RUPEES: Record<string, number> = {
+  invoice_lite: 200,
   basic: 1999,
   advanced: 3999,
   enterprise: 5999,
 };
 
 export const PLAN_PRICE_RUPEES: Record<string, number> = {
+  invoice_lite: 200,
   basic: 1599,
   advanced: 2599,
   enterprise: 4599,
+};
+
+/** Fixed yearly price (not monthly × 12 with discount). */
+export const PLAN_YEARLY_TOTAL_RUPEES: Record<string, number> = {
+  invoice_lite: 1800,
 };
 
 export const INTERVAL_MONTHS: Record<string, number> = {
@@ -50,6 +57,18 @@ export function quotePlan(plan: string, interval: string, addonMonthly = 0): {
   const months = INTERVAL_MONTHS[interval] || 1;
   const extra = Math.max(0, Math.round(addonMonthly)) * months;
   const list_rupees = listMonthly * months + extra;
+  const fixedYear = PLAN_YEARLY_TOTAL_RUPEES[plan];
+  if (interval === 'yearly' && fixedYear != null && fixedYear > 0) {
+    return {
+      list_rupees: listMonthly * 12 + extra,
+      amount_rupees: fixedYear + extra,
+      discount_percent:
+        listMonthly * 12 + extra > 0
+          ? Math.round(((listMonthly * 12 + extra - (fixedYear + extra)) / (listMonthly * 12 + extra)) * 100)
+          : 0,
+      savings_rupees: listMonthly * 12 + extra - (fixedYear + extra),
+    };
+  }
   let amount_rupees = saleMonthly * months + extra;
   if (interval === 'yearly') {
     const planOnly = saleMonthly * months;

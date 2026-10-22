@@ -7,7 +7,7 @@ export const SITE_TAGLINE =
 
 /** Default meta description (≤160 chars preferred) */
 export const SITE_DESCRIPTION =
-  'SMEBUZE is GST-ready billing software for Indian MSMEs. Restaurant floor, retail POS or trading desk — one login, printers you already own, 7-day free trial.';
+  'GST invoice software for Indian shops & contractors. Invoice Lite from ₹200/mo, full ERP from ₹1,599. PayU checkout, 7-day free trial, print on USB/Wi-Fi/Bluetooth.';
 
 export const SUPPORT_EMAIL = 'support@smebuze.com';
 export const LEGAL_EMAIL = 'privacy@smebuze.com';
@@ -24,12 +24,15 @@ export const SITE_VISION =
 export const SITE_KEYWORDS = [
   'GST billing software India',
   'GST invoice software',
-  'MSME ERP',
+  'invoice software for contractors India',
   'billing software for shops',
+  'MSME billing software',
   'restaurant POS India',
   'retail POS software',
   'inventory software India',
   'wholesale billing software',
+  'PayU billing integration',
+  'Tally style invoice print',
   'SMEBUZE',
   'smebuze',
 ] as const;
@@ -38,31 +41,41 @@ export const SITE_FAQS: { question: string; answer: string }[] = [
   {
     question: 'What is SMEBUZE?',
     answer:
-      'SMEBUZE is online GST billing and workspace software for Indian MSMEs. At signup you choose your shop type — restaurant, kirana, pharmacy, salon, trading desk and more — and we open only the screens that shop needs: floor and kitchen, counter POS, or full quotations, purchase and stock.',
+      'SMEBUZE is cloud GST billing and workspace software built for Indian MSMEs. Choose your shop type at signup — restaurant floor, retail counter, trading desk, or Invoice Lite for contractors — and you only see the screens you need.',
+  },
+  {
+    question: 'What is Invoice Lite and who is it for?',
+    answer:
+      'Invoice Lite is for freelancers, contractors and small firms that mainly need customers, items, GST invoices, estimates and print — without POS or full purchase modules. It costs ₹200 per month or ₹1,800 per year after the free trial.',
   },
   {
     question: 'Is there a free trial?',
     answer:
-      'Yes. Every new workspace starts with a full 7-day free trial. No card is required to begin. After the trial you can stay on Starter, Growth or Business, or ask us for a custom pack.',
+      'Yes. Every workspace gets a full 7-day trial with no card required. After the trial, pay online with PayU (UPI, card, netbanking) or upload a bank/UPI proof if your admin enables manual pay.',
+  },
+  {
+    question: 'How much does SMEBUZE cost?',
+    answer:
+      'Invoice Lite is ₹200/month or ₹1,800/year. Starter is ₹1,599/month, Growth ₹2,599/month and Business ₹4,599/month (list prices shown on the homepage). Pay yearly on ERP plans and save an extra 15%. Custom packs are quoted on request.',
   },
   {
     question: 'Does SMEBUZE support GST invoices and HSN?',
     answer:
-      'Yes. Quotations, orders and invoices are GST-ready with HSN/SAC, tax and printable bills. Stock, purchase and reports stay in the same workspace so the bill matches what left the shop.',
+      'Yes. Quotations, orders and invoices are GST-ready with HSN/SAC, tax and printable bills in Tally/Busy-style layouts on Invoice Lite. Stock, purchase and reports stay in the same workspace on full ERP plans.',
   },
   {
     question: 'Can I print bills on USB, Wi-Fi or Bluetooth printers?',
     answer:
-      'Yes. SMEBUZE does not lock you to one printer brand. Add USB, Wi-Fi, internet/AirPrint or Bluetooth thermal printers in Organization → Printers. Use A4/A5 for office printers and 58 mm or 80 mm for counter bill printers, including from a phone.',
+      'Yes. Add USB, Wi-Fi, internet/AirPrint or Bluetooth thermal printers in Organization → Printers. Use A4/A5 for office printers and 58 mm or 80 mm for counter bill printers, including from a phone.',
   },
   {
     question: 'Which businesses can use SMEBUZE?',
     answer:
-      'Dine-in restaurants and cafes, sweet shops and bakeries, garment and kirana stores, pharmacies, hardware and electronics shops, salons and clinics, coaching institutes, hotels, trading and manufacturing desks, and industry packs such as HORECA wholesale. Each type gets a tailored module set.',
+      'Dine-in restaurants, sweet shops, kirana and garment stores, pharmacies, salons, coaching institutes, hotels, trading desks, and Invoice Lite for consultants and service businesses. Each type opens a tailored module set.',
   },
   {
-    question: 'Is my shop data private and tenant-separate?',
+    question: 'Is my shop data private?',
     answer:
-      'Yes. Each business gets its own workspace (tenant). Catalog, orders, leads and books belong to that shop only. Roles and permissions control what staff can see.',
+      'Yes. Each business has its own isolated workspace. Catalog, invoices, leads and books belong to that tenant only. Roles control what staff can see.',
   },
 ];

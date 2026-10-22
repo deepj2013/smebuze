@@ -60,6 +60,7 @@ type LicencesResponse = {
   plans: { id: string; label: string; monthly_rupees: number }[];
   offline_methods: { id: string; label: string }[];
   note: string;
+  plan_catalog?: { invoice_lite: { monthly_rupees: number; yearly_rupees: number } };
   tenants: LicenceRow[];
 };
 
@@ -80,6 +81,10 @@ export default function AdminLicencesPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [payFor, setPayFor] = useState<LicenceRow | null>(null);
   const [pendingProofs, setPendingProofs] = useState<PendingProof[]>([]);
+  const [catalogMonthly, setCatalogMonthly] = useState(200);
+  const [catalogYearly, setCatalogYearly] = useState(1800);
+  const [catalogSaving, setCatalogSaving] = useState(false);
+  const [payuSmoke, setPayuSmoke] = useState<number | null>(null);
 
   const [payForm, setPayForm] = useState({
     method: 'upi',
@@ -100,6 +105,18 @@ export default function AdminLicencesPage() {
     else if (lic.data) {
       setData(lic.data);
       setError(null);
+      if (lic.data.plan_catalog?.invoice_lite) {
+        setCatalogMonthly(lic.data.plan_catalog.invoice_lite.monthly_rupees);
+        setCatalogYearly(lic.data.plan_catalog.invoice_lite.yearly_rupees);
+      }
+    }
+    const cat = await apiGet<{ invoice_lite: { monthly_rupees: number; yearly_rupees: number }; payu_smoke_rupees?: number | null }>(
+      'billing/admin/plan-catalog',
+    );
+    if (cat.data) {
+      setCatalogMonthly(cat.data.invoice_lite.monthly_rupees);
+      setCatalogYearly(cat.data.invoice_lite.yearly_rupees);
+      setPayuSmoke(cat.data.payu_smoke_rupees ?? null);
     }
     if (proofs.data?.proofs) setPendingProofs(proofs.data.proofs);
     setLoading(false);
@@ -125,7 +142,7 @@ export default function AdminLicencesPage() {
     });
   }, [data, filter, q]);
 
-  const payablePlan = (plan: string) => ['basic', 'advanced', 'enterprise'].includes(plan);
+  const payablePlan = (plan: string) => ['basic', 'advanced', 'enterprise', 'invoice_lite'].includes(plan);
 
   const openPay = (t: LicenceRow) => {
     setPayFor(t);
@@ -204,12 +221,51 @@ export default function AdminLicencesPage() {
 
   if (loading && !data) return <p className="text-slate-600">Loading licences…</p>;
 
+  const saveCatalog = async () => {
+    setCatalogSaving(true);
+    setError(null);
+    const { error: err } = await apiPost('billing/admin/plan-catalog', {
+      invoice_lite_monthly_rupees: Number(catalogMonthly),
+      invoice_lite_yearly_rupees: Number(catalogYearly),
+    });
+    setCatalogSaving(false);
+    if (err) setError(err);
+    else {
+      setNotice('Invoice Lite prices updated for all lite workspaces.');
+      load();
+    }
+  };
+
   return (
     <div>
       <h1 className="text-xl font-semibold text-slate-800 mb-1">Licence renewals</h1>
+      <section className="mb-6 rounded-xl border border-slate-200 bg-white p-4 max-w-xl space-y-3">
+        <h2 className="font-medium text-slate-900">Invoice Lite pricing</h2>
+        <p className="text-xs text-slate-600">
+          Applies to workspaces with type <code className="bg-slate-100 px-1">invoicing_lite</code> only (₹/month and fixed yearly total).
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <label className="text-sm">
+            Monthly (₹)
+            <input type="number" min={1} value={catalogMonthly} onChange={(e) => setCatalogMonthly(Number(e.target.value))} className="mt-1 block w-28 rounded border px-2 py-1" />
+          </label>
+          <label className="text-sm">
+            Yearly total (₹)
+            <input type="number" min={1} value={catalogYearly} onChange={(e) => setCatalogYearly(Number(e.target.value))} className="mt-1 block w-28 rounded border px-2 py-1" />
+          </label>
+          <button type="button" disabled={catalogSaving} onClick={() => void saveCatalog()} className="self-end rounded-lg bg-slate-900 text-white px-3 py-2 text-sm disabled:opacity-50">
+            {catalogSaving ? 'Saving…' : 'Save prices'}
+          </button>
+        </div>
+        {payuSmoke != null && (
+          <p className="text-xs text-amber-800 bg-amber-50 rounded p-2">
+            PayU test smoke amount active: checkout charges ₹{payuSmoke} (env <code>BILLING_PAYU_SMOKE_RUPEES</code>, only when <code>PAYU_ENV=test</code>).
+          </p>
+        )}
+      </section>
       <p className="text-sm text-slate-600 mb-4 max-w-3xl">
         Universal admin view of every workspace licence. Record cash, cheque or UPI paid into the SMEBUZE account,
-        send renewal reminders, and activate the next period. Online payment gateway can plug in later — same payment ledger.
+        send renewal reminders, and activate the next period. PayU checkout is live when platform keys are set.
       </p>
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
       {notice && <p className="mb-3 text-sm text-emerald-700">{notice}</p>}

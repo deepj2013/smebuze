@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Tenant } from '../tenant/entities/tenant.entity';
+import { PlatformOrg } from '../tenant/entities/platform-org.entity';
 import { User } from '../auth/entities/user.entity';
 import { SubscriptionGuard } from '../common/guards/subscription.guard';
 import { TenantSubscriptionPayment } from './entities/tenant-subscription-payment.entity';
@@ -12,7 +13,7 @@ import { MarketplaceModule } from '../marketplace/marketplace.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Tenant, TenantSubscriptionPayment, TenantBillingMandate, User]),
+    TypeOrmModule.forFeature([Tenant, TenantSubscriptionPayment, TenantBillingMandate, User, PlatformOrg]),
     forwardRef(() => PartnersModule),
     forwardRef(() => MarketplaceModule),
   ],

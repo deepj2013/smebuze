@@ -26,6 +26,11 @@ type BillingStatus = {
   auto_renew?: boolean;
   package_note?: string;
   gateways: { payu: boolean };
+  billing_mode?: 'invoice_lite' | 'erp';
+  business_type?: string;
+  payu_smoke_rupees?: number | null;
+  min_package_interval?: string;
+  yearly_totals?: Record<string, number>;
   payment_status?: string;
   ecs?: { enabled: boolean; status: string | null; short_url?: string | null; next_charge_at?: string | null };
   ecs_note?: string;
@@ -93,8 +98,11 @@ export default function BillingPage() {
     }
     if (r.data) {
       setStatus(r.data);
-      setPlan(r.data.plan && r.data.prices?.[r.data.plan] ? r.data.plan : 'basic');
-      setInterval(r.data.interval === 'monthly' ? 'quarterly' : r.data.interval || 'quarterly');
+      const lite = r.data.billing_mode === 'invoice_lite';
+      const defaultPlan = lite ? 'invoice_lite' : r.data.plan && r.data.prices?.[r.data.plan] ? r.data.plan : 'basic';
+      setPlan(defaultPlan);
+      if (lite) setInterval(r.data.interval === 'yearly' ? 'yearly' : 'monthly');
+      else setInterval(r.data.interval === 'monthly' ? 'quarterly' : r.data.interval || 'quarterly');
       setAutoRenew(r.data.auto_renew !== false);
     }
     setLoading(false);
@@ -332,6 +340,11 @@ export default function BillingPage() {
                 </div>
               )}
 
+              {status.payu_smoke_rupees != null && status.gateways.payu && (
+                <p className="text-xs text-amber-800 bg-amber-50 rounded-lg p-2">
+                  Test mode: PayU checkout will charge ₹{status.payu_smoke_rupees} instead of the full plan amount.
+                </p>
+              )}
               {status.gateways.payu && (
                 <button
                   type="button"

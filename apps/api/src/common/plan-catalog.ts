@@ -1,6 +1,7 @@
 /** Standard vs advanced packages. Paid add-ons raise the SMEBUZE subscription. */
 
 export const PLAN_INCLUDED_FEATURES: Record<string, string[]> = {
+  invoice_lite: ['crm', 'sales', 'inventory', 'reports'],
   basic: ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports'],
   advanced: ['crm', 'sales', 'purchase', 'inventory', 'accounting', 'reports', 'bulk_upload', 'catalog'],
   enterprise: [

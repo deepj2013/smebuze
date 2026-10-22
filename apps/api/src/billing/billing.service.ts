@@ -10,6 +10,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Tenant } from '../tenant/entities/tenant.entity';
+import { PlatformOrg } from '../tenant/entities/platform-org.entity';
 import { User } from '../auth/entities/user.entity';
 import { TenantContext } from '../common/tenant-context';
 import {
@@ -20,16 +21,23 @@ import {
 import {
   extendSubscriptionFrom,
   INTERVAL_MONTHS,
-  MIN_PACKAGE_INTERVAL,
-  payablePlan,
-  PLAN_LABELS,
-  PLAN_LIST_RUPEES,
-  PLAN_PRICE_RUPEES,
-  planAmountPaise,
-  planAmountRupees,
   subscriptionStatus,
   YEARLY_DISCOUNT_PERCENT,
 } from '../common/plans';
+import {
+  applyEnvOverrides,
+  defaultPlanForWorkspace,
+  INVOICE_LITE_PLAN_ID,
+  isInvoicingLiteWorkspace,
+  minBillingIntervalForWorkspace,
+  payuSmokeAmountRupees,
+  payablePlanInCatalog,
+  planIdsForWorkspace,
+  quotePlanWithCatalog,
+  resolvePlanCatalog,
+  tenantBusinessType,
+  type ResolvedPlanCatalog,
+} from '../common/platform-plan-catalog';
 import { TenantSubscriptionPayment } from './entities/tenant-subscription-payment.entity';
 import { TenantBillingMandate } from './entities/tenant-billing-mandate.entity';
 import { BillingPayDto } from './dto/billing-pay.dto';
@@ -45,10 +53,12 @@ import { PartnersService } from '../partners/partners.service';
 import { MarketplacePaymentsService } from '../marketplace/marketplace-payments.service';
 import { platformManualPayInstructions } from '../common/platform-billing-pay';
 import { SubmitManualPaymentDto } from './dto/manual-payment.dto';
+import { AdminPlanCatalogDto } from './dto/plan-catalog.dto';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const SUPPORT_EMAIL = 'support@smebuze.com';
+const PLATFORM_ORG_ID = 'a0000000-0000-0000-0000-000000000001';
 
 @Injectable()
 export class BillingService {
@@ -63,6 +73,8 @@ export class BillingService {
     private readonly mandateRepo: Repository<TenantBillingMandate>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(PlatformOrg)
+    private readonly platformOrgRepo: Repository<PlatformOrg>,
     private readonly mail: MailService,
     @Inject(forwardRef(() => PartnersService))
     private readonly partnersService: PartnersService,
@@ -95,73 +107,109 @@ export class BillingService {
     auto_renew?: boolean;
   } {
     const raw = (settings?.billing ?? {}) as { interval?: string; trial?: boolean; auto_renew?: boolean };
-    const interval = raw.interval && INTERVAL_MONTHS[raw.interval] ? raw.interval : MIN_PACKAGE_INTERVAL;
+    const fallback = minBillingIntervalForWorkspace(settings as Record<string, unknown>);
+    const interval = raw.interval && INTERVAL_MONTHS[raw.interval] ? raw.interval : fallback;
     return { interval, trial: raw.trial === true, auto_renew: raw.auto_renew !== false };
   }
 
-  private resolvePlanInterval(
+  private async loadCatalog(): Promise<ResolvedPlanCatalog> {
+    const org = await this.platformOrgRepo.findOne({ where: { id: PLATFORM_ORG_ID } });
+    const settings = (org?.settings ?? {}) as Record<string, unknown>;
+    return applyEnvOverrides(resolvePlanCatalog(settings));
+  }
+
+  private async resolvePlanInterval(
     tenant: Tenant,
     dto?: BillingPayDto,
-  ): { plan: string; interval: string; amountPaise: number; amountRupees: number } {
+  ): Promise<{ plan: string; interval: string; amountPaise: number; amountRupees: number }> {
+    const catalog = await this.loadCatalog();
+    const settings = (tenant.settings ?? {}) as Record<string, unknown>;
+    const allowed = planIdsForWorkspace(settings);
+    let plan = dto?.plan || tenant.plan || defaultPlanForWorkspace(settings);
+    if (!allowed.includes(plan)) plan = allowed[0]!;
     const stored = this.billingSettings(tenant.settings);
-    const plan = dto?.plan || tenant.plan || 'basic';
-    const interval = dto?.interval || stored.interval || MIN_PACKAGE_INTERVAL;
-    if (!payablePlan(plan)) {
+    const minInt = minBillingIntervalForWorkspace(settings);
+    let interval = dto?.interval || stored.interval || minInt;
+    if (isInvoicingLiteWorkspace(settings)) {
+      if (!['monthly', 'yearly'].includes(interval)) interval = 'monthly';
+    }
+    if (!payablePlanInCatalog(catalog, plan)) {
       throw new BadRequestException(
-        `The ${PLAN_LABELS[plan] || plan} plan is quoted by SMEBUZE. Write to ${SUPPORT_EMAIL}.`,
+        `The ${catalog.labels[plan] || plan} plan is quoted by SMEBUZE. Write to ${SUPPORT_EMAIL}.`,
       );
     }
-    const amountPaise = planAmountPaise(plan, interval);
-    const amountRupees = planAmountRupees(plan, interval);
-    if (amountPaise == null || amountRupees == null) {
-      throw new BadRequestException('Choose Starter, Growth or Business, billed monthly, quarterly or yearly.');
+    const quote = quotePlanWithCatalog(catalog, plan, interval);
+    if (!quote?.amount_paise) {
+      throw new BadRequestException('Choose a valid plan and billing period.');
     }
-    return { plan, interval, amountPaise, amountRupees };
+    return { plan, interval, amountPaise: quote.amount_paise, amountRupees: quote.amount_rupees };
   }
 
   async status(ctx: TenantContext) {
     const tenant = await this.tenantRepo.findOne({ where: { id: this.tenantId(ctx) } });
     if (!tenant) throw new NotFoundException('Workspace not found');
+    const catalog = await this.loadCatalog();
+    const settings = (tenant.settings ?? {}) as Record<string, unknown>;
+    const lite = isInvoicingLiteWorkspace(settings);
     const stored = this.billingSettings(tenant.settings);
     const sub = subscriptionStatus(tenant.subscription_ends_at);
-    const plan = tenant.plan || 'basic';
+    const plan = tenant.plan || defaultPlanForWorkspace(settings);
     const interval = stored.interval;
-    const payable = payablePlan(plan);
-    const amountRupees = payable ? planAmountRupees(plan, interval) : null;
+    const payable = payablePlanInCatalog(catalog, plan);
+    const quote = payable ? quotePlanWithCatalog(catalog, plan, interval) : null;
     const payu = this.platformPayu();
+    const planIds = planIdsForWorkspace(settings);
+    const yearlyTotal = catalog.yearly_total_rupees[INVOICE_LITE_PLAN_ID];
     return {
       tenant_name: tenant.name,
       slug: tenant.slug,
+      business_type: tenantBusinessType(settings),
+      billing_mode: lite ? 'invoice_lite' : 'erp',
       plan,
-      plan_label: PLAN_LABELS[plan] || plan,
+      plan_label: catalog.labels[plan] || plan,
       interval,
-      amount_rupees: amountRupees,
-      amount_paise: payable ? planAmountPaise(plan, interval) : null,
+      amount_rupees: quote?.amount_rupees ?? null,
+      amount_paise: quote?.amount_paise ?? null,
       yearly_discount_percent: YEARLY_DISCOUNT_PERCENT,
       payable,
       support_email: SUPPORT_EMAIL,
       ...sub,
       trial: stored.trial === true && (sub.days_left == null || sub.days_left > 0),
       auto_renew: stored.auto_renew !== false,
-      min_package_interval: MIN_PACKAGE_INTERVAL,
-      package_note:
-        'Quarterly is the minimum package. Pay yearly and save an extra 15%. Pay online with PayU or upload a bank/UPI proof if manual pay is enabled.',
-      prices: PLAN_PRICE_RUPEES,
-      list_prices: PLAN_LIST_RUPEES,
-      plans: Object.keys(PLAN_PRICE_RUPEES).map((id) => ({
+      min_package_interval: minBillingIntervalForWorkspace(settings),
+      package_note: lite
+        ? `Invoice Lite: ₹${catalog.monthly_rupees[INVOICE_LITE_PLAN_ID]}/month or ₹${yearlyTotal ?? 1800}/year. Pay with PayU or upload bank/UPI proof if enabled.`
+        : 'Quarterly is the minimum package. Pay yearly and save an extra 15%. Pay online with PayU or upload a bank/UPI proof if manual pay is enabled.',
+      prices: catalog.monthly_rupees,
+      list_prices: catalog.list_monthly_rupees,
+      yearly_totals: catalog.yearly_total_rupees,
+      plans: planIds.map((id) => ({
         id,
-        label: PLAN_LABELS[id],
-        monthly_rupees: PLAN_PRICE_RUPEES[id],
-        list_rupees: PLAN_LIST_RUPEES[id],
+        label: catalog.labels[id] || id,
+        monthly_rupees: catalog.monthly_rupees[id],
+        list_rupees: catalog.list_monthly_rupees[id],
+        yearly_total_rupees: catalog.yearly_total_rupees[id] ?? null,
       })),
-      intervals: [
-        { id: 'quarterly', label: 'Quarterly (minimum)', months: 3, discount_percent: 0, is_minimum: true },
-        { id: 'yearly', label: 'Yearly', months: 12, discount_percent: YEARLY_DISCOUNT_PERCENT, is_minimum: false },
-        { id: 'monthly', label: 'Monthly', months: 1, discount_percent: 0, is_minimum: false },
-      ],
+      intervals: lite
+        ? [
+            { id: 'monthly', label: 'Monthly', months: 1, discount_percent: 0, is_minimum: true },
+            {
+              id: 'yearly',
+              label: `Yearly (₹${yearlyTotal ?? 1800})`,
+              months: 12,
+              discount_percent: 0,
+              is_minimum: false,
+            },
+          ]
+        : [
+            { id: 'quarterly', label: 'Quarterly (minimum)', months: 3, discount_percent: 0, is_minimum: true },
+            { id: 'yearly', label: 'Yearly', months: 12, discount_percent: YEARLY_DISCOUNT_PERCENT, is_minimum: false },
+            { id: 'monthly', label: 'Monthly', months: 1, discount_percent: 0, is_minimum: false },
+          ],
       gateways: {
         payu: payu.enabled,
       },
+      payu_smoke_rupees: payuSmokeAmountRupees(),
       ecs: { enabled: false, status: null as string | null, subscription_id: null as string | null },
       ecs_note: 'Auto-debit (ECS) is not available with PayU yet. Renew manually each cycle or use manual bank/UPI proof.',
       manual_pay: platformManualPayInstructions(),
@@ -207,7 +255,7 @@ export class BillingService {
     if (existing) {
       throw new BadRequestException('A payment is already waiting for SMEBUZE approval. We will email you when it is verified.');
     }
-    const chosen = this.resolvePlanInterval(tenant, { plan: dto.plan, interval: dto.interval });
+    const chosen = await this.resolvePlanInterval(tenant, { plan: dto.plan, interval: dto.interval });
     if (!chosen.amountPaise || chosen.amountPaise < 100) {
       throw new BadRequestException('Choose a valid plan and billing period.');
     }
@@ -377,26 +425,37 @@ export class BillingService {
     }
     const tenant = await this.tenantRepo.findOne({ where: { id: this.tenantId(ctx) } });
     if (!tenant) throw new NotFoundException('Workspace not found');
-    const chosen = this.resolvePlanInterval(tenant, dto);
+    const catalog = await this.loadCatalog();
+    const chosen = await this.resolvePlanInterval(tenant, dto);
+    const smoke = payuSmokeAmountRupees();
+    let amountPaise = chosen.amountPaise;
+    if (smoke != null && smoke * 100 < amountPaise) {
+      amountPaise = Math.round(smoke * 100);
+    }
     const payment = await this.paymentRepo.save(
       this.paymentRepo.create({
         tenant_id: tenant.id,
         gateway: 'payu',
         plan: chosen.plan,
         interval: chosen.interval,
-        amount_paise: chosen.amountPaise,
+        amount_paise: amountPaise,
         status: 'created',
-        meta: { tenant_slug: tenant.slug, smebuze: 'subscription' },
+        meta: {
+          tenant_slug: tenant.slug,
+          smebuze: 'subscription',
+          catalog_amount_paise: chosen.amountPaise,
+          payu_smoke: smoke != null,
+        },
       }),
     );
     const txnid = makePayuTxnId('sub');
     payment.gateway_order_id = txnid;
     await this.paymentRepo.save(payment);
-    const amountRupees = chosen.amountPaise / 100;
+    const amountRupees = amountPaise / 100;
     const checkout = buildHostedCheckoutForm(payu, {
       txnid,
       amountRupees,
-      productinfo: `SMEBUZE ${PLAN_LABELS[chosen.plan] || chosen.plan}`.slice(0, 100),
+      productinfo: `SMEBUZE ${catalog.labels[chosen.plan] || chosen.plan}`.slice(0, 100),
       firstname: (ctx.name || tenant.name || 'Customer').slice(0, 60),
       email: (ctx.email || 'billing@smebuze.local').slice(0, 60),
       udf1: 'subscription',
@@ -410,8 +469,10 @@ export class BillingService {
       amount_rupees: amountRupees,
       currency: 'INR',
       name: 'SMEBUZE',
-      description: `${PLAN_LABELS[chosen.plan]} · ${chosen.interval}`,
+      description: `${catalog.labels[chosen.plan] || chosen.plan} · ${chosen.interval}${smoke != null ? ' (test)' : ''}`,
       payment_id: payment.id,
+      smoke_test: smoke != null,
+      catalog_amount_rupees: chosen.amountRupees,
     };
   }
 
@@ -508,9 +569,40 @@ export class BillingService {
     }
   }
 
+  async getAdminPlanCatalog(ctx: TenantContext) {
+    this.assertSuperAdmin(ctx);
+    const catalog = await this.loadCatalog();
+    return {
+      invoice_lite: {
+        monthly_rupees: catalog.monthly_rupees[INVOICE_LITE_PLAN_ID],
+        yearly_rupees: catalog.yearly_total_rupees[INVOICE_LITE_PLAN_ID],
+      },
+      payu_smoke_rupees: payuSmokeAmountRupees(),
+      payu_env: process.env.PAYU_ENV || 'test',
+      note: 'Invoice Lite workspaces (business_type invoicing_lite) only see this plan. Env BILLING_PAYU_SMOKE_RUPEES=10 charges ₹10 on PayU test checkout.',
+    };
+  }
+
+  async updateAdminPlanCatalog(ctx: TenantContext, dto: AdminPlanCatalogDto) {
+    this.assertSuperAdmin(ctx);
+    const org = await this.platformOrgRepo.findOne({ where: { id: PLATFORM_ORG_ID } });
+    if (!org) throw new NotFoundException('Platform org not found');
+    const settings = { ...(org.settings ?? {}) };
+    const prev = (settings.billing_plan_catalog ?? {}) as Record<string, unknown>;
+    const monthly = { ...((prev.monthly_rupees as Record<string, number>) ?? {}) };
+    const yearly = { ...((prev.yearly_total_rupees as Record<string, number>) ?? {}) };
+    if (dto.invoice_lite_monthly_rupees != null) monthly[INVOICE_LITE_PLAN_ID] = dto.invoice_lite_monthly_rupees;
+    if (dto.invoice_lite_yearly_rupees != null) yearly[INVOICE_LITE_PLAN_ID] = dto.invoice_lite_yearly_rupees;
+    settings.billing_plan_catalog = { monthly_rupees: monthly, yearly_total_rupees: yearly };
+    org.settings = settings;
+    await this.platformOrgRepo.save(org);
+    return this.getAdminPlanCatalog(ctx);
+  }
+
   /** Universal admin: every workspace with licence status for renewals. */
   async listLicences(ctx: TenantContext) {
     this.assertSuperAdmin(ctx);
+    const catalog = await this.loadCatalog();
     const tenants = await this.tenantRepo.find({ order: { name: 'ASC' } });
     const now = new Date();
     const rows = await Promise.all(
@@ -546,7 +638,7 @@ export class BillingService {
           name: t.name,
           slug: t.slug,
           plan: t.plan,
-          plan_label: PLAN_LABELS[t.plan] || t.plan,
+          plan_label: catalog.labels[t.plan] || t.plan,
           is_active: t.is_active !== false,
           business_type: settings.business_type ?? null,
           account_kind,
@@ -578,8 +670,19 @@ export class BillingService {
     };
     return {
       summary,
-      prices: PLAN_PRICE_RUPEES,
-      plans: Object.keys(PLAN_PRICE_RUPEES).map((id) => ({ id, label: PLAN_LABELS[id], monthly_rupees: PLAN_PRICE_RUPEES[id] })),
+      prices: catalog.monthly_rupees,
+      plans: Object.keys(catalog.monthly_rupees).map((id) => ({
+        id,
+        label: catalog.labels[id] || id,
+        monthly_rupees: catalog.monthly_rupees[id],
+        yearly_total_rupees: catalog.yearly_total_rupees[id] ?? null,
+      })),
+      plan_catalog: {
+        invoice_lite: {
+          monthly_rupees: catalog.monthly_rupees[INVOICE_LITE_PLAN_ID],
+          yearly_rupees: catalog.yearly_total_rupees[INVOICE_LITE_PLAN_ID],
+        },
+      },
       offline_methods: [
         { id: 'cash', label: 'Cash (handed to SMEBUZE)' },
         { id: 'cheque', label: 'Cheque (in SMEBUZE account)' },
@@ -595,8 +698,9 @@ export class BillingService {
     this.assertSuperAdmin(ctx);
     const tenant = await this.tenantRepo.findOne({ where: { id: dto.tenant_id } });
     if (!tenant) throw new NotFoundException('Tenant not found');
-    if (!payablePlan(dto.plan)) {
-      throw new BadRequestException('Choose Starter, Growth or Business for offline renewal.');
+    const catalog = await this.loadCatalog();
+    if (!payablePlanInCatalog(catalog, dto.plan)) {
+      throw new BadRequestException('Choose a valid plan for offline renewal.');
     }
     if (!INTERVAL_MONTHS[dto.interval]) {
       throw new BadRequestException('Interval must be monthly, quarterly or yearly.');
@@ -658,7 +762,8 @@ export class BillingService {
     }
     const sub = subscriptionStatus(tenant.subscription_ends_at);
     const billingUrl = `${this.frontendUrl()}/billing`;
-    const planLabel = PLAN_LABELS[tenant.plan] || tenant.plan;
+    const catalog = await this.loadCatalog();
+    const planLabel = catalog.labels[tenant.plan] || tenant.plan;
     let sent = 0;
     const failures: string[] = [];
     for (const u of users) {

@@ -29,6 +29,7 @@ import {
   AdminRejectPaymentProofDto,
   SubmitManualPaymentDto,
 } from './dto/manual-payment.dto';
+import { AdminPlanCatalogDto } from './dto/plan-catalog.dto';
 
 @Controller('billing')
 @SkipSubscription()
@@ -46,6 +47,20 @@ export class BillingController {
   @RequirePermissions('admin.tenant.view')
   adminLicences(@CurrentTenant() ctx: TenantContext) {
     return this.billing.listLicences(ctx);
+  }
+
+  @Get('admin/plan-catalog')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @RequirePermissions('admin.tenant.view')
+  adminPlanCatalog(@CurrentTenant() ctx: TenantContext) {
+    return this.billing.getAdminPlanCatalog(ctx);
+  }
+
+  @Post('admin/plan-catalog')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @RequirePermissions('admin.tenant.create')
+  adminPlanCatalogUpdate(@CurrentTenant() ctx: TenantContext, @Body() dto: AdminPlanCatalogDto) {
+    return this.billing.updateAdminPlanCatalog(ctx, dto);
   }
 
   @Post('admin/offline-payment')
