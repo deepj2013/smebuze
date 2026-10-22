@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { SITE_NAME, SUPPORT_EMAIL } from '@/lib/site';
+import { SAVOKA_SYSTEM_NAME, SAVOKA_URL, SITE_NAME, SUPPORT_EMAIL } from '@/lib/site';
 
 export default function SiteFooter() {
   return (
@@ -9,6 +9,13 @@ export default function SiteFooter() {
           <p className="font-display font-bold text-brand-800 text-lg">{SITE_NAME}</p>
           <p className="mt-2 text-slate-600 leading-relaxed max-w-xs">
             GST billing and shop workspaces for Indian MSMEs — restaurant, retail, services and trading.
+          </p>
+          <p className="mt-3 text-xs text-slate-500 leading-relaxed max-w-xs">
+            A product of{' '}
+            <a href={SAVOKA_URL} className="font-medium text-brand-700 hover:underline" rel="noopener noreferrer" target="_blank">
+              {SAVOKA_SYSTEM_NAME}
+            </a>
+            . Learn more at savoka.in.
           </p>
         </div>
         <div>
@@ -32,6 +39,11 @@ export default function SiteFooter() {
             <li>
               <Link href="/#faq" className="hover:text-brand-700">
                 FAQ
+              </Link>
+            </li>
+            <li>
+              <Link href="/#about-savoka" className="hover:text-brand-700">
+                About Savoka
               </Link>
             </li>
             <li>
@@ -83,7 +95,11 @@ export default function SiteFooter() {
         </div>
       </div>
       <p className="mt-10 text-center text-xs text-slate-400 px-4">
-        © {new Date().getFullYear()} {SITE_NAME}. Made for Indian MSMEs · Organic GST billing software · smebuze.com
+        © {new Date().getFullYear()} {SITE_NAME} · Powered by{' '}
+        <a href={SAVOKA_URL} className="hover:text-slate-600" rel="noopener noreferrer" target="_blank">
+          {SAVOKA_SYSTEM_NAME}
+        </a>
+        . Made for Indian MSMEs · smebuze.com
       </p>
     </footer>
   );

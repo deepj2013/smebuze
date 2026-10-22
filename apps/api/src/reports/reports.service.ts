@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { SalesService } from '../sales/sales.service';
 import { PurchaseService } from '../purchase/purchase.service';
@@ -67,9 +67,13 @@ export class ReportsService {
       invoiceCount: filtered.length,
       rows: filtered.slice(0, 100).map((inv) => {
         const gst = inv as SalesInvoice & { taxable_value?: string; cgst_amount?: string; sgst_amount?: string; igst_amount?: string };
+        const customerName = inv.customer?.name?.trim() || inv.vendor?.name?.trim() || null;
+        const customerGstin = inv.customer?.gstin?.trim() || inv.vendor?.gstin?.trim() || null;
         return {
           id: inv.id,
           number: inv.number,
+          customer_name: customerName,
+          customer_gstin: customerGstin,
           date: inv.invoice_date,
           taxable_value: Number(gst.taxable_value ?? inv.subtotal ?? 0),
           cgst: Number(gst.cgst_amount ?? 0),
@@ -80,6 +84,256 @@ export class ReportsService {
           due: parseFloat(inv.total) - parseFloat(inv.paid_amount),
         };
       }),
+    };
+  }
+
+  /** Invoice-wise sales register for CA / accountant — full period, with party GSTIN. */
+  async getSalesRegister(ctx: TenantContext, from?: string, to?: string, companyId?: string) {
+    const invoices = await this.salesService.findInvoices(ctx);
+    const filtered = this.filterByDateAndCompany(
+      invoices,
+      from,
+      to,
+      companyId,
+      (i) => i.invoice_date,
+      (i) => i.company_id,
+    ).filter((i) => i.status !== 'deleted' && i.status !== 'draft');
+    const round = (n: number) => Math.round(n * 100) / 100;
+    let taxableTotal = 0;
+    let cgstTotal = 0;
+    let sgstTotal = 0;
+    let igstTotal = 0;
+    let invoiceTotal = 0;
+    const rows = filtered
+      .sort((a, b) => {
+        const da = new Date(a.invoice_date).getTime();
+        const db = new Date(b.invoice_date).getTime();
+        return da - db || a.number.localeCompare(b.number);
+      })
+      .map((inv) => {
+        const gst = inv as SalesInvoice & {
+          taxable_value?: string;
+          cgst_amount?: string;
+          sgst_amount?: string;
+          igst_amount?: string;
+        };
+        const taxable = round(Number(gst.taxable_value ?? inv.subtotal ?? 0));
+        const cgst = round(Number(gst.cgst_amount ?? 0));
+        const sgst = round(Number(gst.sgst_amount ?? 0));
+        const igst = round(Number(gst.igst_amount ?? 0));
+        const total = round(parseFloat(inv.total));
+        taxableTotal += taxable;
+        cgstTotal += cgst;
+        sgstTotal += sgst;
+        igstTotal += igst;
+        invoiceTotal += total;
+        const day =
+          inv.invoice_date instanceof Date
+            ? inv.invoice_date.toISOString().slice(0, 10)
+            : String(inv.invoice_date).slice(0, 10);
+        return {
+          id: inv.id,
+          number: inv.number,
+          date: day,
+          customer_name: inv.customer?.name?.trim() || inv.vendor?.name?.trim() || '—',
+          customer_gstin: inv.customer?.gstin?.trim() || inv.vendor?.gstin?.trim() || '',
+          taxable_value: taxable,
+          cgst,
+          sgst,
+          igst,
+          total,
+        };
+      });
+    return {
+      from: from ?? null,
+      to: to ?? null,
+      company_id: companyId ?? null,
+      invoiceCount: rows.length,
+      totals: {
+        taxable_value: round(taxableTotal),
+        cgst: round(cgstTotal),
+        sgst: round(sgstTotal),
+        igst: round(igstTotal),
+        total: round(invoiceTotal),
+      },
+      rows,
+    };
+  }
+
+  /** Account-style ledger: each bill (debit) and each payment receipt (credit) for one customer. */
+  async getCustomerAccountLedger(
+    ctx: TenantContext,
+    customerId: string,
+    from?: string,
+    to?: string,
+    companyId?: string,
+  ) {
+    if (!customerId) throw new BadRequestException('customer_id is required');
+    const round = (n: number) => Math.round(n * 100) / 100;
+    const day = (value: Date | string | null | undefined): string => {
+      if (!value) return '';
+      if (value instanceof Date) return value.toISOString().slice(0, 10);
+      return String(value).slice(0, 10);
+    };
+    const inRange = (d: string) => {
+      if (!d) return false;
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      return true;
+    };
+
+    let partyName = 'Customer';
+    let partyGstin: string | null = null;
+    let partyType: 'customer' | 'vendor' = 'customer';
+    try {
+      const c = await this.crmService.findOneCustomer(customerId, ctx);
+      partyName = c.name;
+      partyGstin = c.gstin ?? null;
+    } catch {
+      try {
+        const v = await this.purchaseService.findOneVendor(customerId, ctx);
+        partyName = v.name;
+        partyGstin = v.gstin ?? null;
+        partyType = 'vendor';
+      } catch {
+        /* resolved from invoices below */
+      }
+    }
+
+    const invoices = await this.salesService.findInvoices(ctx, undefined, undefined, undefined, undefined, undefined, true);
+    const partyInvoices = invoices.filter(
+      (inv) =>
+        (inv.customer_id === customerId || inv.vendor_id === customerId) &&
+        inv.status !== 'deleted' &&
+        (!companyId || inv.company_id === companyId),
+    );
+    if (partyName === 'Customer' && partyInvoices.length) {
+      partyName = partyInvoices[0].customer?.name ?? partyInvoices[0].vendor?.name ?? partyName;
+      partyGstin = partyInvoices[0].customer?.gstin ?? partyInvoices[0].vendor?.gstin ?? partyGstin;
+      partyType = partyInvoices[0].customer_id === customerId ? 'customer' : 'vendor';
+    }
+
+    const invoiceIds = partyInvoices.map((i) => i.id);
+    type PayRow = {
+      payment_date: string | Date;
+      amount: string;
+      mode: string;
+      reference: string | null;
+      invoice_number: string;
+    };
+    let payments: PayRow[] = [];
+    if (invoiceIds.length) {
+      payments = await this.dataSource.query(
+        `SELECT p.payment_date, p.amount, p.mode, p.reference, inv.number AS invoice_number
+         FROM invoice_payments p
+         INNER JOIN sales_invoices inv ON inv.id = p.invoice_id
+         WHERE inv.tenant_id = $1 AND p.invoice_id = ANY($2::uuid[])
+         ORDER BY p.payment_date ASC, p.created_at ASC`,
+        [ctx.tenantId, invoiceIds],
+      );
+    }
+
+    const netOf = (inv: SalesInvoice) =>
+      round(Number((inv as SalesInvoice & { net_amount?: string }).net_amount ?? inv.total));
+
+    let openingBalance = 0;
+    if (from) {
+      for (const inv of partyInvoices) {
+        const d = day(inv.invoice_date);
+        if (d && d < from) openingBalance = round(openingBalance + netOf(inv));
+      }
+      for (const p of payments) {
+        const d = day(p.payment_date);
+        if (d && d < from) openingBalance = round(openingBalance - parseFloat(p.amount || '0'));
+      }
+    }
+
+    type RawEntry = {
+      date: string;
+      sort: number;
+      kind: 'opening' | 'invoice' | 'payment';
+      reference: string;
+      particulars: string;
+      debit: number;
+      credit: number;
+    };
+    const raw: RawEntry[] = [];
+    if (from && Math.abs(openingBalance) > 0.005) {
+      raw.push({
+        date: from,
+        sort: 0,
+        kind: 'opening',
+        reference: '—',
+        particulars: 'Opening balance',
+        debit: openingBalance > 0 ? openingBalance : 0,
+        credit: openingBalance < 0 ? Math.abs(openingBalance) : 0,
+      });
+    }
+    for (const inv of partyInvoices) {
+      const d = day(inv.invoice_date);
+      if (!inRange(d)) continue;
+      const net = netOf(inv);
+      raw.push({
+        date: d,
+        sort: 1,
+        kind: 'invoice',
+        reference: inv.number,
+        particulars: 'Sales invoice / bill',
+        debit: net,
+        credit: 0,
+      });
+    }
+    for (const p of payments) {
+      const d = day(p.payment_date);
+      if (!inRange(d)) continue;
+      const amt = round(parseFloat(p.amount || '0'));
+      const mode = (p.mode || 'cash').replace(/_/g, ' ');
+      const ref = p.reference ? ` · Ref ${p.reference}` : '';
+      raw.push({
+        date: d,
+        sort: 2,
+        kind: 'payment',
+        reference: p.invoice_number,
+        particulars: `Payment received (${mode}) against invoice ${p.invoice_number}${ref}`,
+        debit: 0,
+        credit: amt,
+      });
+    }
+    raw.sort((a, b) => a.date.localeCompare(b.date) || a.sort - b.sort || a.reference.localeCompare(b.reference));
+
+    let balance = openingBalance;
+    let totalDebit = 0;
+    let totalCredit = 0;
+    const entries = raw.map((row) => {
+      if (row.kind !== 'opening') {
+        balance = round(balance + row.debit - row.credit);
+        totalDebit = round(totalDebit + row.debit);
+        totalCredit = round(totalCredit + row.credit);
+      }
+      return {
+        date: row.date,
+        kind: row.kind,
+        reference: row.reference,
+        particulars: row.particulars,
+        debit: row.debit,
+        credit: row.credit,
+        balance: row.kind === 'opening' ? openingBalance : balance,
+      };
+    });
+
+    return {
+      customer_id: customerId,
+      customer_name: partyName,
+      customer_gstin: partyGstin,
+      party_type: partyType,
+      from: from ?? null,
+      to: to ?? null,
+      company_id: companyId ?? null,
+      opening_balance: openingBalance,
+      closing_balance: balance,
+      total_debit: totalDebit,
+      total_credit: totalCredit,
+      entries,
     };
   }
 

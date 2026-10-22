@@ -38,6 +38,16 @@ export type LedgerParty = {
   address?: Record<string, unknown> | null;
 };
 
+export type AccountLedgerEntry = {
+  date: string;
+  kind: 'opening' | 'invoice' | 'payment';
+  reference: string;
+  particulars: string;
+  debit: number;
+  credit: number;
+  balance: number;
+};
+
 function esc(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -173,6 +183,137 @@ function letterheadHtml(company: StatementCompany | null, branding: StatementBra
     msme ? `<p>MSME: ${esc(msme)}</p>` : '',
   ].join('');
   return `<div class="head"><div class="brand">${mark}<div><h1>${esc(heading)}</h1><div class="muted">${lines}</div></div></div><div class="title"><h2>${esc(docTitle)}</h2><p class="muted">${esc(subtitle)}</p><p class="muted">Issued ${esc(prettyDate(localToday()))}</p></div></div>`;
+}
+
+/** Shareable account statement — each bill and each payment on its own line. */
+export function customerAccountLedgerHtml(input: {
+  company: StatementCompany | null;
+  branding: StatementBranding | null;
+  party: LedgerParty;
+  from: string | null;
+  to: string | null;
+  opening_balance: number;
+  closing_balance: number;
+  entries: AccountLedgerEntry[];
+}): string {
+  const period =
+    input.from && input.to
+      ? `${prettyDate(input.from)} to ${prettyDate(input.to)}`
+      : input.from
+        ? `From ${prettyDate(input.from)}`
+        : input.to
+          ? `Up to ${prettyDate(input.to)}`
+          : 'All dates';
+  const partyAddress = formatAddress(input.party.address);
+  const partyBits = [
+    input.party.gstin ? `<p>GSTIN: ${esc(input.party.gstin)}</p>` : '',
+    partyAddress ? `<p>${esc(partyAddress)}</p>` : '',
+    input.party.phone ? `<p>Phone: ${esc(input.party.phone)}</p>` : '',
+    input.party.email ? `<p>Email: ${esc(input.party.email)}</p>` : '',
+  ].join('');
+  const rows = input.entries.length
+    ? input.entries
+        .map(
+          (row) => `<tr>
+          <td>${esc(prettyDate(row.date))}</td>
+          <td>${esc(row.particulars)}</td>
+          <td>${esc(row.reference)}</td>
+          <td class="num">${row.debit ? esc(moneyIn(row.debit)) : '—'}</td>
+          <td class="num">${row.credit ? esc(moneyIn(row.credit)) : '—'}</td>
+          <td class="num">${esc(moneyIn(row.balance))}</td>
+        </tr>`,
+        )
+        .join('')
+    : `<tr><td colspan="6">No bills or payments in this period.</td></tr>`;
+  const bank = bankLines(input.company?.bank_details);
+  return `<div class="sheet">
+    ${letterheadHtml(input.company, input.branding, 'Account statement', `${period} · Bills and payments`)}
+    <div class="parties">
+      <div class="box">
+        <p class="label">Customer</p>
+        <p><strong>${esc(input.party.name || 'Customer')}</strong></p>
+        <div class="muted">${partyBits}</div>
+      </div>
+      <div class="box">
+        <p class="label">Summary</p>
+        <p>Opening: ${esc(moneyIn(input.opening_balance))}</p>
+        <p>Closing balance due: <strong>${esc(moneyIn(input.closing_balance))}</strong></p>
+      </div>
+    </div>
+    <div class="due"><span>Amount due (closing)</span><strong>${esc(moneyIn(input.closing_balance))}</strong></div>
+    <table>
+      <thead><tr>
+        <th>Date</th><th>Particulars</th><th>Invoice / ref</th>
+        <th class="num">Debit (billed)</th><th class="num">Credit (received)</th><th class="num">Balance</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${bank.length ? `<div class="bank"><p class="label">Bank details for payment</p>${bank.map((line) => `<p>${esc(line)}</p>`).join('')}</div>` : ''}
+    <p class="note">Debit rows are GST invoices raised to you. Credit rows are payments we received. Share this PDF with your accounts team or save for your records.</p>
+  </div>`;
+}
+
+export function salesRegisterHtml(input: {
+  company: StatementCompany | null;
+  branding: StatementBranding | null;
+  from: string | null;
+  to: string | null;
+  totals: { taxable_value: number; cgst: number; sgst: number; igst: number; total: number };
+  rows: Array<{
+    number: string;
+    date: string;
+    customer_name: string;
+    customer_gstin: string;
+    taxable_value: number;
+    cgst: number;
+    sgst: number;
+    igst: number;
+    total: number;
+  }>;
+}): string {
+  const period =
+    input.from && input.to
+      ? `${prettyDate(input.from)} to ${prettyDate(input.to)}`
+      : [input.from, input.to].filter(Boolean).join(' to ') || 'All dates';
+  const tableRows = input.rows.length
+    ? input.rows
+        .map(
+          (r) => `<tr>
+        <td>${esc(r.number)}</td>
+        <td>${esc(prettyDate(r.date))}</td>
+        <td>${esc(r.customer_name)}</td>
+        <td>${esc(r.customer_gstin || '—')}</td>
+        <td class="num">${esc(moneyIn(r.taxable_value))}</td>
+        <td class="num">${esc(moneyIn(r.cgst))}</td>
+        <td class="num">${esc(moneyIn(r.sgst))}</td>
+        <td class="num">${esc(moneyIn(r.igst))}</td>
+        <td class="num">${esc(moneyIn(r.total))}</td>
+      </tr>`,
+        )
+        .join('')
+    : `<tr><td colspan="9">No issued invoices in this period.</td></tr>`;
+  return `<div class="sheet">
+    ${letterheadHtml(input.company, input.branding, 'Sales register', `For CA / GST filing · ${period}`)}
+    <p class="muted" style="margin-top:12px">${input.rows.length} invoice(s). Customer GSTIN shown where saved on the party master.</p>
+    <table class="dense">
+      <thead><tr>
+        <th>Invoice</th><th>Date</th><th>Customer</th><th>GSTIN</th>
+        <th class="num">Taxable</th><th class="num">CGST</th><th class="num">SGST</th><th class="num">IGST</th><th class="num">Total</th>
+      </tr></thead>
+      <tbody>${tableRows}</tbody>
+      <tfoot>
+        <tr>
+          <th colspan="4">Totals</th>
+          <th class="num">${esc(moneyIn(input.totals.taxable_value))}</th>
+          <th class="num">${esc(moneyIn(input.totals.cgst))}</th>
+          <th class="num">${esc(moneyIn(input.totals.sgst))}</th>
+          <th class="num">${esc(moneyIn(input.totals.igst))}</th>
+          <th class="num">${esc(moneyIn(input.totals.total))}</th>
+        </tr>
+      </tfoot>
+    </table>
+    <p class="note">Prepared from issued sales invoices in this workspace. Cross-check with GSTR-1 before filing.</p>
+  </div>`;
 }
 
 export function customerLedgerHtml(input: {

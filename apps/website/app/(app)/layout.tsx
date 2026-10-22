@@ -55,6 +55,7 @@ import { shopNavSkin } from '@/lib/shop-nav-skin';
 import { filterNavByHidden, parseNavHidden, stripPlatformOnlyNavItems } from '@/lib/nav-menu-config';
 import { tenantHasOptInFeature } from '@/lib/tenant-features';
 import { applyWorkspaceThemeVars, resolveWorkspaceTheme } from '@/lib/variant-theme';
+import { SAVOKA_SYSTEM_NAME, SAVOKA_URL, SITE_NAME } from '@/lib/site';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -1115,6 +1116,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <BrandMark href={homeHref} name={brandName} logoSrc={logoSrc} />
         </div>
         <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2" aria-label="Workspace">{renderNavContent(false)}</nav>
+        <p className="shrink-0 border-t border-slate-200 px-3 py-2.5 text-[10px] leading-snug text-slate-400">
+          {isIceCrest ? 'Ice Crest CRM' : SITE_NAME} · Powered by{' '}
+          <a href={SAVOKA_URL} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-brand-600">
+            {SAVOKA_SYSTEM_NAME}
+          </a>
+        </p>
       </aside>
       )}
 

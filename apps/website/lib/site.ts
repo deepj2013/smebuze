@@ -1,6 +1,12 @@
 export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://smebuze.com').replace(/\/$/, '');
 export const SITE_NAME = 'SMEBUZE';
 
+/** Parent company — SMEBUZE is one product line */
+export const SAVOKA_SYSTEM_NAME = 'Savoka System';
+export const SAVOKA_URL = 'https://savoka.in';
+export const SAVOKA_ABOUT =
+  'Savoka System builds practical software for Indian businesses — SMEBUZE for GST billing and shop workspaces, and industry packs like Ice Crest CRM for manufacturing desks.';
+
 /** Short line under the logo / social cards */
 export const SITE_TAGLINE =
   'GST billing, stock and accounts for Indian MSMEs — shaped to how each shop actually sells';
@@ -35,6 +41,8 @@ export const SITE_KEYWORDS = [
   'Tally style invoice print',
   'SMEBUZE',
   'smebuze',
+  'Savoka System',
+  'savoka.in',
 ] as const;
 
 export const SITE_FAQS: { question: string; answer: string }[] = [
@@ -77,5 +85,10 @@ export const SITE_FAQS: { question: string; answer: string }[] = [
     question: 'Is my shop data private?',
     answer:
       'Yes. Each business has its own isolated workspace. Catalog, invoices, leads and books belong to that tenant only. Roles control what staff can see.',
+  },
+  {
+    question: 'Who builds SMEBUZE?',
+    answer:
+      'SMEBUZE is a product of Savoka System (savoka.in). Savoka designs and ships focused business software for India — from MSME billing to vertical CRM packs — with one team behind support and updates.',
   },
 ];

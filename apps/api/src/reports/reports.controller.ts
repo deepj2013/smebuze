@@ -35,13 +35,66 @@ export class ReportsController {
   ) {
     const data = await this.reportsService.getSalesSummary(ctx, from, to, companyId);
     if (format === 'csv' && res) {
-      const csv = ['Invoice ID,Number,Date,Taxable,CGST,SGST,IGST,Invoice Value,Paid,Due', ...data.rows.map((r) => `${r.id},${r.number},${r.date},${r.taxable_value},${r.cgst},${r.sgst},${r.igst},${r.total},${r.paid},${r.due}`)].join('\n');
+      const esc = (v: unknown) => {
+        const s = String(v ?? '');
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const csv = [
+        'Invoice ID,Number,Customer,Customer GSTIN,Date,Taxable,CGST,SGST,IGST,Invoice Value,Paid,Due',
+        ...data.rows.map(
+          (r) =>
+            `${esc(r.id)},${esc(r.number)},${esc(r.customer_name ?? '')},${esc(r.customer_gstin ?? '')},${esc(r.date)},${r.taxable_value},${r.cgst},${r.sgst},${r.igst},${r.total},${r.paid},${r.due}`,
+        ),
+      ].join('\n');
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename=sales-summary.csv');
       res.send(csv);
       return;
     }
     return data;
+  }
+
+  @Get('sales-register')
+  @RequirePermissions('reports.view')
+  async salesRegister(
+    @CurrentTenant() ctx: TenantContext,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('company_id') companyId?: string,
+    @Query('format') format?: string,
+    @Res({ passthrough: true }) res?: Response,
+  ) {
+    const data = await this.reportsService.getSalesRegister(ctx, from, to, companyId);
+    if (format === 'csv' && res) {
+      const esc = (v: unknown) => {
+        const s = String(v ?? '');
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const csv = [
+        'Invoice Number,Date,Customer Name,Customer GSTIN,Taxable,CGST,SGST,IGST,Invoice Value',
+        ...data.rows.map(
+          (r) =>
+            `${esc(r.number)},${esc(r.date)},${esc(r.customer_name)},${esc(r.customer_gstin)},${r.taxable_value},${r.cgst},${r.sgst},${r.igst},${r.total}`,
+        ),
+      ].join('\n');
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=sales-register.csv');
+      res.send(csv);
+      return;
+    }
+    return data;
+  }
+
+  @Get('customer-account-ledger')
+  @RequirePermissions('reports.view')
+  async customerAccountLedger(
+    @CurrentTenant() ctx: TenantContext,
+    @Query('customer_id') customerId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('company_id') companyId?: string,
+  ) {
+    return this.reportsService.getCustomerAccountLedger(ctx, customerId ?? '', from, to, companyId);
   }
 
   @Get('purchase-summary')

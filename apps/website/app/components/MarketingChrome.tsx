@@ -13,6 +13,7 @@ const HOME_LINKS = [
   { href: '#printing', label: 'Printing' },
   { href: '#pricing', label: 'Pricing' },
   { href: '#faq', label: 'FAQ' },
+  { href: '#about-savoka', label: 'Savoka' },
 ];
 
 export default function MarketingChrome({ children }: { children: React.ReactNode }) {

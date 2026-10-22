@@ -6,9 +6,10 @@ import Link from 'next/link';
 import { apiGet, getApiUrl } from '@/lib/api';
 import { standingClass, standingLabel } from '@/lib/invoice-standing';
 import {
-  customerLedgerHtml,
+  customerAccountLedgerHtml,
   openPrintDocument,
   reportDocumentHtml,
+  salesRegisterHtml,
   type LedgerParty,
   type StatementBranding,
   type StatementCompany,
@@ -33,11 +34,13 @@ type ReportId =
   | 'stock-vs-delivery'
   | 'delivery-vs-invoiced'
   | 'invoice-vs-payment'
-  | 'customer-ledger';
+  | 'customer-ledger'
+  | 'sales-register';
 
 const REPORTS: { id: ReportId; label: string; description: string; hasExport: boolean }[] = [
   { id: 'dashboard', label: 'Business overview', description: 'Summary, receivables & payables', hasExport: false },
-  { id: 'sales-summary', label: 'Sales summary', description: 'Invoiced, received, pending — CSV export', hasExport: true },
+  { id: 'sales-summary', label: 'Sales summary', description: 'Invoiced, received, pending by invoice — customer name & GSTIN; CSV export', hasExport: true },
+  { id: 'sales-register', label: 'Sales register (for CA)', description: 'Share with your CA — every invoice with customer name, GSTIN, tax break-up; CSV & PDF', hasExport: true },
   { id: 'purchase-summary', label: 'Purchase summary', description: 'Orders, paid, pending', hasExport: false },
   { id: 'gst-summary', label: 'HSN-wise sales / GST summary', description: 'By HSN, CGST/SGST/IGST — CSV export', hasExport: true },
   { id: 'item-wise-sales', label: 'Item-wise sales', description: 'Sales by item; quantity and value — CSV export', hasExport: true },
@@ -45,7 +48,7 @@ const REPORTS: { id: ReportId; label: string; description: string; hasExport: bo
   { id: 'stock-vs-delivery', label: 'Stock vs delivery', description: 'Stock on hand vs delivered in period — CSV export', hasExport: true },
   { id: 'delivery-vs-invoiced', label: 'Delivery vs invoiced', description: 'Challans and whether they are invoiced — CSV export', hasExport: true },
   { id: 'invoice-vs-payment', label: 'Invoice vs payment', description: 'Customer totals. Download ledger on a customer for a PDF of their invoices, received, and amount due.', hasExport: true },
-  { id: 'customer-ledger', label: 'Customer ledger', description: 'Pick one customer and download a PDF statement with taxable value, CGST, SGST, IGST, invoice value, and amount due.', hasExport: false },
+  { id: 'customer-ledger', label: 'Customer ledger (shareable)', description: 'Pick a customer and date range — each bill and each payment on one statement; Download ledger → Save as PDF to send.', hasExport: false },
   { id: 'ledger-summary', label: 'Ledger summary', description: 'Journal entries by period', hasExport: false },
   { id: 'general-ledger', label: 'General ledger', description: 'Journal entries grouped for GL view', hasExport: false },
   { id: 'trial-balance', label: 'Trial balance', description: 'Debits vs credits as of a date', hasExport: false },
@@ -319,9 +322,11 @@ function ReportResult({
           <Stat label="Invoices" value={String(data.invoiceCount ?? 0)} />
         </div>
         <DataTable
-          headers={['Number', 'Date', 'Taxable', 'CGST', 'SGST', 'IGST', 'Invoice value', 'Paid', 'Due']}
+          headers={['Number', 'Customer', 'GSTIN', 'Date', 'Taxable', 'CGST', 'SGST', 'IGST', 'Invoice value', 'Paid', 'Due']}
           rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
             String(r.number ?? ''),
+            String(r.customer_name ?? '—'),
+            String(r.customer_gstin ?? '—'),
             String(r.date ?? '').slice(0, 10),
             money(r.taxable_value as number),
             money(r.cgst as number),
@@ -454,16 +459,69 @@ function ReportResult({
   }
 
   if (reportId === 'customer-ledger') {
-    const rows = (data.rows as PaymentRow[]) || [];
-    const due = rows.reduce((sum, row) => sum + Number(row.total_pending || 0), 0);
+    const entries = (data.entries as Array<Record<string, unknown>>) || [];
+    const closing = Number(data.closing_balance ?? 0);
     return (
       <div className="space-y-4">
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Amount due</p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">{money(due)}</p>
-          <p className="mt-1 text-sm text-slate-600">Tap Download ledger. In the print window choose Save as PDF. The file includes your company logo, GSTIN, address, bank details, and each invoice’s taxable value, CGST, SGST, IGST, invoice value, pending, and due date.</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Closing balance due</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900">{money(closing)}</p>
+          <p className="mt-1 text-sm text-slate-600">
+            <strong>{String(data.customer_name ?? 'Customer')}</strong>
+            {data.customer_gstin ? ` · GSTIN ${String(data.customer_gstin)}` : ''}. Each row is a bill (debit) or a payment we received (credit). Tap{' '}
+            <strong>Download ledger</strong> → Save as PDF → share with your customer.
+          </p>
         </div>
-        <InvoiceVsPayment data={data} onDownloadLedger={onDownloadLedger} />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Stat label="Opening" value={money(data.opening_balance as number)} />
+          <Stat label="Billed (debit)" value={money(data.total_debit as number)} />
+          <Stat label="Received (credit)" value={money(data.total_credit as number)} tone="green" />
+          <Stat label="Closing due" value={money(closing)} tone="amber" />
+        </div>
+        <DataTable
+          headers={['Date', 'Particulars', 'Invoice / ref', 'Debit', 'Credit', 'Balance']}
+          rows={entries.map((e) => [
+            String(e.date ?? '').slice(0, 10),
+            String(e.particulars ?? ''),
+            String(e.reference ?? ''),
+            Number(e.debit) ? money(e.debit as number) : '—',
+            Number(e.credit) ? money(e.credit as number) : '—',
+            money(e.balance as number),
+          ])}
+        />
+      </div>
+    );
+  }
+
+  if (reportId === 'sales-register') {
+    const totals = (data.totals || {}) as Record<string, number>;
+    return (
+      <div className="space-y-4">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+          Issued invoices only — with customer name and GSTIN for your chartered accountant. Use <strong>CSV</strong> for Excel or{' '}
+          <strong>PDF</strong> for a signed printout.
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <Stat label="Invoices" value={String(data.invoiceCount ?? 0)} />
+          <Stat label="Taxable" value={money(totals.taxable_value)} />
+          <Stat label="CGST" value={money(totals.cgst)} />
+          <Stat label="SGST" value={money(totals.sgst)} />
+          <Stat label="Total" value={money(totals.total)} />
+        </div>
+        <DataTable
+          headers={['Invoice', 'Date', 'Customer', 'GSTIN', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total']}
+          rows={((data.rows as Array<Record<string, unknown>>) || []).map((r) => [
+            String(r.number ?? ''),
+            String(r.date ?? '').slice(0, 10),
+            String(r.customer_name ?? ''),
+            String(r.customer_gstin ?? '—'),
+            money(r.taxable_value as number),
+            money(r.cgst as number),
+            money(r.sgst as number),
+            money(r.igst as number),
+            money(r.total as number),
+          ])}
+        />
       </div>
     );
   }
@@ -720,7 +778,7 @@ export default function ReportsPage() {
         reportId === 'balance-sheet'
           ? `reports/balance-sheet${qs ? `?${qs}` : ''}`
           : reportId === 'customer-ledger'
-            ? `reports/invoice-vs-payment${qs ? `?${qs}` : ''}`
+            ? `reports/customer-account-ledger${qs ? `?${qs}` : ''}`
             : `reports/${reportId}${qs ? `?${qs}` : ''}`;
       const { data: res, error: err } = await apiGet<Record<string, unknown>>(path);
       if (err) setError(err);
@@ -784,24 +842,92 @@ export default function ReportsPage() {
     };
   }, []);
 
-  const downloadLedger = useCallback(async (row: PaymentRow) => {
-    setLedgerNote(null);
-    const party = await partySlip(row);
-    const html = customerLedgerHtml({
-      company: letterheadCompany(),
-      branding,
-      party,
-      invoices: row.invoices || [],
-    });
-    const opened = openPrintDocument(`Customer ledger — ${party.name}`, html);
-    if (!opened) setLedgerNote('The print window was blocked. Allow pop-ups for this site, then tap Download ledger again and choose Save as PDF.');
-  }, [branding, letterheadCompany, partySlip]);
+  const printAccountLedger = useCallback(
+    async (ledger: Record<string, unknown>, party: LedgerParty) => {
+      const html = customerAccountLedgerHtml({
+        company: letterheadCompany(),
+        branding,
+        party,
+        from: (ledger.from as string | null) ?? null,
+        to: (ledger.to as string | null) ?? null,
+        opening_balance: Number(ledger.opening_balance ?? 0),
+        closing_balance: Number(ledger.closing_balance ?? 0),
+        entries: (ledger.entries as import('@/lib/print-statement').AccountLedgerEntry[]) || [],
+      });
+      const opened = openPrintDocument(`Account statement — ${party.name}`, html);
+      if (!opened) {
+        setLedgerNote('The print window was blocked. Allow pop-ups for this site, then tap Download ledger again and choose Save as PDF.');
+      }
+    },
+    [branding, letterheadCompany],
+  );
+
+  const fetchAccountLedger = useCallback(
+    async (partyId: string) => {
+      const params = new URLSearchParams();
+      params.set('customer_id', partyId);
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      if (companyId) params.set('company_id', companyId);
+      return apiGet<Record<string, unknown>>(`reports/customer-account-ledger?${params.toString()}`);
+    },
+    [companyId, from, to],
+  );
+
+  const downloadLedger = useCallback(
+    async (row: PaymentRow) => {
+      setLedgerNote(null);
+      if (!row.customer_id || row.customer_id === 'unknown') return;
+      const party = await partySlip(row);
+      const { data: ledger, error: err } = await fetchAccountLedger(row.customer_id);
+      if (err || !ledger) {
+        setLedgerNote(err || 'Could not load ledger.');
+        return;
+      }
+      await printAccountLedger(ledger, party);
+    },
+    [fetchAccountLedger, partySlip, printAccountLedger],
+  );
 
   const downloadReportPdf = useCallback(() => {
     setLedgerNote(null);
     const meta = REPORTS.find((r) => r.id === selected);
+    if (!meta) {
+      setLedgerNote('Choose a report first.');
+      return;
+    }
+    if (selected === 'sales-register' && data?.rows) {
+      const totals = (data.totals || {}) as {
+        taxable_value: number;
+        cgst: number;
+        sgst: number;
+        igst: number;
+        total: number;
+      };
+      const html = salesRegisterHtml({
+        company: letterheadCompany(),
+        branding,
+        from: (data.from as string | null) ?? null,
+        to: (data.to as string | null) ?? null,
+        totals,
+        rows: (data.rows as Array<Record<string, unknown>>).map((r) => ({
+          number: String(r.number ?? ''),
+          date: String(r.date ?? '').slice(0, 10),
+          customer_name: String(r.customer_name ?? ''),
+          customer_gstin: String(r.customer_gstin ?? ''),
+          taxable_value: Number(r.taxable_value ?? 0),
+          cgst: Number(r.cgst ?? 0),
+          sgst: Number(r.sgst ?? 0),
+          igst: Number(r.igst ?? 0),
+          total: Number(r.total ?? 0),
+        })),
+      });
+      const opened = openPrintDocument('Sales register', html);
+      if (!opened) setLedgerNote('The print window was blocked. Allow pop-ups, then tap PDF again.');
+      return;
+    }
     const root = document.getElementById('report-result');
-    if (!root || !meta) {
+    if (!root) {
       setLedgerNote('Open the report first, then tap PDF.');
       return;
     }
@@ -816,17 +942,53 @@ export default function ReportsPage() {
       bodyHtml: root.innerHTML,
     }));
     if (!opened) setLedgerNote('The print window was blocked. Allow pop-ups, then tap PDF and choose Save as PDF.');
-  }, [branding, from, letterheadCompany, selected, to]);
+  }, [branding, data, from, letterheadCompany, selected, to]);
 
   const downloadSelectedLedger = useCallback(async () => {
-    const rows = ((data?.rows as PaymentRow[]) || []);
+    if (selected === 'customer-ledger' && data?.entries && customerId) {
+      setLedgerNote(null);
+      const party: LedgerParty = {
+        name: String(data.customer_name ?? 'Customer'),
+        gstin: (data.customer_gstin as string | null) ?? null,
+      };
+      let fullParty = (
+        await apiGet<{
+          name?: string;
+          gstin?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          address?: Record<string, unknown> | null;
+        }>(`crm/customers/${customerId}`)
+      ).data;
+      if (!fullParty) {
+        fullParty = (
+          await apiGet<{
+            name?: string;
+            gstin?: string | null;
+            phone?: string | null;
+            email?: string | null;
+            address?: Record<string, unknown> | null;
+          }>(`purchase/vendors/${customerId}`)
+        ).data;
+      }
+      if (fullParty) {
+        party.name = fullParty.name || party.name;
+        party.gstin = fullParty.gstin;
+        party.phone = fullParty.phone;
+        party.email = fullParty.email;
+        party.address = fullParty.address;
+      }
+      await printAccountLedger(data, party);
+      return;
+    }
+    const rows = (data?.rows as PaymentRow[]) || [];
     const row = customerId ? rows.find((r) => r.customer_id === customerId) : rows.length === 1 ? rows[0] : undefined;
     if (!row) {
-      setLedgerNote('Choose a customer, tap View, then Download ledger. Or tap Download ledger beside a customer in Invoice vs payment.');
+      setLedgerNote('Choose a customer, set dates if needed, tap View, then Download ledger.');
       return;
     }
     await downloadLedger(row);
-  }, [customerId, data, downloadLedger]);
+  }, [customerId, data, downloadLedger, printAccountLedger, selected]);
 
 
   const selectedMeta = REPORTS.find((r) => r.id === selected);
@@ -863,7 +1025,7 @@ export default function ReportsPage() {
       )}
       {selected !== 'ageing' && selected !== 'health-score' && selected !== 'vendor-ledger' && (
         <>
-          {selected !== 'invoice-vs-payment' && selected !== 'customer-ledger' && (
+          {selected !== 'invoice-vs-payment' && (
             <>
               <div className="min-w-[140px] flex-1 sm:flex-none">
                 <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -905,8 +1067,7 @@ export default function ReportsPage() {
             selected !== 'requirement-vs-delivery' &&
             selected !== 'stock-vs-delivery' &&
             selected !== 'delivery-vs-invoiced' &&
-            selected !== 'invoice-vs-payment' &&
-            selected !== 'customer-ledger' && (
+            selected !== 'invoice-vs-payment' && (
               <div className="min-w-[160px] flex-1 sm:flex-none">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Company</label>
                 <select
@@ -949,7 +1110,7 @@ export default function ReportsPage() {
           Download ledger
         </button>
       )}
-      {selected !== 'customer-ledger' && selected !== 'invoice-vs-payment' && (
+      {(selected === 'sales-register' || (selected !== 'customer-ledger' && selected !== 'invoice-vs-payment')) && (
         <button
           type="button"
           onClick={downloadReportPdf}
@@ -957,21 +1118,6 @@ export default function ReportsPage() {
         >
           PDF
         </button>
-      )}
-      {selected === 'customer-ledger' && (
-        <div className="min-w-[160px] flex-1 sm:flex-none">
-          <label className="block text-xs font-medium text-slate-600 mb-1">Letterhead company</label>
-          <select
-            value={companyId}
-            onChange={(e) => setCompanyId(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[44px]"
-          >
-            <option value="">Default company</option>
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-        </div>
       )}
     </div>
   ) : null;

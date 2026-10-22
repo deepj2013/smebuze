@@ -23,6 +23,9 @@ import MarketingChrome from './components/MarketingChrome';
 import SiteFooter from './components/SiteFooter';
 import CustomPlanEnquiry from './components/CustomPlanEnquiry';
 import {
+  SAVOKA_ABOUT,
+  SAVOKA_SYSTEM_NAME,
+  SAVOKA_URL,
   SITE_DESCRIPTION,
   SITE_FAQS,
   SITE_KEYWORDS,
@@ -86,6 +89,11 @@ const jsonLd = {
       logo: { '@type': 'ImageObject', url: `${SITE_URL}/icons/icon-512.png` },
       areaServed: { '@type': 'Country', name: 'India' },
       slogan: SITE_TAGLINE,
+      parentOrganization: {
+        '@type': 'Organization',
+        name: SAVOKA_SYSTEM_NAME,
+        url: SAVOKA_URL,
+      },
     },
     {
       '@type': 'SoftwareApplication',
@@ -207,6 +215,32 @@ export default function Home() {
                   neighbourhood shop.
                 </p>
               </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="about-savoka" className="py-12 sm:py-16 bg-white border-b border-slate-200">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 grid gap-8 lg:grid-cols-[1fr,1.2fr] items-center">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-700">Built by Savoka</p>
+              <h2 className="mt-3 font-display text-2xl sm:text-3xl font-bold text-slate-900 leading-tight">
+                SMEBUZE is one product from {SAVOKA_SYSTEM_NAME}
+              </h2>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-[#f7f8fa] p-6 sm:p-8">
+              <p className="text-slate-700 leading-relaxed">{SAVOKA_ABOUT}</p>
+              <p className="mt-4 text-sm text-slate-600 leading-relaxed">
+                When you subscribe to SMEBUZE, you work with the same team that ships updates, billing, and support — not a faceless marketplace app.
+              </p>
+              <a
+                href={SAVOKA_URL}
+                className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:text-brand-800"
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                Visit savoka.in
+                <ChevronRight className="h-4 w-4" />
+              </a>
             </div>
           </div>
         </section>
